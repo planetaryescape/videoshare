@@ -62,9 +62,9 @@ Database is snake_case; TypeScript is camelCase. The SQLite/D1 clients support `
 | start_sec  | REAL    |                             |
 | sort_order | INTEGER |                             |
 
-## Viewer (apps/viewer) — planned
+## Viewer (apps/viewer) — live
 
-Cloudflare Worker, bound to D1 (read) and serving the player page.
+Cloudflare Worker on `video.planetaryescape.co.za`. Bound to D1 (read) and R2 (private). Serves both the player page and media files.
 
 Flow:
 
@@ -72,11 +72,12 @@ Flow:
 2. Worker provides `D1Client.layer({ db: env.DB })`, runs `VideoRepository.findBySlug`.
 3. Not found → 404.
 4. Has password and not yet authorized → render password prompt; `POST` checks the hash, sets a short cookie/token, re-renders.
-5. Authorized (or no password) → render the Vidstack player page with the HLS manifest URL.
+5. Authorized (or no password) → render the Vidstack player page. The `hls_key` value (absolute URL or relative R2 key) becomes the player `src`.
+6. Relative R2 keys resolve to `/<slug>/<filename>`. When the player requests a segment, the Worker looks up the video's `hls_key` directory, appends the requested file, and fetches the object from the bound R2 bucket. Auth cookie is checked on media requests too.
 
-HLS delivery: **R2 public bucket / custom domain.** The player fetches `master.m3u8` and `.ts` segments directly from R2's CDN. The Worker only serves the page and gates it. Media URLs are public; the slug is the access barrier and the password gates the page that reveals the manifest URL.
+HLS delivery: **Worker-proxied from private R2.** The R2 bucket has no public custom domain. All media flows through the Worker on the same domain as the page, so the password gate covers both.
 
-Player: **Vidstack** (custom controls, chapters, poster, keyboard built in).
+Player: **Vidstack** (custom controls, chapters, poster, keyboard built in). Player assets (`player.js`, `player.css`) are bundled locally and served same-origin by the Worker at `/_assets/*`.
 
 ## Admin (apps/admin) — planned
 
@@ -93,8 +94,6 @@ Publish = upload media to R2 + insert/update row in D1. Local SQLite stays the w
 
 Alchemy v2 (Effect-style `Stack`), Cloudflare provider.
 
-- `R2Bucket("VideoBucket")` — live. Holds HLS segments + posters. Will be made publicly accessible.
-- `D1Database` — planned. Viewer reads it; admin writes to it on publish.
-- viewer `Worker` — planned. Bound to D1 + R2.
-
-The Alchemy resource APIs for D1 / Worker / R2-public-access must be verified against the installed `alchemy/Cloudflare` package before use (web docs paraphrase and may be inaccurate on import paths).
+- `R2Bucket("VideoBucket")` — live. Private, no public domain. Holds HLS segments + posters.
+- `D1Database("VideoDatabase")` — live. Viewer reads it; admin writes to it on publish. Migrations from `packages/shared/migrations/`.
+- `Worker("ViewerWorker")` — live on `video.planetaryescape.co.za`. Bound to D1 + R2. Serves player page, password gate, same-origin player assets, and proxies media from private R2.

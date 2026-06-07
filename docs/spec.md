@@ -38,7 +38,7 @@ Player features wanted:
 ## Access model
 
 - Slug is the secret. It is long and random (16+ chars), so links are effectively unguessable.
-- Optional per-video password is a light extra gate. It protects the player page (and the manifest URL embedded in it), not the raw media files, which sit in a public bucket. This is acceptable for "share with a client" — the slug is the real barrier.
+- Optional per-video password gates both the page and the media, since all requests flow through the Worker on a single domain.
 - Links could later support expiry; not built yet (YAGNI).
 
 ## Explicitly out of scope (for now)

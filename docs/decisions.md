@@ -42,9 +42,9 @@ Use Effect for the domain (Schema) and SQL repositories. Skip the full `HttpApi`
 
 Use foldkit (`repos/foldkit`) for the admin UI. Elm-inspired, Effect-powered, and it requires the exact same `effect@4.0.0-beta.78` as the rest of the stack — no version conflict. Single architecture from frontend to backend.
 
-## HLS delivery: R2 public bucket / custom domain
+## HLS delivery: Worker-proxied from private R2
 
-The player fetches the HLS manifest and segments directly from R2's public CDN. The Worker serves only the player page and the password gate. Simplest and fastest delivery. Trade-off: media URLs are public, so the slug is the real access barrier and the password gates the page, not the files. Acceptable for client sharing.
+The Worker and R2 bucket share the same domain (`video.planetaryescape.co.za`). The Worker owns the custom domain; the R2 bucket stays private. The player page and media files both come through the Worker, so the password gate covers media requests too. Relative `hls_key` values resolve to `/<slug>/<filename>` and the Worker fetches the object from its R2 binding. This is a stricter approach than the original plan (public bucket) — better access control without a separate subdomain for media.
 
 ## alchemy.run.ts stays at root
 
