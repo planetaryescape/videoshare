@@ -1,0 +1,41 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "outputs": ["generated/**", "dist/**"]
+    },
+    "dev:client": {
+      "cache": false,
+      "persistent": true
+    },
+    "dev:server": {
+      "cache": false,
+      "persistent": true
+    },
+    "//#dev:worker": {
+      "dependsOn": ["@videoshare/viewer#build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "cache": false
+    },
+    "lint:fix": {
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    },
+    "format:check": {
+      "cache": false
+    },
+    "check-all": {
+      "cache": false,
+      "dependsOn": ["lint", "format:check", "typecheck"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    }
+  }
+}

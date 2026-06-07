@@ -2,26 +2,33 @@
   "name": "videoshare",
   "type": "module",
   "private": true,
+  "packageManager": "bun@1.3.14",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun run build:viewer-assets && alchemy dev",
-    "dev:admin": "bun run dev:admin:server & sleep 1 && bun run dev:admin:client",
-    "dev:admin:server": "bun --hot ./apps/admin/server.ts",
-    "dev:admin:client": "cd apps/admin && bunx vite",
-    "build:viewer-assets": "bun build ./apps/viewer/src/player.entry.ts --outfile ./apps/viewer/generated/player.js --target browser --format esm --minify && bun build ./apps/viewer/src/player.css --outfile ./apps/viewer/generated/player.css --target browser --minify",
+    "dev": "turbo run dev:client dev:server dev:worker",
+    "dev:worker": "alchemy dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
     "plan": "alchemy plan",
     "tail": "alchemy tail",
     "logs": "alchemy logs",
-    "typecheck": "bunx tsc --noEmit",
     "check": "bun run typecheck",
     "deploy": "alchemy deploy",
-    "destroy": "alchemy destroy"
+    "destroy": "alchemy destroy",
+    "lint": "oxlint -c .oxlintrc.json apps packages && bun scripts/check-no-native-error.mjs",
+    "lint:fix": "oxlint --fix -c .oxlintrc.json apps packages",
+    "format": "oxfmt --write apps packages",
+    "format:check": "oxfmt --check apps packages",
+    "check-all": "bun run lint && bun run format:check && bun run typecheck"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "oxfmt": "^0.53.0",
+    "oxlint": "^1.68.0",
+    "turbo": "^2.9.16"
   },
   "peerDependencies": {
     "typescript": "^5"

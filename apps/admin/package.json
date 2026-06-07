@@ -3,8 +3,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vite",
-    "dev:server": "bun --hot ./server.ts",
+    "dev:client": "vite",
+    "dev:server": "bun --hot --env-file=../../.env ./server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
