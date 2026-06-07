@@ -5,9 +5,21 @@ import { Effect, Layer, Option } from "effect"
 import playerCss from "../generated/player.css?raw"
 import playerScript from "../generated/player.js?raw"
 
+interface R2ObjectBody {
+  readonly body: ReadableStream | null
+  readonly httpEtag: string
+  readonly size: number
+  readonly httpMetadata?: { readonly contentType?: string }
+  writeHttpMetadata(headers: Headers): void
+}
+
+interface R2Bucket {
+  get(key: string): Promise<R2ObjectBody | null>
+}
+
 type ViewerEnv = {
   readonly DB: Parameters<typeof D1Client.layer>[0]["db"]
-  readonly BUCKET: unknown
+  readonly BUCKET: R2Bucket
 }
 
 const cookieMaxAgeSeconds = 60 * 60 * 24
@@ -74,9 +86,57 @@ const cookieName = (slug: string) => `video_auth_${slug}`
 const isAuthorized = (request: Request, slug: string, passwordHash: string) =>
   parseCookies(request.headers.get("cookie")).get(cookieName(slug)) === passwordHash
 
-const manifestUrlFor = (video: Video) => video.hlsKey
+const isAbsoluteUrl = (value: string) => {
+  try {
+    const url = new URL(value)
+    return url.protocol === "http:" || url.protocol === "https:"
+  } catch {
+    return false
+  }
+}
 
-const posterUrlFor = (video: Video) => video.posterKey
+const mediaPrefix = (slug: string) => `/${encodeURIComponent(slug)}/`
+
+const r2KeyDir = (key: string) => {
+  const slash = key.lastIndexOf("/")
+  return slash === -1 ? "" : key.slice(0, slash + 1)
+}
+
+const r2ContentType = (key: string) => {
+  if (key.endsWith(".m3u8")) {
+    return "application/vnd.apple.mpegurl"
+  }
+  if (key.endsWith(".ts")) {
+    return "video/mp2t"
+  }
+  if (key.endsWith(".m4s") || key.endsWith(".mp4")) {
+    return "video/mp4"
+  }
+  if (key.endsWith(".vtt")) {
+    return "text/vtt"
+  }
+  if (key.endsWith(".jpg") || key.endsWith(".jpeg")) {
+    return "image/jpeg"
+  }
+  if (key.endsWith(".png")) {
+    return "image/png"
+  }
+  if (key.endsWith(".webp")) {
+    return "image/webp"
+  }
+  return "application/octet-stream"
+}
+
+const resolveMediaUrl = (slug: string, key: string | null) => {
+  if (!key) {
+    return null
+  }
+  if (isAbsoluteUrl(key)) {
+    return key
+  }
+  const basename = key.slice(r2KeyDir(key).length)
+  return `${mediaPrefix(slug)}${basename}`
+}
 
 const chaptersTrackFor = (chapters: ReadonlyArray<Chapter>) => {
   if (chapters.length === 0) {
@@ -144,7 +204,8 @@ const assetResponse = (body: string, contentType: string) =>
 
 const viewerPage = (slug: string, video: Video, chapters: ReadonlyArray<Chapter>) => {
   const chaptersTrack = chaptersTrackFor(chapters)
-  const posterUrl = posterUrlFor(video)
+  const posterUrl = resolveMediaUrl(slug, video.posterKey)
+  const manifestUrl = resolveMediaUrl(slug, video.hlsKey)
   const chapterItems = chapters
     .map((chapter) => `<li>${escapeHtml(chapter.title)} <span>${chapter.startSec}s</span></li>`)
     .join("")
@@ -177,7 +238,7 @@ const viewerPage = (slug: string, video: Video, chapters: ReadonlyArray<Chapter>
       <div class="player-shell">
         <media-player
           title="${escapeHtml(video.title)}"
-          src="${escapeHtml(manifestUrlFor(video))}"
+          src="${escapeHtml(manifestUrl ?? video.hlsKey)}"
           view-type="video"
           stream-type="on-demand"
           playsinline
@@ -225,6 +286,43 @@ const homePage = `<!doctype html>
   </body>
 </html>`
 
+const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: string) => {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response("Method Not Allowed", { status: 405 })
+  }
+  if (file.includes("..")) {
+    return new Response("Not Found", { status: 404 })
+  }
+
+  const result = await loadVideo(env, slug)
+  if (Option.isNone(result)) {
+    return new Response("Not Found", { status: 404 })
+  }
+
+  const { video } = result.value
+  if (video.passwordHash && !isAuthorized(request, slug, video.passwordHash)) {
+    return new Response("Forbidden", { status: 403 })
+  }
+
+  if (isAbsoluteUrl(video.hlsKey)) {
+    return new Response("Not Found", { status: 404 })
+  }
+
+  const key = `${r2KeyDir(video.hlsKey)}${file}`
+  const object = await env.BUCKET.get(key)
+  if (!object) {
+    return new Response("Not Found", { status: 404 })
+  }
+
+  const headers = new Headers()
+  object.writeHttpMetadata(headers)
+  headers.set("etag", object.httpEtag)
+  headers.set("content-type", object.httpMetadata?.contentType ?? r2ContentType(key))
+  headers.set("cache-control", key.endsWith(".m3u8") ? "no-cache" : assetCacheControl)
+
+  return new Response(request.method === "HEAD" ? null : object.body, { headers })
+}
+
 export default {
   async fetch(request: Request, env: ViewerEnv) {
     const url = new URL(request.url)
@@ -248,13 +346,18 @@ export default {
       return new Response("ok")
     }
 
-    if (request.method !== "GET" && request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 })
+    const segments = pathname.slice(1).split("/")
+    const slug = segments[0] ?? ""
+    if (!slug) {
+      return new Response("Not Found", { status: 404 })
     }
 
-    const slug = pathname.slice(1)
-    if (!slug || slug.includes("/")) {
-      return new Response("Not Found", { status: 404 })
+    if (segments.length > 1) {
+      return serveMedia(env, request, slug, segments.slice(1).join("/"))
+    }
+
+    if (request.method !== "GET" && request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 })
     }
 
     try {
