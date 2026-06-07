@@ -26,9 +26,34 @@ Slice is complete. Live at `https://video.planetaryescape.co.za`. Worker proxies
 
 ### Admin (slice 4)
 
-- ffmpeg HLS ladder/profile is TBD; start with a single sensible rendition, expand if needed.
-- Local SQLite is the working store; D1 + R2 are the published mirror.
-- foldkit is Vite-based; scaffold via `create-foldkit-app` or wire the `foldkit` package directly.
+Two separate processes, both in `apps/admin/`:
+
+**`server.ts`** - Bun REST API on port 3001
+- Local SQLite via `@effect/sql-sqlite-bun` using shared schema migrations
+- Endpoints: `GET/POST /api/videos`, `GET /api/videos/:id`, `POST /api/upload` (MP4 + ffmpeg HLS transcode), `POST /api/publish/:id`, `DELETE /api/videos/:id`
+- CORS enabled for Vite dev server
+- Run: `bun run dev:admin:server`
+
+**`src/`** - Foldkit frontend on Vite port 5173
+- Elm-architecture app (Model, Message, update, view) using foldkit + Effect
+- Two screens: list view (table of local videos) and edit view (title/description/upload/publish)
+- All HTTP calls proxied to the Bun server via Vite proxy config
+- Tailwind v4 dark theme
+- Run: `bun run dev:admin:client`
+
+**Local-first design:**
+- All state lives in local SQLite first (drafts, edits)
+- Publishing pushes to cloud (R2 media + D1 metadata) as an explicit action
+- The app works fully offline for drafting
+
+**Run full stack:** `bun run dev:admin` (starts both server and client)
+
+**Remaining work:**
+- Connect publish endpoint to real R2 upload + D1 write (currently sets `publishedAt` locally only)
+- Wire the file upload form with a real `<input type="file">` and foldkit file handling
+- Chapter editing UI (add/reorder/delete chapters with start times)
+- Poster preview on the edit screen
+- Error display and loading state polish
 
 ## Conventions
 
