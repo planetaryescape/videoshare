@@ -7,6 +7,13 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "bun run build:viewer-assets && alchemy dev",
+    "build:viewer-assets": "bun build ./apps/viewer/src/player.entry.ts --outfile ./apps/viewer/generated/player.js --target browser --format esm --minify && bun build ./apps/viewer/src/player.css --outfile ./apps/viewer/generated/player.css --target browser --minify",
+    "plan": "alchemy plan",
+    "tail": "alchemy tail",
+    "logs": "alchemy logs",
+    "typecheck": "bunx tsc --noEmit",
+    "check": "bun run typecheck",
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy"
   },
@@ -19,6 +26,7 @@
   "dependencies": {
     "@effect/platform-bun": ">=4.0.0-beta.78 || >=4.0.0",
     "@effect/platform-node": ">=4.0.0-beta.78 || >=4.0.0",
+    "@effect/sql-d1": "4.0.0-beta.78",
     "@effect/sql-sqlite-bun": "4.0.0-beta.78",
     "alchemy": "^2.0.0-beta.52",
     "effect": ">=4.0.0-beta.78 || >=4.0.0"
