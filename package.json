@@ -8,9 +8,9 @@
   ],
   "scripts": {
     "dev": "bun run build:viewer-assets && alchemy dev",
-    "dev:admin": "bun run dev:admin:server & bun run dev:admin:client",
+    "dev:admin": "bun run dev:admin:server & sleep 1 && bun run dev:admin:client",
     "dev:admin:server": "bun --hot ./apps/admin/server.ts",
-    "dev:admin:client": "bunx vite --config ./apps/admin/vite.config.ts",
+    "dev:admin:client": "cd apps/admin && bunx vite",
     "build:viewer-assets": "bun build ./apps/viewer/src/player.entry.ts --outfile ./apps/viewer/generated/player.js --target browser --format esm --minify && bun build ./apps/viewer/src/player.css --outfile ./apps/viewer/generated/player.css --target browser --minify",
     "plan": "alchemy plan",
     "tail": "alchemy tail",
