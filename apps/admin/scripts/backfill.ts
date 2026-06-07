@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite"
+import { Effect } from "effect"
+import { Chapter, ChapterId, Slug, Video, VideoId } from "@videoshare/shared/Video"
 import { pushToProd } from "../src/prod"
 
 const slug = process.argv[2]
@@ -18,9 +20,9 @@ const chRows = db
   .query("SELECT * FROM chapters WHERE video_id = ? ORDER BY sort_order")
   .all(v.id as string) as Array<Record<string, unknown>>
 
-const video = {
-  id: v.id as string,
-  slug: v.slug as string,
+const video = new Video({
+  id: VideoId.make(v.id as string),
+  slug: Slug.make(v.slug as string),
   title: v.title as string,
   description: (v.description as string | null) ?? null,
   posterKey: (v.poster_key as string | null) ?? null,
@@ -29,16 +31,19 @@ const video = {
   passwordHash: (v.password_hash as string | null) ?? null,
   createdAt: v.created_at as number,
   publishedAt: (v.published_at as number | null) ?? null,
-}
+  updatedAt: (v.updated_at as number | null) ?? null,
+})
 
-const chapters = chRows.map((c) => ({
-  id: c.id as string,
-  videoId: c.video_id as string,
-  title: c.title as string,
-  startSec: c.start_sec as number,
-  sortOrder: c.sort_order as number,
-}))
+const chapters = chRows.map((c) =>
+  new Chapter({
+    id: ChapterId.make(c.id as string),
+    videoId: VideoId.make(c.video_id as string),
+    title: c.title as string,
+    startSec: c.start_sec as number,
+    sortOrder: c.sort_order as number,
+  }),
+)
 
 console.log(`pushing ${video.id} (${video.slug}), chapters: ${chapters.length}`)
-await pushToProd(video, chapters, `./videoshare-hls-output/${video.id}`)
+await Effect.runPromise(pushToProd(video, chapters, `./videoshare-hls-output/${video.id}`))
 console.log("DONE")
