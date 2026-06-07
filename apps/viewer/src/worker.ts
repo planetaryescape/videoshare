@@ -4,6 +4,7 @@ import type { Chapter, Video } from "@videoshare/shared/Video"
 import { Effect, Layer, Option } from "effect"
 import playerCss from "../generated/player.css?raw"
 import playerScript from "../generated/player.js?raw"
+import { appleTouchIconBase64, favicon16Base64, favicon32Base64 } from "../generated/favicons"
 
 interface R2ObjectBody {
   readonly body: ReadableStream | null
@@ -24,6 +25,10 @@ type ViewerEnv = {
 
 const cookieMaxAgeSeconds = 60 * 60 * 24
 const assetCacheControl = "public, max-age=31536000, immutable"
+
+const faviconLinks = `<link rel="icon" type="image/png" sizes="32x32" href="/_assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/_assets/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/_assets/apple-touch-icon.png">`
 
 const repositoryLayer = (env: ViewerEnv) =>
   VideoRepository.layerNoDeps.pipe(Layer.provide(D1Client.layer({ db: env.DB })))
@@ -168,6 +173,7 @@ const passwordPage = (slug: string, title: string, errorMessage?: string) =>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(title)}</title>
+    ${faviconLinks}
     <style>
       :root { color-scheme: dark; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0a0a0f; color: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -196,6 +202,16 @@ const passwordPage = (slug: string, title: string, errorMessage?: string) =>
 
 const assetResponse = (body: string, contentType: string) =>
   new Response(body, {
+    headers: {
+      "content-type": contentType,
+      "cache-control": assetCacheControl,
+    },
+  })
+
+const base64ToBytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+
+const binaryAssetResponse = (base64: string, contentType: string) =>
+  new Response(base64ToBytes(base64), {
     headers: {
       "content-type": contentType,
       "cache-control": assetCacheControl,
@@ -250,6 +266,7 @@ const viewerPage = (origin: string, slug: string, video: Video, chapters: Readon
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(video.title)}</title>
+    ${faviconLinks}
     ${ogTags(origin, slug, video)}
     <link rel="stylesheet" href="/_assets/player.css">
     <style>
@@ -305,6 +322,7 @@ const homePage = `<!doctype html>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VideoShare Viewer</title>
+    ${faviconLinks}
     <style>
       :root { color-scheme: dark; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #09090f; color: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -369,6 +387,18 @@ export default {
 
     if (pathname === "/_assets/player.css") {
       return assetResponse(playerCss, "text/css; charset=utf-8")
+    }
+
+    if (pathname === "/_assets/favicon-32x32.png") {
+      return binaryAssetResponse(favicon32Base64, "image/png")
+    }
+
+    if (pathname === "/_assets/favicon-16x16.png") {
+      return binaryAssetResponse(favicon16Base64, "image/png")
+    }
+
+    if (pathname === "/_assets/apple-touch-icon.png") {
+      return binaryAssetResponse(appleTouchIconBase64, "image/png")
     }
 
     if (pathname === "/") {
