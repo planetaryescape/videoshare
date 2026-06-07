@@ -9,22 +9,33 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {
-    const bucket = yield* Cloudflare.R2Bucket("VideoBucket");
+    const viewerHost = "video.planetaryescape.co.za";
+
+    const bucket = yield* Cloudflare.R2Bucket("VideoBucket", {
+      domains: [{ name: viewerHost }],
+    });
+
     const db = yield* Cloudflare.D1Database("VideoDatabase", {
       migrationsDir: "./packages/shared/migrations",
       importFiles: ["./packages/shared/seed/0001_demo_video.sql"],
     });
+
     const viewer = yield* Cloudflare.Worker("ViewerWorker", {
       main: "./apps/viewer/src/worker.ts",
+      domain: viewerHost,
+      compatibility: { date: "2025-01-01", flags: ["nodejs_compat"] },
       env: {
         DB: db,
         BUCKET: bucket,
+        MEDIA_BASE_URL: `https://${viewerHost}`,
       },
     });
 
     return {
       bucketName: bucket.bucketName,
       databaseName: db.databaseName,
+      viewerHost,
+      viewerUrl: viewer.url,
       viewerDomains: viewer.domains,
     };
   }),
