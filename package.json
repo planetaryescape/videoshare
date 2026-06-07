@@ -1,0 +1,25 @@
+{
+  "name": "videoshare",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@effect/platform-bun": ">=4.0.0-beta.78 || >=4.0.0",
+    "@effect/platform-node": ">=4.0.0-beta.78 || >=4.0.0",
+    "alchemy": "^2.0.0-beta.52",
+    "effect": ">=4.0.0-beta.78 || >=4.0.0"
+  }
+}
