@@ -14,6 +14,7 @@ interface VideoRow {
   readonly password_hash: string | null
   readonly created_at: number
   readonly published_at: number | null
+  readonly updated_at: number | null
 }
 
 interface ChapterRow {
@@ -35,7 +36,8 @@ const toVideo = (row: VideoRow): Video =>
     durationSec: row.duration_sec,
     passwordHash: row.password_hash,
     createdAt: row.created_at,
-    publishedAt: row.published_at
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at
   })
 
 const toChapter = (row: ChapterRow): Chapter =>
@@ -93,8 +95,8 @@ export class VideoRepository extends Context.Service<VideoRepository, {
             return yield* new SlugAlreadyExistsError({ slug: video.slug })
           }
           yield* sql`
-            INSERT INTO videos (id, slug, title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at)
-            VALUES (${video.id}, ${video.slug}, ${video.title}, ${video.description}, ${video.posterKey}, ${video.hlsKey}, ${video.durationSec}, ${video.passwordHash}, ${video.createdAt}, ${video.publishedAt})
+            INSERT INTO videos (id, slug, title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at, updated_at)
+            VALUES (${video.id}, ${video.slug}, ${video.title}, ${video.description}, ${video.posterKey}, ${video.hlsKey}, ${video.durationSec}, ${video.passwordHash}, ${video.createdAt}, ${video.publishedAt}, ${video.updatedAt})
           `
           return video
         }, fail("create"))
@@ -109,7 +111,8 @@ export class VideoRepository extends Context.Service<VideoRepository, {
               hls_key = ${video.hlsKey},
               duration_sec = ${video.durationSec},
               password_hash = ${video.passwordHash},
-              published_at = ${video.publishedAt}
+              published_at = ${video.publishedAt},
+              updated_at = ${video.updatedAt}
             WHERE id = ${video.id}
           `
           return video

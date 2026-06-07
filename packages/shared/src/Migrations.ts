@@ -32,4 +32,10 @@ export const migrate = Effect.gen(function*() {
   `
 
   yield* sql`CREATE INDEX IF NOT EXISTS idx_chapters_video ON chapters (video_id)`
+
+  const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(videos)`
+  if (!columns.some((column) => column.name === "updated_at")) {
+    yield* sql`ALTER TABLE videos ADD COLUMN updated_at INTEGER`
+    yield* sql`UPDATE videos SET updated_at = created_at WHERE updated_at IS NULL`
+  }
 })

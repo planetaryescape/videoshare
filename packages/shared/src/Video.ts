@@ -30,5 +30,6 @@ export class Video extends Schema.Class<Video>("Video")({
   durationSec: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
   passwordHash: Schema.NullOr(Schema.String),
   createdAt: Schema.Number,
-  publishedAt: Schema.NullOr(Schema.Number)
+  publishedAt: Schema.NullOr(Schema.Number),
+  updatedAt: Schema.NullOr(Schema.Number)
 }) {}

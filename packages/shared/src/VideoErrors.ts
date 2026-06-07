@@ -45,12 +45,22 @@ export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>(
   }
 }
 
+export class ProdSyncError extends Schema.TaggedErrorClass<ProdSyncError>()(
+  "ProdSyncError",
+  { operation: Schema.String, cause: Schema.Defect() }
+) {
+  override get message(): string {
+    return `Production sync failed during ${this.operation}`
+  }
+}
+
 export const errorStatus: Record<string, number> = {
   VideoNotFoundError: 404,
   PasswordRequiredError: 401,
   IncorrectPasswordError: 403,
   SlugAlreadyExistsError: 409,
-  PersistenceError: 500
+  PersistenceError: 500,
+  ProdSyncError: 502
 }
 
 export const statusForError = (error: { readonly _tag: string }): number =>
