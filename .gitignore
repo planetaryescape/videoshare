@@ -37,6 +37,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .alchemy
 
 # Local admin data + media
+*.db
+*.db-*
 *.sqlite
 *.sqlite-*
 media

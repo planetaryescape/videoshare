@@ -13,6 +13,8 @@ Vertical slices, ship-fast order. Each slice should be runnable/verifiable befor
       Deployed and live at `https://video.planetaryescape.co.za`. Worker owns the custom domain; R2 bucket stays private. Media is proxied through the Worker, so the password gate covers both the page and media requests. One seeded video from `demo.mov`, Vidstack player with poster and chapter tracks. Player assets bundled same-origin.
 - [ ] **4. Admin**
       foldkit frontend + local Bun server. `@effect/sql-sqlite-bun` for local DB. Upload mp4 → ffmpeg HLS transcode → set title/chapters/poster/password → publish (upload to R2 + write row to D1).
+      Scaffolded: `apps/admin/server.ts` (Bun REST API on 3001), `apps/admin/src/` (foldkit app with Vite dev server on 5173). Local SQLite with shared schema. API: list/create/upload/publish/delete videos. Foldkit UI with list/edit screens. Typechecks clean.
+      Remaining: connect the publish endpoint to real D1/R2, wire the file upload form fully, add chapter editing, add poster preview.
 - [ ] **5. Player polish**
       Chapters, poster, keyboard shortcuts, custom skin. Make it genuinely nice.
 

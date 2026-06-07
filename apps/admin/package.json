@@ -1,0 +1,23 @@
+{
+  "name": "@videoshare/admin",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "bun --hot ./server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/sql-sqlite-bun": "4.0.0-beta.78",
+    "@videoshare/shared": "workspace:*",
+    "effect": ">=4.0.0-beta.78 || >=4.0.0",
+    "foldkit": "^0.106.0",
+    "tailwindcss": "^4"
+  },
+  "devDependencies": {
+    "@foldkit/vite-plugin": "^0.8.0",
+    "@tailwindcss/vite": "^4",
+    "typescript": "^5",
+    "vite": "^8"
+  }
+}
