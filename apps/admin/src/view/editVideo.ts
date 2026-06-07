@@ -1,6 +1,13 @@
 import { Option } from 'effect'
 import { html } from 'foldkit/html'
-import { formatDate, formatDuration, shareUrl, type Model } from '../model'
+import {
+  formatDate,
+  formatDuration,
+  hasUnpublishedChanges,
+  isPublished,
+  shareUrl,
+  type Model,
+} from '../model'
 import {
   BlurredChapterField,
   BlurredEditField,
@@ -24,6 +31,7 @@ const stageLabel = (stage: string, pct: number): string => {
   if (stage === 'uploading') return 'Uploading file...'
   if (stage === 'transcoding') return `Transcoding ${pct}%`
   if (stage === 'poster') return 'Generating poster...'
+  if (stage === 'uploading-media') return 'Uploading to R2...'
   if (stage === 'done') return 'Done'
   return 'Working...'
 }
@@ -215,26 +223,49 @@ export const editVideoView = (h: Html, model: Model) => {
         : []),
       ...(video?.hlsKey
         ? [
-          h.div([h.Class('flex gap-3')], [
-            h.button(
-              [
-                h.Class(
-                  'rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+          h.div([h.Class('space-y-3')], [
+            ...(isPublished(video) && hasUnpublishedChanges(video)
+              ? [
+                h.div(
+                  [
+                    h.Class(
+                      'flex items-center gap-2 rounded-lg bg-amber-900/40 border border-amber-700/60 px-3 py-2 text-sm text-amber-200',
+                    ),
+                  ],
+                  [
+                    h.span([h.Class('text-amber-400')], ['●']),
+                    'Local changes are not live yet. Republish to update.',
+                  ],
                 ),
-                h.Disabled(model.isPublishing || !!video.publishedAt),
-                h.OnClick(ClickedPublish({ id: video.id })),
-              ],
-              [model.isPublishing ? 'Publishing...' : 'Publish'],
-            ),
-            h.button(
-              [
-                h.Class(
-                  'rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600 transition-colors',
-                ),
-                h.OnClick(ClickedCopyLink({ url: shareUrl(video.slug) })),
-              ],
-              [model.copiedLink ? 'Copied!' : 'Copy link'],
-            ),
+              ]
+              : []),
+            h.div([h.Class('flex gap-3')], [
+              h.button(
+                [
+                  h.Class(
+                    'rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                  ),
+                  h.Disabled(model.isPublishing),
+                  h.OnClick(ClickedPublish({ id: video.id })),
+                ],
+                [
+                  model.isPublishing
+                    ? 'Publishing...'
+                    : isPublished(video)
+                    ? 'Republish'
+                    : 'Publish',
+                ],
+              ),
+              h.button(
+                [
+                  h.Class(
+                    'rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600 transition-colors',
+                  ),
+                  h.OnClick(ClickedCopyLink({ url: shareUrl(video.slug) })),
+                ],
+                [model.copiedLink ? 'Copied!' : 'Copy link'],
+              ),
+            ]),
           ]),
         ]
         : []),

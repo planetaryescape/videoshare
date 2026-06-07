@@ -10,6 +10,7 @@ export type Video = {
   readonly durationSec: number
   readonly createdAt: number
   readonly publishedAt: number | null
+  readonly updatedAt: number | null
 }
 
 export const VideoSchema = S.Struct({
@@ -22,6 +23,7 @@ export const VideoSchema = S.Struct({
   durationSec: S.Number,
   createdAt: S.Number,
   publishedAt: S.NullOr(S.Number),
+  updatedAt: S.NullOr(S.Number),
 })
 
 export type Chapter = {
@@ -104,3 +106,12 @@ export const formatDuration = (sec: number): string => {
 }
 
 export const formatDate = (ts: number): string => new Date(ts).toLocaleDateString()
+
+export const isPublished = (video: Video): boolean => video.publishedAt !== null
+
+export const hasUnpublishedChanges = (video: Video): boolean => {
+  if (video.updatedAt === null) {
+    return false
+  }
+  return video.publishedAt === null || video.updatedAt > video.publishedAt
+}

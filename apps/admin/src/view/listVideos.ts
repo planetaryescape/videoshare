@@ -1,6 +1,6 @@
 import { Option } from 'effect'
 import { html } from 'foldkit/html'
-import { formatDate, formatDuration, type Model, type Video } from '../model'
+import { formatDate, formatDuration, hasUnpublishedChanges, type Model, type Video } from '../model'
 import {
   ClickedDeleteVideo,
   ClickedEditVideo,
@@ -21,10 +21,15 @@ const renderRow = (h: Html, video: Video) =>
       h.td([h.Class('px-4 py-3 text-gray-400 font-mono text-xs')], [video.slug]),
       h.td([h.Class('px-4 py-3')], [
         video.publishedAt
-          ? h.span(
-            [h.Class('rounded-full bg-green-900/50 px-2 py-0.5 text-xs font-medium text-green-300')],
-            ['Live'],
-          )
+          ? hasUnpublishedChanges(video)
+            ? h.span(
+              [h.Class('rounded-full bg-amber-900/50 px-2 py-0.5 text-xs font-medium text-amber-300')],
+              ['Changes pending'],
+            )
+            : h.span(
+              [h.Class('rounded-full bg-green-900/50 px-2 py-0.5 text-xs font-medium text-green-300')],
+              ['Live'],
+            )
           : h.span(
             [h.Class('rounded-full bg-yellow-900/50 px-2 py-0.5 text-xs font-medium text-yellow-300')],
             ['Draft'],
