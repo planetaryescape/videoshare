@@ -48,10 +48,12 @@ const toChapter = (row: ChapterRow): Chapter =>
   })
 
 export class VideoRepository extends Context.Service<VideoRepository, {
+  findById(id: VideoId): Effect.Effect<Option.Option<Video>, PersistenceError>
   findBySlug(slug: string): Effect.Effect<Option.Option<Video>, PersistenceError>
   list(): Effect.Effect<ReadonlyArray<Video>, PersistenceError>
   create(video: Video): Effect.Effect<Video, PersistenceError | SlugAlreadyExistsError>
   update(video: Video): Effect.Effect<Video, PersistenceError>
+  delete(id: VideoId): Effect.Effect<void, PersistenceError>
   listChapters(videoId: VideoId): Effect.Effect<ReadonlyArray<Chapter>, PersistenceError>
   replaceChapters(
     videoId: VideoId,
@@ -68,6 +70,11 @@ export class VideoRepository extends Context.Service<VideoRepository, {
           Effect.mapError(
             (cause: unknown) => new PersistenceError({ operation, cause })
           )
+
+        const findById = Effect.fn("VideoRepository.findById")(function*(id: VideoId) {
+          const rows = yield* sql<VideoRow>`SELECT * FROM videos WHERE id = ${id}`
+          return Array.head(rows).pipe(Option.map(toVideo))
+        }, fail("findById"))
 
         const findBySlug = Effect.fn("VideoRepository.findBySlug")(function*(slug: string) {
           const rows = yield* sql<VideoRow>`SELECT * FROM videos WHERE slug = ${slug}`
@@ -108,6 +115,11 @@ export class VideoRepository extends Context.Service<VideoRepository, {
           return video
         }, fail("update"))
 
+        const del = Effect.fn("VideoRepository.delete")(function*(id: VideoId) {
+          yield* sql`DELETE FROM chapters WHERE video_id = ${id}`
+          yield* sql`DELETE FROM videos WHERE id = ${id}`
+        }, fail("delete"))
+
         const listChapters = Effect.fn("VideoRepository.listChapters")(function*(videoId: VideoId) {
           const rows =
             yield* sql<ChapterRow>`SELECT * FROM chapters WHERE video_id = ${videoId} ORDER BY sort_order ASC`
@@ -128,10 +140,12 @@ export class VideoRepository extends Context.Service<VideoRepository, {
         }, fail("replaceChapters"))
 
         return VideoRepository.of({
+          findById,
           findBySlug,
           list,
           create,
           update,
+          delete: del,
           listChapters,
           replaceChapters
         })
