@@ -202,7 +202,41 @@ const assetResponse = (body: string, contentType: string) =>
     },
   })
 
-const viewerPage = (slug: string, video: Video, chapters: ReadonlyArray<Chapter>) => {
+const absoluteUrl = (origin: string, value: string | null) => {
+  if (!value) {
+    return null
+  }
+  if (isAbsoluteUrl(value)) {
+    return value
+  }
+  return `${origin}${value.startsWith("/") ? value : `/${value}`}`
+}
+
+const ogTags = (origin: string, slug: string, video: Video) => {
+  const pageUrl = `${origin}${mediaPrefix(slug).replace(/\/$/, "")}`
+  const imageUrl = absoluteUrl(origin, resolveMediaUrl(slug, video.posterKey))
+  const description = video.description ?? ""
+  const tags = [
+    `<meta property="og:type" content="video.other">`,
+    `<meta property="og:title" content="${escapeHtml(video.title)}">`,
+    `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
+    `<meta property="og:site_name" content="VideoShare">`,
+    `<meta name="twitter:card" content="${imageUrl ? "summary_large_image" : "summary"}">`,
+    `<meta name="twitter:title" content="${escapeHtml(video.title)}">`,
+  ]
+  if (description) {
+    tags.push(`<meta property="og:description" content="${escapeHtml(description)}">`)
+    tags.push(`<meta name="twitter:description" content="${escapeHtml(description)}">`)
+    tags.push(`<meta name="description" content="${escapeHtml(description)}">`)
+  }
+  if (imageUrl) {
+    tags.push(`<meta property="og:image" content="${escapeHtml(imageUrl)}">`)
+    tags.push(`<meta name="twitter:image" content="${escapeHtml(imageUrl)}">`)
+  }
+  return tags.join("\n    ")
+}
+
+const viewerPage = (origin: string, slug: string, video: Video, chapters: ReadonlyArray<Chapter>) => {
   const chaptersTrack = chaptersTrackFor(chapters)
   const posterUrl = resolveMediaUrl(slug, video.posterKey)
   const manifestUrl = resolveMediaUrl(slug, video.hlsKey)
@@ -216,6 +250,7 @@ const viewerPage = (slug: string, video: Video, chapters: ReadonlyArray<Chapter>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(video.title)}</title>
+    ${ogTags(origin, slug, video)}
     <link rel="stylesheet" href="/_assets/player.css">
     <style>
       :root { color-scheme: dark; }
@@ -395,7 +430,7 @@ export default {
         }
       }
 
-      return new Response(viewerPage(slug, video, chapters), {
+      return new Response(viewerPage(url.origin, slug, video, chapters), {
         headers: { "content-type": "text/html; charset=utf-8" },
       })
     } catch {
