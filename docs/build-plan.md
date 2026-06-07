@@ -30,23 +30,21 @@ Two separate processes, both in `apps/admin/`:
 
 **`server.ts`** - Bun REST API on port 3001
 - Local SQLite via `@effect/sql-sqlite-bun` using shared schema migrations
-- Endpoints: `GET/POST /api/videos`, `GET /api/videos/:id`, `POST /api/upload` (MP4 + ffmpeg HLS transcode), `POST /api/publish/:id`, `DELETE /api/videos/:id`
+- Endpoints: `GET/POST /api/videos`, `GET/PUT/DELETE /api/videos/:id`, `POST /api/upload` (MP4 + ffmpeg HLS transcode), `POST /api/publish/:id`, `GET /media/*` (serves transcoded HLS + poster)
 - CORS enabled for Vite dev server
-- Run: `bun run dev:admin:server`
 
 **`src/`** - Foldkit frontend on Vite port 5173
 - Elm-architecture app (Model, Message, update, view) using foldkit + Effect
 - Two screens: list view (table of local videos) and edit view (title/description/upload/publish)
 - All HTTP calls proxied to the Bun server via Vite proxy config
 - Tailwind v4 dark theme
-- Run: `bun run dev:admin:client`
 
 **Local-first design:**
 - All state lives in local SQLite first (drafts, edits)
 - Publishing pushes to cloud (R2 media + D1 metadata) as an explicit action
 - The app works fully offline for drafting
 
-**Run full stack:** `bun run dev:admin` (starts both server and client)
+**Run full stack:** `bun run dev:admin` (`apps/admin/dev.ts` spawns both server + vite client, Ctrl-C kills both)
 
 **Remaining work:**
 - Connect publish endpoint to real R2 upload + D1 write (currently sets `publishedAt` locally only)
