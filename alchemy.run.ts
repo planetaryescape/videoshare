@@ -22,7 +22,6 @@ export default Alchemy.Stack(
 
     const viewer = yield* Cloudflare.Worker("ViewerWorker", {
       main: "./apps/viewer/src/worker.ts",
-      domain: viewerHost,
       compatibility: { date: "2025-01-01", flags: ["nodejs_compat"] },
       env: {
         DB: db,
@@ -35,7 +34,6 @@ export default Alchemy.Stack(
       bucketName: bucket.bucketName,
       databaseName: db.databaseName,
       viewerHost,
-      viewerUrl: viewer.url,
       viewerDomains: viewer.domains,
     };
   }),
