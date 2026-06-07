@@ -144,6 +144,7 @@ const abrVariant = (sourceWidth: number, sourceHeight: number, height: number): 
   codec: "avc",
   width: Math.max(2, Math.round((sourceWidth * height) / sourceHeight / 2) * 2),
   height,
+  fit: "contain",
   frameRate: 30,
   bitrate: QUALITY_HIGH,
   keyFrameInterval: 2,
