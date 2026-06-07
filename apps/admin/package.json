@@ -9,9 +9,11 @@
   },
   "dependencies": {
     "@effect/sql-sqlite-bun": "4.0.0-beta.78",
+    "@mediabunny/server": "^1.46.0",
     "@videoshare/shared": "workspace:*",
     "effect": ">=4.0.0-beta.78 || >=4.0.0",
     "foldkit": "^0.106.0",
+    "mediabunny": "^1.46.0",
     "tailwindcss": "^4"
   },
   "devDependencies": {

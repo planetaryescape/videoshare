@@ -4,20 +4,35 @@ import { Chapter, ChapterId, Video, VideoId } from "@videoshare/shared/Video"
 import { generateSlug } from "@videoshare/shared/Slug"
 import { migrate } from "@videoshare/shared/Migrations"
 import { errorStatus, VideoNotFoundError } from "@videoshare/shared/VideoErrors"
-import type { PersistenceError, SlugAlreadyExistsError } from "@videoshare/shared/VideoErrors"
+import type { PersistenceError, ProdSyncError, SlugAlreadyExistsError } from "@videoshare/shared/VideoErrors"
 import { Cause, Effect, Option } from "effect"
 import { SqlClient } from "effect/unstable/sql"
+import { registerMediabunnyServer } from "@mediabunny/server"
+import type { ConversionVideoOptions, VideoSample } from "mediabunny"
+import {
+  ALL_FORMATS,
+  BlobSource,
+  Conversion,
+  FilePathTarget,
+  HlsOutputFormat,
+  Input,
+  MpegTsOutputFormat,
+  Output,
+  PathedTarget,
+  QUALITY_HIGH,
+  VideoSampleSink,
+} from "mediabunny"
 import { mkdir, rm } from "node:fs/promises"
 import { existsSync } from "node:fs"
-import type { ServerWebSocket } from "bun"
-import { pushToProd } from "./src/prod"
+import type { BunRequest, ServerWebSocket } from "bun"
+import { mediaExists, syncMetadata, uploadMedia } from "./src/prod"
 
 const dbFilename = "./videoshare-admin.db"
 const hlsOutputDir = "./videoshare-hls-output"
-const tempDir = "./tmp"
 
-if (!existsSync(tempDir)) await mkdir(tempDir, { recursive: true })
 if (!existsSync(hlsOutputDir)) await mkdir(hlsOutputDir, { recursive: true })
+
+registerMediabunnyServer()
 
 const sqlLayer = SqliteClient.layer({ filename: dbFilename })
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)))
@@ -37,103 +52,164 @@ const emitProgress = (videoId: string, payload: { stage: string; pct: number }) 
   for (const ws of sockets) ws.send(frame)
 }
 
-const probeDuration = async (path: string): Promise<number> => {
-  const out = await Bun.$`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 ${path}`.text()
-  return parseFloat(out.trim())
+const abrRungs = [1080, 720, 480] as const
+const fallbackAbrHeight = 480
+
+const selectAbrHeights = (sourceHeight: number): ReadonlyArray<number> => {
+  const selected = abrRungs.filter((height) => height <= sourceHeight)
+  return selected.length > 0 ? selected : [fallbackAbrHeight]
 }
 
-const runFfmpegWithProgress = async (
-  args: string[],
-  cwd: string,
-  totalSec: number,
-  onPct: (pct: number) => void,
-): Promise<void> => {
-  const proc = Bun.spawn(["ffmpeg", "-progress", "pipe:1", "-nostats", ...args], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
+const toBmp = async (sample: VideoSample) => {
+  const width = sample.displayWidth
+  const height = sample.displayHeight
+  const rgba = new Uint8Array(sample.allocationSize({ format: "RGBA" }))
+  await sample.copyTo(rgba, { format: "RGBA" })
 
-  const reader = proc.stdout.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split("\n")
-    buffer = lines.pop() ?? ""
-    for (const line of lines) {
-      const [key, raw] = line.split("=")
-      if (key === "out_time_us" && totalSec > 0) {
-        const sec = Number(raw) / 1_000_000
-        onPct(Math.min(99, Math.round((sec / totalSec) * 100)))
-      }
+  const rowBytes = width * 3
+  const paddedRowBytes = Math.ceil(rowBytes / 4) * 4
+  const pixelBytes = paddedRowBytes * height
+  const fileSize = 54 + pixelBytes
+  const buffer = new ArrayBuffer(fileSize)
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+
+  bytes[0] = 0x42
+  bytes[1] = 0x4d
+  view.setUint32(2, fileSize, true)
+  view.setUint32(10, 54, true)
+  view.setUint32(14, 40, true)
+  view.setInt32(18, width, true)
+  view.setInt32(22, height, true)
+  view.setUint16(26, 1, true)
+  view.setUint16(28, 24, true)
+  view.setUint32(34, pixelBytes, true)
+
+  for (let y = 0; y < height; y += 1) {
+    const srcRow = y * width * 4
+    const dstRow = 54 + (height - y - 1) * paddedRowBytes
+    for (let x = 0; x < width; x += 1) {
+      const src = srcRow + x * 4
+      const dst = dstRow + x * 3
+      bytes[dst] = rgba[src + 2] ?? 0
+      bytes[dst + 1] = rgba[src + 1] ?? 0
+      bytes[dst + 2] = rgba[src] ?? 0
     }
   }
 
-  if ((await proc.exited) !== 0) {
-    const stderr = await new Response(proc.stderr).text()
-    throw new Error(`ffmpeg failed: ${stderr}`)
+  return bytes
+}
+
+const writePoster = async (file: File, outputPath: string): Promise<void> => {
+  const input = new Input({
+    formats: ALL_FORMATS,
+    source: new BlobSource(file),
+  })
+
+  try {
+    const videoTrack = await input.getPrimaryVideoTrack()
+    if (!videoTrack) {
+      throw new Error("Uploaded file has no video track")
+    }
+
+    const sink = new VideoSampleSink(videoTrack)
+    const start = await videoTrack.getFirstTimestamp()
+    const duration = await videoTrack.computeDuration()
+    const preferred = duration > start ? Math.min(start + 1, duration) : start
+    const sample = (await sink.getSample(preferred)) ?? (await sink.getSample(start))
+    if (!sample) {
+      throw new Error("Could not decode poster frame")
+    }
+
+    const frame = await sample.transform({
+      width: Math.min(1280, sample.displayWidth),
+      roundDimensionsTo: 2,
+      alpha: "discard",
+    })
+
+    try {
+      const bmp = await toBmp(frame)
+      const jpeg = await new Bun.Image(bmp).jpeg({ quality: 85, progressive: true }).bytes()
+      await Bun.write(outputPath, jpeg)
+    } finally {
+      frame.close()
+      sample.close()
+    }
+  } finally {
+    input.dispose()
   }
 }
 
+const abrVariant = (sourceWidth: number, sourceHeight: number, height: number): ConversionVideoOptions => ({
+  codec: "avc",
+  width: Math.max(2, Math.round((sourceWidth * height) / sourceHeight / 2) * 2),
+  height,
+  frameRate: 30,
+  bitrate: QUALITY_HIGH,
+  keyFrameInterval: 2,
+  alpha: "discard",
+})
+
 const transcode = async (videoId: string, file: File): Promise<number> => {
-  const tempPath = `${process.cwd()}/${tempDir}/${videoId}.mp4`
-  await Bun.write(tempPath, file)
-
   const outputDir = `${hlsOutputDir}/${videoId}`
-  if (!existsSync(outputDir)) {
-    await mkdir(outputDir, { recursive: true })
+  await rm(outputDir, { recursive: true, force: true })
+  await mkdir(outputDir, { recursive: true })
+
+  const input = new Input({
+    formats: ALL_FORMATS,
+    source: new BlobSource(file),
+  })
+
+  try {
+    const duration = await input.computeDuration()
+    const output = new Output({
+      format: new HlsOutputFormat({
+        segmentFormat: new MpegTsOutputFormat(),
+        targetDuration: 6,
+      }),
+      target: new PathedTarget("master.m3u8", ({ path }) => new FilePathTarget(`${outputDir}/${path}`)),
+    })
+
+    const conversion = await Conversion.init({
+      input,
+      output,
+      tracks: "primary",
+      video: async (track) => {
+        const sourceWidth = await track.getDisplayWidth()
+        const sourceHeight = await track.getDisplayHeight()
+        return selectAbrHeights(sourceHeight).map((height) => abrVariant(sourceWidth, sourceHeight, height))
+      },
+      audio: {
+        codec: "aac",
+        bitrate: 128_000,
+        numberOfChannels: 2,
+        sampleRate: 48_000,
+      },
+    })
+
+    if (!conversion.isValid) {
+      const reasons = conversion.discardedTracks
+        .map((discarded) => `${discarded.track.type}:${discarded.reason}`)
+        .join(", ")
+      throw new Error(
+        reasons.length > 0 ? `Mediabunny conversion is invalid: ${reasons}` : "Mediabunny conversion is invalid",
+      )
+    }
+
+    emitProgress(videoId, { stage: "transcoding", pct: 0 })
+    conversion.onProgress = (progress) => {
+      emitProgress(videoId, { stage: "transcoding", pct: Math.min(98, Math.round(progress * 98)) })
+    }
+    await conversion.execute()
+
+    emitProgress(videoId, { stage: "poster", pct: 99 })
+    await writePoster(file, `${outputDir}/poster.jpg`)
+
+    emitProgress(videoId, { stage: "done", pct: 100 })
+    return Number.isFinite(duration) ? duration : 0
+  } finally {
+    input.dispose()
   }
-
-  const duration = await probeDuration(tempPath)
-  emitProgress(videoId, { stage: "transcoding", pct: 0 })
-
-  await runFfmpegWithProgress([
-    "-i", tempPath,
-    "-vf", "fps=30,scale=min(1920\\,iw):-2:force_original_aspect_ratio=decrease,format=yuv420p",
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "21",
-    "-profile:v", "high",
-    "-level", "4.1",
-    "-g", "60",
-    "-keyint_min", "60",
-    "-sc_threshold", "0",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-ac", "2",
-    "-ar", "48000",
-    "-f", "hls",
-    "-hls_time", "6",
-    "-hls_playlist_type", "vod",
-    "-hls_flags", "independent_segments",
-    "output.m3u8",
-  ], outputDir, duration, (pct) => emitProgress(videoId, { stage: "transcoding", pct }))
-
-  emitProgress(videoId, { stage: "poster", pct: 99 })
-
-  const procPoster = Bun.spawn([
-    "ffmpeg",
-    "-i", tempPath,
-    "-ss", "1",
-    "-vf", "scale=min(1920\\,iw):-2:force_original_aspect_ratio=decrease,format=yuv420p",
-    "-frames:v", "1",
-    "poster.jpg",
-  ], { cwd: outputDir })
-
-  if ((await procPoster.exited) !== 0) {
-    const stderr = await new Response(procPoster.stderr).text()
-    throw new Error(`Poster extraction failed: ${stderr}`)
-  }
-
-  if (existsSync(tempPath)) {
-    await rm(tempPath)
-  }
-
-  emitProgress(videoId, { stage: "done", pct: 100 })
-  return isNaN(duration) ? 0 : duration
 }
 
 const json = (data: unknown, status = 200) =>
@@ -142,7 +218,7 @@ const json = (data: unknown, status = 200) =>
     headers: { "content-type": "application/json", ...corsHeaders },
   })
 
-type RouteError = PersistenceError | SlugAlreadyExistsError | VideoNotFoundError
+type RouteError = PersistenceError | SlugAlreadyExistsError | VideoNotFoundError | ProdSyncError
 
 const failureResponse = (tag: keyof typeof errorStatus, message: string) =>
   Effect.succeed(json({ error: message }, errorStatus[tag] ?? 500))
@@ -155,6 +231,7 @@ const runRoute = (
       PersistenceError: (e) => failureResponse("PersistenceError", e.message),
       SlugAlreadyExistsError: (e) => failureResponse("SlugAlreadyExistsError", e.message),
       VideoNotFoundError: (e) => failureResponse("VideoNotFoundError", e.message),
+      ProdSyncError: (e) => failureResponse("ProdSyncError", e.message),
     }),
     Effect.catchCause((cause) =>
       Effect.sync(() => {
@@ -167,7 +244,7 @@ const runRoute = (
     Effect.runPromise
   )
 
-Bun.serve({
+Bun.serve<{ videoId: string }>({
   port: 3001,
   maxRequestBodySize: 1024 * 1024 * 1024 * 5,
   routes: {
@@ -180,7 +257,7 @@ Bun.serve({
             return json(yield* repo.list())
           })
         ),
-      POST: (req) =>
+      POST: (req: BunRequest<"/api/videos">) =>
         runRoute(
           Effect.gen(function*() {
             const repo = yield* VideoRepository
@@ -198,6 +275,7 @@ Bun.serve({
               passwordHash: null,
               createdAt: Date.now(),
               publishedAt: null,
+              updatedAt: null,
             })
             return json(yield* repo.create(video), 201)
           })
@@ -205,7 +283,7 @@ Bun.serve({
     },
     "/api/videos/:id": {
       OPTIONS: () => new Response(null, { headers: corsHeaders }),
-      GET: (req) =>
+      GET: (req: BunRequest<"/api/videos/:id">) =>
         runRoute(
           Effect.gen(function*() {
             const repo = yield* VideoRepository
@@ -217,7 +295,7 @@ Bun.serve({
             return json({ video: video.value, chapters })
           })
         ),
-      PUT: (req) =>
+      PUT: (req: BunRequest<"/api/videos/:id">) =>
         runRoute(
           Effect.gen(function*() {
             const repo = yield* VideoRepository
@@ -237,6 +315,7 @@ Bun.serve({
               ...found.value,
               title: body.title ?? found.value.title,
               description: body.description ?? found.value.description,
+              updatedAt: Date.now(),
             })
             const video = yield* repo.update(updated)
 
@@ -257,7 +336,7 @@ Bun.serve({
             return json({ video, chapters })
           })
         ),
-      DELETE: (req) =>
+      DELETE: (req: BunRequest<"/api/videos/:id">) =>
         runRoute(
           Effect.gen(function*() {
             const id = req.params.id
@@ -275,11 +354,11 @@ Bun.serve({
     },
     "/api/upload": {
       OPTIONS: () => new Response(null, { headers: corsHeaders }),
-      POST: (req) =>
+      POST: (req: BunRequest<"/api/upload">) =>
         runRoute(
           Effect.gen(function*() {
             const repo = yield* VideoRepository
-            const formData = yield* Effect.promise(() => req.formData())
+            const formData = yield* Effect.promise<FormData>(() => req.formData())
             const videoIdField = formData.get("videoId")
             const file = formData.get("file")
             if (typeof videoIdField !== "string" || !(file instanceof File)) {
@@ -294,11 +373,15 @@ Bun.serve({
 
             const duration = yield* Effect.promise(() => transcode(videoId, file))
 
+            emitProgress(videoId, { stage: "uploading-media", pct: 100 })
+            yield* uploadMedia(videoId, `${hlsOutputDir}/${videoId}`)
+
             const updatedVideo = new Video({
               ...found.value,
-              hlsKey: `media/${videoId}/output.m3u8`,
+              hlsKey: `media/${videoId}/master.m3u8`,
               posterKey: `media/${videoId}/poster.jpg`,
               durationSec: isNaN(duration) ? 0 : duration,
+              updatedAt: Date.now(),
             })
             return json(yield* repo.update(updatedVideo))
           })
@@ -306,7 +389,7 @@ Bun.serve({
     },
     "/api/publish/:id": {
       OPTIONS: () => new Response(null, { headers: corsHeaders }),
-      POST: (req) =>
+      POST: (req: BunRequest<"/api/publish/:id">) =>
         runRoute(
           Effect.gen(function*() {
             const repo = yield* VideoRepository
@@ -319,19 +402,23 @@ Bun.serve({
             }
             const publishedVideo = new Video({
               ...found.value,
-              publishedAt: found.value.publishedAt ?? Date.now(),
+              publishedAt: Date.now(),
             })
             const updated = yield* repo.update(publishedVideo)
             const chapters = yield* repo.listChapters(updated.id)
-            yield* Effect.promise(() =>
-              pushToProd(updated, chapters, `${hlsOutputDir}/${updated.id}`)
-            )
+
+            const hasMedia = yield* mediaExists(updated.id)
+            if (!hasMedia) {
+              yield* uploadMedia(updated.id, `${hlsOutputDir}/${updated.id}`)
+            }
+
+            yield* syncMetadata(updated, chapters)
             return json(updated)
           })
         ),
     },
     "/media/*": {
-      GET: (req) => {
+      GET: (req: BunRequest<"/media/*">) => {
         const url = new URL(req.url)
         const rel = decodeURIComponent(url.pathname.slice("/media/".length))
         if (rel.includes("..")) {
