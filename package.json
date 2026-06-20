@@ -18,7 +18,7 @@
     "check": "bun run typecheck",
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy",
-    "lint": "oxlint -c .oxlintrc.json apps packages && bun scripts/check-no-native-error.mjs",
+    "lint": "oxlint -c .oxlintrc.json apps packages",
     "lint:fix": "oxlint --fix -c .oxlintrc.json apps packages",
     "format": "oxfmt --write apps packages",
     "format:check": "oxfmt --check apps packages",

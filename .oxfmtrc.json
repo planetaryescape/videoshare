@@ -4,5 +4,6 @@
   "semiColons": "asi",
   "quoteStyle": "alwaysDouble",
   "trailingCommas": "onlyMultiLine",
-  "useBraces": "whenNotSingleLine"
+  "useBraces": "whenNotSingleLine",
+  "ignorePatterns": ["**/generated", "**/node_modules", "repos/**"]
 }

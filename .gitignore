@@ -47,3 +47,6 @@ tmp
 
 **.turbo
 **videoshare-hls-output/
+
+# vendored reference repos (development-only)
+repos/
