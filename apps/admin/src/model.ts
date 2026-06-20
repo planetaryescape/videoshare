@@ -1,17 +1,17 @@
-import { Schema as S, Option } from 'effect'
+import { Schema as S, Option } from "effect";
 
 export type Video = {
-  readonly id: string
-  readonly slug: string
-  readonly title: string
-  readonly description: string | null
-  readonly posterKey: string | null
-  readonly hlsKey: string
-  readonly durationSec: number
-  readonly createdAt: number
-  readonly publishedAt: number | null
-  readonly updatedAt: number | null
-}
+  readonly id: string;
+  readonly slug: string;
+  readonly title: string;
+  readonly description: string | null;
+  readonly posterKey: string | null;
+  readonly hlsKey: string;
+  readonly durationSec: number;
+  readonly createdAt: number;
+  readonly publishedAt: number | null;
+  readonly updatedAt: number | null;
+};
 
 export const VideoSchema = S.Struct({
   id: S.String,
@@ -24,15 +24,15 @@ export const VideoSchema = S.Struct({
   createdAt: S.Number,
   publishedAt: S.NullOr(S.Number),
   updatedAt: S.NullOr(S.Number),
-})
+});
 
 export type Chapter = {
-  readonly id: string
-  readonly videoId: string
-  readonly title: string
-  readonly startSec: number
-  readonly sortOrder: number
-}
+  readonly id: string;
+  readonly videoId: string;
+  readonly title: string;
+  readonly startSec: number;
+  readonly sortOrder: number;
+};
 
 export const ChapterSchema = S.Struct({
   id: S.String,
@@ -40,12 +40,12 @@ export const ChapterSchema = S.Struct({
   title: S.String,
   startSec: S.Number,
   sortOrder: S.Number,
-})
+});
 
 export const Model = S.Struct({
   screen: S.Union([
-    S.Struct({ _tag: S.Literal('ListVideos') }),
-    S.Struct({ _tag: S.Literal('EditVideo'), videoId: S.String }),
+    S.Struct({ _tag: S.Literal("ListVideos") }),
+    S.Struct({ _tag: S.Literal("EditVideo"), videoId: S.String }),
   ]),
   videos: S.Array(VideoSchema),
   editTitle: S.String,
@@ -59,59 +59,59 @@ export const Model = S.Struct({
   isPublishing: S.Boolean,
   copiedLink: S.Boolean,
   errorMessage: S.Option(S.String),
-})
+});
 export type Model = {
-  readonly screen: { _tag: 'ListVideos' } | { _tag: 'EditVideo'; videoId: string }
-  readonly videos: readonly Video[]
-  readonly editTitle: string
-  readonly editDescription: string
-  readonly editVideo: Option.Option<Video>
-  readonly editChapters: readonly Chapter[]
-  readonly selectedFile: File | null
-  readonly isUploading: boolean
-  readonly uploadStage: string
-  readonly uploadPct: number
-  readonly isPublishing: boolean
-  readonly copiedLink: boolean
-  readonly errorMessage: Option.Option<string>
-}
+  readonly screen: { _tag: "ListVideos" } | { _tag: "EditVideo"; videoId: string };
+  readonly videos: ReadonlyArray<Video>;
+  readonly editTitle: string;
+  readonly editDescription: string;
+  readonly editVideo: Option.Option<Video>;
+  readonly editChapters: ReadonlyArray<Chapter>;
+  readonly selectedFile: File | null;
+  readonly isUploading: boolean;
+  readonly uploadStage: string;
+  readonly uploadPct: number;
+  readonly isPublishing: boolean;
+  readonly copiedLink: boolean;
+  readonly errorMessage: Option.Option<string>;
+};
 
 export const initialModel = (): Model => ({
-  screen: { _tag: 'ListVideos' },
+  screen: { _tag: "ListVideos" },
   videos: [],
-  editTitle: '',
-  editDescription: '',
+  editTitle: "",
+  editDescription: "",
   editVideo: Option.none(),
   editChapters: [],
   selectedFile: null,
   isUploading: false,
-  uploadStage: '',
+  uploadStage: "",
   uploadPct: 0,
   isPublishing: false,
   copiedLink: false,
   errorMessage: Option.none(),
-})
+});
 
-export const VIEWER_BASE = 'https://video.planetaryescape.co.za'
+export const VIEWER_BASE = "https://video.planetaryescape.co.za";
 
-export const shareUrl = (slug: string): string => `${VIEWER_BASE}/${slug}`
+export const shareUrl = (slug: string): string => `${VIEWER_BASE}/${slug}`;
 
 export const errMsg = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error)
+  error instanceof Error ? error.message : String(error);
 
 export const formatDuration = (sec: number): string => {
-  const minutes = Math.floor(sec / 60)
-  const seconds = Math.floor(sec % 60)
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-}
+  const minutes = Math.floor(sec / 60);
+  const seconds = Math.floor(sec % 60);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+};
 
-export const formatDate = (ts: number): string => new Date(ts).toLocaleDateString()
+export const formatDate = (ts: number): string => new Date(ts).toLocaleDateString();
 
-export const isPublished = (video: Video): boolean => video.publishedAt !== null
+export const isPublished = (video: Video): boolean => video.publishedAt !== null;
 
 export const hasUnpublishedChanges = (video: Video): boolean => {
   if (video.updatedAt === null) {
-    return false
+    return false;
   }
-  return video.publishedAt === null || video.updatedAt > video.publishedAt
-}
+  return video.publishedAt === null || video.updatedAt > video.publishedAt;
+};

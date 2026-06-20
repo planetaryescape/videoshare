@@ -1,7 +1,7 @@
 {
   "name": "@videoshare/viewer",
-  "type": "module",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "bun build ./src/player.entry.ts --outfile ./generated/player.js --target browser --format esm --minify && bun build ./src/player.css --outfile ./generated/player.css --target browser --minify"
   },

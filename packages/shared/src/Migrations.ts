@@ -1,8 +1,8 @@
-import { Effect } from "effect"
-import { SqlClient } from "effect/unstable/sql"
+import { Effect } from "effect";
+import { SqlClient } from "effect/unstable/sql";
 
-export const migrate = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const migrate = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
 
   yield* sql`
     CREATE TABLE IF NOT EXISTS videos (
@@ -17,9 +17,9 @@ export const migrate = Effect.gen(function*() {
       created_at INTEGER NOT NULL,
       published_at INTEGER
     )
-  `
+  `;
 
-  yield* sql`CREATE INDEX IF NOT EXISTS idx_videos_slug ON videos (slug)`
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_videos_slug ON videos (slug)`;
 
   yield* sql`
     CREATE TABLE IF NOT EXISTS chapters (
@@ -29,13 +29,13 @@ export const migrate = Effect.gen(function*() {
       start_sec REAL NOT NULL,
       sort_order INTEGER NOT NULL
     )
-  `
+  `;
 
-  yield* sql`CREATE INDEX IF NOT EXISTS idx_chapters_video ON chapters (video_id)`
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_chapters_video ON chapters (video_id)`;
 
-  const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(videos)`
+  const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(videos)`;
   if (!columns.some((column) => column.name === "updated_at")) {
-    yield* sql`ALTER TABLE videos ADD COLUMN updated_at INTEGER`
-    yield* sql`UPDATE videos SET updated_at = created_at WHERE updated_at IS NULL`
+    yield* sql`ALTER TABLE videos ADD COLUMN updated_at INTEGER`;
+    yield* sql`UPDATE videos SET updated_at = created_at WHERE updated_at IS NULL`;
   }
-})
+});

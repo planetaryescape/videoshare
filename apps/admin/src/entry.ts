@@ -1,5 +1,5 @@
-import { Runtime } from 'foldkit'
-import { Message, Model, init, subscriptions, update, view } from './main'
+import { Runtime } from "foldkit";
+import { Message, Model, init, subscriptions, update, view } from "./main";
 
 const program = Runtime.makeProgram({
   Model,
@@ -7,8 +7,8 @@ const program = Runtime.makeProgram({
   update,
   view,
   subscriptions,
-  container: document.getElementById('root'),
+  container: document.getElementById("root"),
   devTools: { Message },
-})
+});
 
-Runtime.run(program)
+Runtime.run(program);

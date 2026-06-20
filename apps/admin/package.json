@@ -1,7 +1,7 @@
 {
   "name": "@videoshare/admin",
-  "type": "module",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev:client": "vite",
     "dev:server": "bun --hot --env-file=../../.env ./server.ts",
