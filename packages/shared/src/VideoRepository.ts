@@ -3,6 +3,11 @@ import { SqlClient } from "effect/unstable/sql";
 import { Chapter, type ChapterId, Video, type VideoId } from "./Video.ts";
 import { PersistenceError, SlugAlreadyExistsError } from "./VideoErrors.ts";
 
+const wrapSqlError =
+  (operation: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, PersistenceError, R> =>
+    Effect.mapError(effect, (cause) => new PersistenceError({ operation, cause }));
+
 interface VideoRow {
   readonly id: string;
   readonly slug: string;
@@ -71,23 +76,20 @@ export class VideoRepository extends Context.Service<
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
 
-        const fail = (operation: string) =>
-          Effect.mapError((cause: unknown) => new PersistenceError({ operation, cause }));
-
         const findById = Effect.fn("VideoRepository.findById")(function* (id: VideoId) {
           const rows = yield* sql<VideoRow>`SELECT * FROM videos WHERE id = ${id}`;
           return Array.head(rows).pipe(Option.map(toVideo));
-        }, fail("findById"));
+        }, wrapSqlError("findById"));
 
         const findBySlug = Effect.fn("VideoRepository.findBySlug")(function* (slug: string) {
           const rows = yield* sql<VideoRow>`SELECT * FROM videos WHERE slug = ${slug}`;
           return Array.head(rows).pipe(Option.map(toVideo));
-        }, fail("findBySlug"));
+        }, wrapSqlError("findBySlug"));
 
         const list = Effect.fn("VideoRepository.list")(function* () {
           const rows = yield* sql<VideoRow>`SELECT * FROM videos ORDER BY created_at DESC`;
           return rows.map(toVideo);
-        }, fail("list"));
+        }, wrapSqlError("list"));
 
         const create = Effect.fn("VideoRepository.create")(function* (video: Video) {
           const existing = yield* sql<{
@@ -101,7 +103,7 @@ export class VideoRepository extends Context.Service<
             VALUES (${video.id}, ${video.slug}, ${video.title}, ${video.description}, ${video.posterKey}, ${video.hlsKey}, ${video.durationSec}, ${video.passwordHash}, ${video.createdAt}, ${video.publishedAt}, ${video.updatedAt})
           `;
           return video;
-        }, fail("create"));
+        }, wrapSqlError("create"));
 
         const update = Effect.fn("VideoRepository.update")(function* (video: Video) {
           yield* sql`
@@ -118,12 +120,12 @@ export class VideoRepository extends Context.Service<
             WHERE id = ${video.id}
           `;
           return video;
-        }, fail("update"));
+        }, wrapSqlError("update"));
 
         const del = Effect.fn("VideoRepository.delete")(function* (id: VideoId) {
           yield* sql`DELETE FROM chapters WHERE video_id = ${id}`;
           yield* sql`DELETE FROM videos WHERE id = ${id}`;
-        }, fail("delete"));
+        }, wrapSqlError("delete"));
 
         const listChapters = Effect.fn("VideoRepository.listChapters")(function* (
           videoId: VideoId,
@@ -131,7 +133,7 @@ export class VideoRepository extends Context.Service<
           const rows =
             yield* sql<ChapterRow>`SELECT * FROM chapters WHERE video_id = ${videoId} ORDER BY sort_order ASC`;
           return rows.map(toChapter);
-        }, fail("listChapters"));
+        }, wrapSqlError("listChapters"));
 
         const replaceChapters = Effect.fn("VideoRepository.replaceChapters")(function* (
           videoId: VideoId,
@@ -144,7 +146,7 @@ export class VideoRepository extends Context.Service<
               VALUES (${ch.id}, ${ch.videoId}, ${ch.title}, ${ch.startSec}, ${ch.sortOrder})
             `;
           }
-        }, fail("replaceChapters"));
+        }, wrapSqlError("replaceChapters"));
 
         return VideoRepository.of({
           findById,
