@@ -203,17 +203,6 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
                 new TranscodeError({ videoId, operation: "computeDuration", cause }),
             });
 
-            const sourceWidth = yield* Effect.tryPromise({
-              try: () => input.getPrimaryVideoTrack().then((t) => t?.getDisplayWidth() ?? 0),
-              catch: (cause) =>
-                new TranscodeError({ videoId, operation: "getDisplayWidth", cause }),
-            });
-            const sourceHeight = yield* Effect.tryPromise({
-              try: () => input.getPrimaryVideoTrack().then((t) => t?.getDisplayHeight() ?? 0),
-              catch: (cause) =>
-                new TranscodeError({ videoId, operation: "getDisplayHeight", cause }),
-            });
-
             const output = new Output({
               format: new HlsOutputFormat({
                 segmentFormat: new MpegTsOutputFormat(),
@@ -231,15 +220,19 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
                   input,
                   output,
                   tracks: "primary",
-                  video: {
-                    codec: "avc",
-                    width: Math.max(2, Math.round((sourceWidth * 480) / sourceHeight / 2) * 2),
-                    height: selectAbrHeights(sourceHeight)[0] ?? sourceHeight,
-                    fit: "contain",
-                    frameRate: 30,
-                    bitrate: QUALITY_HIGH,
-                    keyFrameInterval: 2,
-                    alpha: "discard",
+                  video: async (track) => {
+                    const sourceWidth = await track.getDisplayWidth();
+                    const sourceHeight = await track.getDisplayHeight();
+                    return selectAbrHeights(sourceHeight).map((height) => ({
+                      codec: "avc",
+                      width: Math.max(2, Math.round((sourceWidth * height) / sourceHeight / 2) * 2),
+                      height,
+                      fit: "contain",
+                      frameRate: 30,
+                      bitrate: QUALITY_HIGH,
+                      keyFrameInterval: 2,
+                      alpha: "discard",
+                    }));
                   },
                   audio: {
                     codec: "aac",
