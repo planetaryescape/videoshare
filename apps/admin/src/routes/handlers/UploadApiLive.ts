@@ -6,6 +6,7 @@ import { Video, VideoId } from "@videoshare/shared/Video";
 import { VideoNotFoundError } from "@videoshare/shared/VideoErrors";
 import { ProgressBus } from "../../services/ProgressBus.ts";
 import { Transcoder } from "../../services/Transcoder.ts";
+import { Storage } from "../../services/Storage.ts";
 import { ProdSync } from "../../prod.ts";
 import { UploadValidationError } from "../../errors/UploadErrors.ts";
 import { AdminApi } from "../AdminApi.ts";
@@ -16,6 +17,7 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
     const transcoder = yield* Transcoder;
     const progress = yield* ProgressBus;
     const prod = yield* ProdSync;
+    const storage = yield* Storage;
 
     return handlers.handleRaw("upload", ({ request }) =>
       Effect.gen(function* () {
@@ -49,7 +51,7 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
         const duration = yield* transcoder.transcode(videoId, file);
 
         yield* progress.publish({ videoId, stage: "uploading-media", pct: 100 });
-        yield* prod.uploadMedia(videoId, `./videoshare-hls-output/${videoId}`);
+        yield* prod.uploadMedia(videoId, storage.videoDir(videoId));
 
         const updated = new Video({
           ...found.value,

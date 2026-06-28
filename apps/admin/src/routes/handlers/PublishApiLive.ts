@@ -23,20 +23,18 @@ export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handler
         if (!found.value.hlsKey) {
           return yield* new NotTranscodedError({ videoId: found.value.id });
         }
+
+        const hasMedia = yield* prod.mediaExists(found.value.id);
+        if (!hasMedia) {
+          yield* prod.uploadMedia(found.value.id, storage.videoDir(found.value.id));
+        }
+        yield* prod.syncMetadata(found.value, yield* repo.listChapters(found.value.id));
+
         const publishedVideo = new Video({
           ...found.value,
           publishedAt: Date.now(),
         });
-        const updated = yield* repo.update(publishedVideo);
-        const chapters = yield* repo.listChapters(updated.id);
-
-        const hasMedia = yield* prod.mediaExists(updated.id);
-        if (!hasMedia) {
-          yield* prod.uploadMedia(updated.id, storage.videoDir(updated.id));
-        }
-
-        yield* prod.syncMetadata(updated, chapters);
-        return { video: updated, chapters };
+        return yield* repo.update(publishedVideo);
       }),
     );
   }),

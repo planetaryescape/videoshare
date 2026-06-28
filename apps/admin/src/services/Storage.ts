@@ -7,6 +7,8 @@ const liftPlatformError =
   <A, R>(effect: Effect.Effect<A, PlatformError, R>): Effect.Effect<A, StorageError, R> =>
     Effect.mapError(effect, (cause) => new StorageError({ operation, cause }));
 
+const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 export interface StorageService {
   readonly rootDir: string;
   readonly videoDir: (videoId: string) => string;
@@ -37,6 +39,28 @@ const inferContentType = (key: string): string => {
   return "application/octet-stream";
 };
 
+class PathTraversalError extends Error {
+  readonly _tag = "PathTraversalError";
+}
+
+const isUnderRoot = (path: Path.Path, root: string, resolved: string): boolean =>
+  resolved === root || resolved.startsWith(root + path.sep);
+
+const resolveSafe = (path: Path.Path, root: string, relative: string): string => {
+  const joined = path.join(root, relative);
+  const resolved = path.resolve(joined);
+  if (!isUnderRoot(path, root, resolved)) {
+    throw new PathTraversalError(`Path escapes storage root: ${relative}`);
+  }
+  return resolved;
+};
+
+const validateVideoId = (videoId: string): void => {
+  if (!VIDEO_ID_PATTERN.test(videoId)) {
+    throw new PathTraversalError(`Invalid videoId: ${videoId}`);
+  }
+};
+
 export class Storage extends Context.Service<Storage, StorageService>()("admin/Storage") {
   static readonly layer: Layer.Layer<Storage, never, FileSystem.FileSystem | Path.Path> =
     Layer.effect(
@@ -46,24 +70,44 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
         const path = yield* Path.Path;
         const root = path.resolve("./videoshare-hls-output");
 
+        const toStorageError =
+          (operation: string) =>
+          (e: unknown): StorageError =>
+            e instanceof PathTraversalError
+              ? new StorageError({ operation, cause: e })
+              : e instanceof Error
+                ? new StorageError({ operation, cause: e })
+                : new StorageError({ operation, cause: new Error(String(e)) });
+
         yield* fs
           .makeDirectory(root, { recursive: true })
           .pipe(Effect.catchCause(() => Effect.void));
 
-        const videoDir = (videoId: string) => path.join(root, videoId);
-        const mediaPath = (relative: string) => path.join(root, relative);
-
         return Storage.of({
           rootDir: root,
-          videoDir,
-          mediaPath,
+          videoDir: (videoId) => {
+            validateVideoId(videoId);
+            return path.join(root, videoId);
+          },
+          mediaPath: (relative) => resolveSafe(path, root, relative),
           ensureVideoDir: (videoId) =>
-            fs
-              .makeDirectory(videoDir(videoId), { recursive: true })
-              .pipe(Effect.asVoid, liftPlatformError("ensureVideoDir")),
+            Effect.try({
+              try: () => validateVideoId(videoId),
+              catch: toStorageError("ensureVideoDir"),
+            }).pipe(
+              Effect.flatMap(() =>
+                fs
+                  .makeDirectory(path.join(root, videoId), { recursive: true })
+                  .pipe(Effect.asVoid, liftPlatformError("ensureVideoDir")),
+              ),
+            ),
           resetVideoDir: (videoId) =>
             Effect.gen(function* () {
-              const dir = videoDir(videoId);
+              yield* Effect.try({
+                try: () => validateVideoId(videoId),
+                catch: toStorageError("resetVideoDir"),
+              });
+              const dir = path.join(root, videoId);
               yield* fs
                 .remove(dir, { recursive: true, force: true })
                 .pipe(liftPlatformError("removeVideoDir"));
@@ -72,21 +116,41 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
                 .pipe(Effect.asVoid, liftPlatformError("ensureVideoDir"));
             }),
           removeVideoDir: (videoId) =>
-            fs
-              .remove(videoDir(videoId), { recursive: true, force: true })
-              .pipe(Effect.asVoid, liftPlatformError("removeVideoDir")),
-          exists: (relative) => fs.exists(mediaPath(relative)).pipe(liftPlatformError("exists")),
+            Effect.gen(function* () {
+              yield* Effect.try({
+                try: () => validateVideoId(videoId),
+                catch: toStorageError("removeVideoDir"),
+              });
+              yield* fs
+                .remove(path.join(root, videoId), { recursive: true, force: true })
+                .pipe(Effect.asVoid, liftPlatformError("removeVideoDir"));
+            }),
+          exists: (relative) =>
+            Effect.try({
+              try: () => resolveSafe(path, root, relative),
+              catch: toStorageError("exists"),
+            }).pipe(Effect.flatMap((p) => fs.exists(p).pipe(liftPlatformError("exists")))),
           readFile: (relative) =>
-            fs.readFile(mediaPath(relative)).pipe(liftPlatformError("readFile")),
+            Effect.try({
+              try: () => resolveSafe(path, root, relative),
+              catch: toStorageError("readFile"),
+            }).pipe(Effect.flatMap((p) => fs.readFile(p).pipe(liftPlatformError("readFile")))),
           writeFile: (relative, bytes) =>
-            fs
-              .writeFile(mediaPath(relative), bytes)
-              .pipe(Effect.asVoid, liftPlatformError("writeFile")),
+            Effect.try({
+              try: () => resolveSafe(path, root, relative),
+              catch: toStorageError("writeFile"),
+            }).pipe(
+              Effect.flatMap((p) =>
+                fs.writeFile(p, bytes).pipe(Effect.asVoid, liftPlatformError("writeFile")),
+              ),
+            ),
           serveFile: (relative) =>
             Effect.gen(function* () {
-              const body = yield* fs
-                .readFile(mediaPath(relative))
-                .pipe(liftPlatformError("readFile"));
+              const p = yield* Effect.try({
+                try: () => resolveSafe(path, root, relative),
+                catch: toStorageError("serveFile"),
+              });
+              const body = yield* fs.readFile(p).pipe(liftPlatformError("readFile"));
               return { body, contentType: inferContentType(relative) };
             }),
         });

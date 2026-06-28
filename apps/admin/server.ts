@@ -9,29 +9,20 @@ import { Transcoder } from "./src/services/Transcoder.ts";
 import { Storage } from "./src/services/Storage.ts";
 import { ProdSync } from "./src/prod.ts";
 import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import { makeProgressHandler } from "./src/ws/progress.ts";
+import { makeProgressHandler, type ProgressSocketData } from "./src/ws/progress.ts";
+import { corsMiddleware, mediaRouter } from "./src/routes/media.ts";
 
-const dbFilename = "./videoshare-admin.db";
+const dbFilename = process.env["VIDEOSHARE_DB"] ?? `${import.meta.dir}/videoshare-admin.db`;
 
 registerMediabunnyServer();
 
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)));
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
-// `Storage.layer` and `VideoRepository.layerNoDeps` each need
-// `FileSystem | Path` and `SqlClient` respectively. We pre-resolve those
-// dependencies with `.pipe(Layer.provide(...))` so the merge below can
-// assemble a flat `Layer<...>` without ordering constraints.
-//
-// `Transcoder.layer` depends on `Storage` and `ProgressBus`, so we pre-resolve
-// those too. `Layer.mergeAll` builds sublayers independently, so any
-// inter-service dependency must be collapsed before merging.
+// `Storage.layer` needs `FileSystem | Path` (provided by `HttpServer.layerServices`).
+// `Transcoder.layer` depends on `Storage` and `ProgressBus`. We pre-resolve
+// those inter-service dependencies with `.pipe(Layer.provide(...))` so
+// `Layer.mergeAll` builds the sublayers independently.
 const appLayer = Layer.mergeAll(
   sqlLayer,
   HttpServer.layerServices,
@@ -42,17 +33,21 @@ const appLayer = Layer.mergeAll(
   Transcoder.layer.pipe(Layer.provide(ProgressBus.layer), Layer.provide(Storage.layer)),
 );
 
-const fullLayer = Layer.mergeAll(handlersLayer, AdminApiLive).pipe(Layer.provide(appLayer));
+const fullLayer = Layer.mergeAll(handlersLayer, AdminApiLive, mediaRouter, corsMiddleware).pipe(
+  Layer.provide(appLayer),
+);
 
-// `as never` works around an Effect 4.0 type-narrowing gap: `Layer.mergeAll`
-// returns a layer whose R union is too complex for `HttpRouter.toWebHandler`
-// to accept, even though every service in the union is satisfied at runtime.
+// Build the layer once and share the resulting context between the HTTP
+// handler and the WebSocket fiber so transcode progress events published
+// via the AppLayer `ProgressBus` reach subscribed sockets.
+const appRuntime = ManagedRuntime.make(fullLayer as never);
 const { handler } = HttpRouter.toWebHandler(fullLayer as never, { disableLogger: true });
 
-const progressRuntime = ManagedRuntime.make(ProgressBus.layer);
-const progressHandler = makeProgressHandler(progressRuntime);
+const progressHandler = makeProgressHandler(
+  appRuntime as unknown as ManagedRuntime.ManagedRuntime<ProgressBus, never>,
+);
 
-Bun.serve<{ videoId: string; fiber: unknown }>({
+Bun.serve<ProgressSocketData>({
   port: 3001,
   maxRequestBodySize: 1024 * 1024 * 1024 * 5,
   fetch(req, server) {
@@ -66,18 +61,15 @@ Bun.serve<{ videoId: string; fiber: unknown }>({
   },
   websocket: {
     open(ws) {
-      progressHandler.open(ws as never);
+      progressHandler.open(ws);
     },
     message() {},
     close(ws) {
-      progressHandler.close(ws as never);
+      progressHandler.close(ws);
     },
   },
   error(error) {
     process.stderr.write(`Unhandled server error: ${String(error)}\n`);
-    return new Response("Internal Server Error", {
-      status: 500,
-      headers: corsHeaders,
-    });
+    return new Response("Internal Server Error", { status: 500 });
   },
 });

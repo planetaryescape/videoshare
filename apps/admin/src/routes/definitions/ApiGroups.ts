@@ -89,7 +89,7 @@ export class PublishApi extends HttpApiGroup.make("publish")
   .add(
     HttpApiEndpoint.post("publish", "/:id", {
       params: IdParam,
-      success: VideoWithChapters,
+      success: Video,
       error: [
         VideoNotFoundError,
         NotTranscodedError,
@@ -110,4 +110,4 @@ export class ChaptersApi extends HttpApiGroup.make("chapters")
       error: [VideoNotFoundError, PersistenceError],
     }),
   )
-  .prefix("/api") {}
+  .prefix("/videos") {}

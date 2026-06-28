@@ -1,8 +1,9 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { Effect, Option } from "effect";
 import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import { Chapter, ChapterId, VideoId } from "@videoshare/shared/Video";
+import { VideoId } from "@videoshare/shared/Video";
 import { VideoNotFoundError } from "@videoshare/shared/VideoErrors";
+import { chaptersFromInput } from "../../schemas/Chapters.ts";
 import { AdminApi } from "../AdminApi.ts";
 
 export const ChaptersApiLive = HttpApiBuilder.group(AdminApi, "chapters", (handlers) =>
@@ -15,16 +16,7 @@ export const ChaptersApiLive = HttpApiBuilder.group(AdminApi, "chapters", (handl
         if (Option.isNone(found)) {
           return yield* new VideoNotFoundError({ slug: params.videoId });
         }
-        const chapters: ReadonlyArray<Chapter> = payload.map(
-          (ch, index) =>
-            new Chapter({
-              id: ChapterId.make(ch.id ?? crypto.randomUUID()),
-              videoId: VideoId.make(params.videoId),
-              title: ch.title,
-              startSec: ch.startSec,
-              sortOrder: index,
-            }),
-        );
+        const chapters = chaptersFromInput(VideoId.make(params.videoId), payload);
         yield* repo.replaceChapters(found.value.id, chapters);
         return chapters;
       }),

@@ -8,14 +8,16 @@ export const ChapterInput = Schema.Struct({
 });
 export type ChapterInput = typeof ChapterInput.Type;
 
+const NonBlankTitle = Schema.String.check(Schema.isMinLength(1));
+
 export const CreateVideoRequest = Schema.Struct({
-  title: Schema.String.check(Schema.isMinLength(1)),
+  title: NonBlankTitle,
   description: Schema.optional(Schema.String),
 });
 export type CreateVideoRequest = typeof CreateVideoRequest.Type;
 
 export const UpdateVideoRequest = Schema.Struct({
-  title: Schema.optional(Schema.String),
+  title: Schema.optional(NonBlankTitle),
   description: Schema.optional(Schema.String),
   chapters: Schema.optional(Schema.Array(ChapterInput)),
 });

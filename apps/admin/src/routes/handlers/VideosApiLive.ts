@@ -1,10 +1,11 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import { Chapter, ChapterId, Video, VideoId } from "@videoshare/shared/Video";
+import { Video, VideoId } from "@videoshare/shared/Video";
 import { VideoNotFoundError } from "@videoshare/shared/VideoErrors";
 import { generateSlug } from "@videoshare/shared/Slug";
 import { Effect, Option } from "effect";
 import { Storage } from "../../services/Storage.ts";
+import { chaptersFromInput } from "../../schemas/Chapters.ts";
 import { AdminApi } from "../AdminApi.ts";
 
 export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers) =>
@@ -57,17 +58,7 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
           const video = yield* repo.update(updated);
 
           if (payload.chapters !== undefined) {
-            const chapters = payload.chapters.map(
-              (ch, index) =>
-                new Chapter({
-                  id: ChapterId.make(ch.id ?? crypto.randomUUID()),
-                  videoId: video.id,
-                  title: ch.title,
-                  startSec: ch.startSec,
-                  sortOrder: index,
-                }),
-            );
-            yield* repo.replaceChapters(video.id, chapters);
+            yield* repo.replaceChapters(video.id, chaptersFromInput(video.id, payload.chapters));
           }
 
           const chapters = yield* repo.listChapters(video.id);
@@ -76,8 +67,13 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
       )
       .handle("deleteVideo", ({ params }) =>
         Effect.gen(function* () {
-          yield* repo.delete(VideoId.make(params.id));
+          const id = VideoId.make(params.id);
+          const found = yield* repo.findById(id);
+          if (Option.isNone(found)) {
+            return yield* new VideoNotFoundError({ slug: params.id });
+          }
           yield* storage.removeVideoDir(params.id);
+          yield* repo.delete(id);
           return { success: true as const };
         }),
       );
