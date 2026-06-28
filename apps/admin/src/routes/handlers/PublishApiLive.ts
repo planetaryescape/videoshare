@@ -18,7 +18,7 @@ export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handler
       Effect.gen(function* () {
         const found = yield* repo.findById(VideoId.make(params.id));
         if (Option.isNone(found)) {
-          return yield* new VideoNotFoundError({ slug: params.id });
+          return yield* new VideoNotFoundError({ id: params.id });
         }
         if (!found.value.hlsKey) {
           return yield* new NotTranscodedError({ videoId: found.value.id });

@@ -14,7 +14,7 @@ export const ChaptersApiLive = HttpApiBuilder.group(AdminApi, "chapters", (handl
       Effect.gen(function* () {
         const found = yield* repo.findById(VideoId.make(params.videoId));
         if (Option.isNone(found)) {
-          return yield* new VideoNotFoundError({ slug: params.videoId });
+          return yield* new VideoNotFoundError({ id: params.videoId });
         }
         const chapters = chaptersFromInput(VideoId.make(params.videoId), payload);
         yield* repo.replaceChapters(found.value.id, chapters);

@@ -62,7 +62,7 @@ const validateVideoId = (videoId: string): void => {
 };
 
 export class Storage extends Context.Service<Storage, StorageService>()("admin/Storage") {
-  static readonly layer: Layer.Layer<Storage, never, FileSystem.FileSystem | Path.Path> =
+  static readonly layer: Layer.Layer<Storage, StorageError, FileSystem.FileSystem | Path.Path> =
     Layer.effect(
       Storage,
       Effect.gen(function* () {
@@ -81,7 +81,13 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
 
         yield* fs
           .makeDirectory(root, { recursive: true })
-          .pipe(Effect.catchCause(() => Effect.void));
+          .pipe(
+            Effect.catchTag("PlatformError", (e) =>
+              e.reason._tag === "AlreadyExists"
+                ? Effect.void
+                : Effect.fail(new StorageError({ operation: "initRoot", cause: e })),
+            ),
+          );
 
         return Storage.of({
           rootDir: root,

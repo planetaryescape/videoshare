@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, PubSub, Schema, Stream } from "effect";
+import { Context, Effect, Layer, PubSub, Ref, Schema, Stream } from "effect";
 
 export const ProgressEvent = Schema.Struct({
   videoId: Schema.String,
@@ -6,6 +6,8 @@ export const ProgressEvent = Schema.Struct({
   pct: Schema.Number,
 });
 export type ProgressEvent = typeof ProgressEvent.Type;
+
+const CHANNEL_BUFFER = 64;
 
 export interface ProgressBusService {
   readonly publish: (event: ProgressEvent) => Effect.Effect<void>;
@@ -18,12 +20,36 @@ export class ProgressBus extends Context.Service<ProgressBus, ProgressBusService
   static readonly layer: Layer.Layer<ProgressBus> = Layer.effect(
     ProgressBus,
     Effect.gen(function* () {
-      const pubsub = yield* PubSub.bounded<ProgressEvent>(64);
+      const channels = yield* Ref.make(new Map<string, PubSub.PubSub<ProgressEvent>>());
+
+      const getOrCreate = (videoId: string): Effect.Effect<PubSub.PubSub<ProgressEvent>> =>
+        Ref.get(channels).pipe(
+          Effect.flatMap((map) => {
+            const existing = map.get(videoId);
+            if (existing) return Effect.succeed(existing);
+            return PubSub.bounded<ProgressEvent>(CHANNEL_BUFFER).pipe(
+              Effect.tap((ps) =>
+                Ref.update(channels, (m) => {
+                  const next = new Map(m);
+                  next.set(videoId, ps);
+                  return next;
+                }),
+              ),
+            );
+          }),
+        );
 
       return ProgressBus.of({
-        publish: (event) => PubSub.publish(pubsub, event),
+        publish: (event) =>
+          Effect.gen(function* () {
+            const map = yield* Ref.get(channels);
+            const channel = map.get(event.videoId);
+            if (channel) {
+              yield* PubSub.publish(channel, event);
+            }
+          }),
         subscribe: (videoId) =>
-          Stream.fromPubSub(pubsub).pipe(Stream.filter((e) => e.videoId === videoId)),
+          Stream.unwrap(getOrCreate(videoId).pipe(Effect.map((ps) => Stream.fromPubSub(ps)))),
       });
     }),
   );

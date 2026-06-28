@@ -18,16 +18,10 @@ const isNotFoundCause = (cause: unknown): boolean => {
   const c = cause as {
     _tag?: string;
     reason?: { _tag?: string } | string;
-    message?: unknown;
   };
-  if (c._tag === "PlatformError" || c._tag === "SystemError") {
-    const reason = c.reason;
-    if (typeof reason === "object" && reason !== null && "_tag" in reason) {
-      return reason._tag === "NotFound";
-    }
-  }
-  const message = c.message;
-  return typeof message === "string" && message.includes("NotFound");
+  if (c._tag !== "PlatformError" && c._tag !== "SystemError") return false;
+  const reason = c.reason;
+  return typeof reason === "object" && reason !== null && reason._tag === "NotFound";
 };
 
 export const mediaRouter = HttpRouter.use((router) =>

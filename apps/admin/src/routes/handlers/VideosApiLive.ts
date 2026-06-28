@@ -19,7 +19,7 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
         Effect.gen(function* () {
           const found = yield* repo.findById(VideoId.make(params.id));
           if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ slug: params.id });
+            return yield* new VideoNotFoundError({ id: params.id });
           }
           const chapters = yield* repo.listChapters(found.value.id);
           return { video: found.value, chapters };
@@ -47,7 +47,7 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
         Effect.gen(function* () {
           const found = yield* repo.findById(VideoId.make(params.id));
           if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ slug: params.id });
+            return yield* new VideoNotFoundError({ id: params.id });
           }
           const updated = new Video({
             ...found.value,
@@ -70,7 +70,7 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
           const id = VideoId.make(params.id);
           const found = yield* repo.findById(id);
           if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ slug: params.id });
+            return yield* new VideoNotFoundError({ id: params.id });
           }
           yield* storage.removeVideoDir(params.id);
           yield* repo.delete(id);

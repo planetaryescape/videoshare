@@ -45,7 +45,7 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
 
         const found = yield* repo.findById(VideoId.make(videoId));
         if (found._tag === "None") {
-          return yield* new VideoNotFoundError({ slug: videoId });
+          return yield* new VideoNotFoundError({ id: videoId });
         }
 
         const duration = yield* transcoder.transcode(videoId, file);

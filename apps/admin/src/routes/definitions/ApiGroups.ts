@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/unstable/httpapi";
+import { Multipart } from "effect/unstable/http";
 import { Chapter, Video, VideoId } from "@videoshare/shared/Video";
 import {
   PersistenceError,
@@ -69,6 +70,10 @@ export class VideosApi extends HttpApiGroup.make("videos")
 export class UploadApi extends HttpApiGroup.make("upload")
   .add(
     HttpApiEndpoint.post("upload", "/", {
+      payload: Schema.Struct({
+        videoId: Schema.String,
+        file: Multipart.SingleFileSchema,
+      }).pipe(HttpApiSchema.asMultipart()),
       success: Video,
       error: [
         UploadValidationError,

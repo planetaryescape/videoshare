@@ -2,6 +2,7 @@ import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { migrate } from "@videoshare/shared/Migrations";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
+import { BunFileSystem } from "@effect/platform-bun";
 import { registerMediabunnyServer } from "@mediabunny/server";
 import { AdminApiLive, handlersLayer } from "./src/routes/AdminApiLive.ts";
 import { ProgressBus } from "./src/services/ProgressBus.ts";
@@ -19,15 +20,17 @@ registerMediabunnyServer();
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)));
 
-// `Storage.layer` needs `FileSystem | Path` (provided by `HttpServer.layerServices`).
-// `Transcoder.layer` depends on `Storage` and `ProgressBus`. We pre-resolve
-// those inter-service dependencies with `.pipe(Layer.provide(...))` so
-// `Layer.mergeAll` builds the sublayers independently.
+// `Storage.layer` needs `FileSystem | Path`. `HttpServer.layerServices`
+// provides `Path` and a no-op `FileSystem`; merge with the real
+// `BunFileSystem.layer` so the platform services carry the Bun
+// filesystem (right-most `FileSystem` wins in `Context.mergeAll`).
+const platformLayer = Layer.merge(HttpServer.layerServices, BunFileSystem.layer);
+
 const appLayer = Layer.mergeAll(
   sqlLayer,
-  HttpServer.layerServices,
+  platformLayer,
   ProgressBus.layer,
-  Storage.layer.pipe(Layer.provide(HttpServer.layerServices)),
+  Storage.layer.pipe(Layer.provide(platformLayer)),
   ProdSync.layer,
   VideoRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
   Transcoder.layer.pipe(Layer.provide(ProgressBus.layer), Layer.provide(Storage.layer)),

@@ -2,11 +2,11 @@ import { Schema } from "effect";
 
 export class VideoNotFoundError extends Schema.TaggedErrorClass<VideoNotFoundError>()(
   "VideoNotFoundError",
-  { slug: Schema.String },
+  { id: Schema.String },
   { httpApiStatus: 404 },
 ) {
   override get message(): string {
-    return `Video not found: ${this.slug}`;
+    return `Video not found: ${this.id}`;
   }
 }
 
