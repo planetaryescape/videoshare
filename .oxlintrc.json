@@ -1,6 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
   "plugins": ["typescript", "import", "oxc", "eslint", "unicorn"],
+  "jsPlugins": ["./tools/oxlint/no-type-assertion.js"],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
@@ -47,13 +48,14 @@
     "typescript/no-empty-interface": "off",
     "typescript/ban-ts-comment": "off",
     "typescript/no-namespace": "off",
-    "typescript/no-non-null-assertion": "off",
+    "typescript/no-non-null-assertion": "error",
     "typescript/no-dynamic-delete": "off",
     "typescript/no-invalid-void-type": "off",
     "typescript/no-unsafe-function-type": "off",
     "typescript/unified-signatures": "off",
     "typescript/no-empty-object-type": "off",
-    "typescript/no-confusing-non-null-assertion": "off"
+    "typescript/no-confusing-non-null-assertion": "off",
+    "videoshare-strict/no-type-assertion": "error"
   },
   "ignorePatterns": [
     "**/dist",
