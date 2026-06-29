@@ -62,7 +62,7 @@ export class VideosApi extends HttpApiGroup.make("videos")
     HttpApiEndpoint.delete("deleteVideo", "/:id", {
       params: IdParam,
       success: DeleteResponse,
-      error: [VideoNotFoundError, PersistenceError, StorageError],
+      error: [VideoNotFoundError, PersistenceError, StorageError, ProdSyncError],
     }),
   )
   .prefix("/videos") {}
@@ -102,6 +102,13 @@ export class PublishApi extends HttpApiGroup.make("publish")
         PersistenceError,
         StorageError,
       ],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("unpublish", "/:id/unpublish", {
+      params: IdParam,
+      success: Video,
+      error: [VideoNotFoundError, ProdSyncError, PersistenceError],
     }),
   )
   .prefix("/publish") {}

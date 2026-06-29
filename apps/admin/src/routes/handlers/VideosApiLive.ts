@@ -6,12 +6,14 @@ import { generateSlug } from "@videoshare/shared/Slug";
 import { Effect, Option } from "effect";
 import { Storage } from "../../services/Storage.ts";
 import { chaptersFromInput } from "../../schemas/Chapters.ts";
+import { ProdSync } from "../../prod.ts";
 import { AdminApi } from "../AdminApi.ts";
 
 export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers) =>
   Effect.gen(function* () {
     const repo = yield* VideoRepository;
     const storage = yield* Storage;
+    const prod = yield* ProdSync;
 
     return handlers
       .handle("listVideos", () => repo.list())
@@ -72,6 +74,7 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
           if (Option.isNone(found)) {
             return yield* new VideoNotFoundError({ id: params.id });
           }
+          yield* prod.removeFromProd(params.id);
           yield* storage.removeVideoDir(params.id);
           yield* repo.delete(id);
           return { success: true as const };

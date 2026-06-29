@@ -14,30 +14,43 @@ export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handler
     const prod = yield* ProdSync;
     const storage = yield* Storage;
 
-    return handlers.handle("publish", ({ params }) =>
-      Effect.gen(function* () {
-        const found = yield* repo.findById(VideoId.make(params.id));
-        if (Option.isNone(found)) {
-          return yield* new VideoNotFoundError({ id: params.id });
-        }
-        if (!found.value.hlsKey) {
-          return yield* new NotTranscodedError({ videoId: found.value.id });
-        }
+    return handlers
+      .handle("publish", ({ params }) =>
+        Effect.gen(function* () {
+          const found = yield* repo.findById(VideoId.make(params.id));
+          if (Option.isNone(found)) {
+            return yield* new VideoNotFoundError({ id: params.id });
+          }
+          if (!found.value.hlsKey) {
+            return yield* new NotTranscodedError({ videoId: found.value.id });
+          }
 
-        const chapters = yield* repo.listChapters(found.value.id);
-        const publishedVideo = new Video({
-          ...found.value,
-          publishedAt: Date.now(),
-        });
+          const chapters = yield* repo.listChapters(found.value.id);
+          const publishedVideo = new Video({
+            ...found.value,
+            publishedAt: Date.now(),
+          });
 
-        const hasMedia = yield* prod.mediaExists(publishedVideo.id);
-        if (!hasMedia) {
-          yield* prod.uploadMedia(publishedVideo.id, storage.videoDir(publishedVideo.id));
-        }
-        yield* prod.syncMetadata(publishedVideo, chapters);
+          const hasMedia = yield* prod.mediaExists(publishedVideo.id);
+          if (!hasMedia) {
+            yield* prod.uploadMedia(publishedVideo.id, storage.videoDir(publishedVideo.id));
+          }
+          yield* prod.syncMetadata(publishedVideo, chapters);
 
-        return yield* repo.update(publishedVideo);
-      }),
-    );
+          return yield* repo.update(publishedVideo);
+        }),
+      )
+      .handle("unpublish", ({ params }) =>
+        Effect.gen(function* () {
+          const found = yield* repo.findById(VideoId.make(params.id));
+          if (Option.isNone(found)) {
+            return yield* new VideoNotFoundError({ id: params.id });
+          }
+          yield* prod.removeMedia(found.value.id);
+          yield* prod.unpublish(found.value.id);
+          const unpublished = new Video({ ...found.value, publishedAt: null });
+          return yield* repo.update(unpublished);
+        }),
+      );
   }),
 );
