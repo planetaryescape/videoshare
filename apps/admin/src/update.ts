@@ -184,8 +184,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             errorMessage: () => Option.some("Please select a file first"),
           });
         }
-        if (model.screen._tag !== "EditVideo") {
-          return noCmd(model);
+        if (model.screen._tag !== "EditVideo" || model.screen.videoId === "") {
+          return withEvo(model, {
+            errorMessage: () =>
+              Option.some("Save the video before uploading to create a stable identifier"),
+          });
         }
         openProgressSocket(model.screen.videoId);
         return withEvo(
@@ -275,19 +278,21 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         if (!window.confirm("Delete this video?")) {
           return noCmd(model);
         }
-        return withEvo(
-          model,
-          {
-            videos: () => model.videos.filter((v) => v.id !== msg.id),
-            screen: () =>
-              model.screen._tag === "EditVideo" && model.screen.videoId === msg.id
-                ? ListVideosScreen()
-                : model.screen,
-          },
-          DeleteVideoCmd({ id: msg.id }),
-        );
+        return withCmds(model, DeleteVideoCmd({ id: msg.id }));
       },
-      SucceededDeleteVideo: () => noCmd(model),
+      SucceededDeleteVideo: (msg: { id: string }) => {
+        const removed = model.videos.find((v) => v.id === msg.id);
+        const nextScreen =
+          model.screen._tag === "EditVideo" && model.screen.videoId === msg.id
+            ? ListVideosScreen()
+            : model.screen;
+        const videos = removed ? model.videos.filter((v) => v.id !== msg.id) : model.videos;
+        const next = removed
+          ? withEvo(model, { videos: () => videos, screen: () => nextScreen })
+          : noCmd(model);
+        closeProgressSocket();
+        return next;
+      },
       FailedDeleteVideo: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
       SucceededLoadVideoDetail: (msg: { video: Video; chapters: ReadonlyArray<Chapter> }) =>
