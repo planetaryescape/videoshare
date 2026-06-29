@@ -1,6 +1,6 @@
 import { S3Client } from "bun";
 import { readdir } from "node:fs/promises";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option, Schema as S } from "effect";
 import type { Chapter, Video } from "@videoshare/shared/Video";
 import { ProdSyncError } from "@videoshare/shared/VideoErrors";
 
@@ -31,6 +31,11 @@ const r2 = () =>
 
 type D1Param = string | number | null;
 
+const D1Response = S.Struct({
+  success: S.Boolean,
+  errors: S.optional(S.Array(S.Struct({ message: S.String }))),
+});
+
 const d1Query = (sql: string, params: ReadonlyArray<D1Param>) =>
   Effect.tryPromise({
     try: async () => {
@@ -48,10 +53,12 @@ const d1Query = (sql: string, params: ReadonlyArray<D1Param>) =>
       if (!response.ok) {
         throw new Error(`D1 query failed (${response.status}): ${await response.text()}`);
       }
-      const result = (await response.json()) as {
-        success: boolean;
-        errors?: ReadonlyArray<{ message: string }>;
-      };
+      const raw: unknown = await response.json();
+      const decoded = S.decodeUnknownOption(D1Response)(raw);
+      if (Option.isNone(decoded)) {
+        throw new Error("D1 query returned unexpected shape");
+      }
+      const result = decoded.value;
       if (!result.success) {
         throw new Error(
           `D1 query error: ${result.errors?.map((e) => e.message).join(", ") ?? "unknown"}`,

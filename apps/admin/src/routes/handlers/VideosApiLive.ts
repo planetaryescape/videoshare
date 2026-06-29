@@ -77,7 +77,7 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
           yield* prod.removeFromProd(params.id);
           yield* storage.removeVideoDir(params.id);
           yield* repo.delete(id);
-          return { success: true as const };
+          return { success: true };
         }),
       );
   }),

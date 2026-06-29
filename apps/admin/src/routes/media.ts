@@ -13,15 +13,16 @@ export const corsMiddleware = HttpRouter.middleware(
   { global: true },
 );
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
 const isNotFoundCause = (cause: unknown): boolean => {
-  if (cause === null || typeof cause !== "object") return false;
-  const c = cause as {
-    _tag?: string;
-    reason?: { _tag?: string } | string;
-  };
-  if (c._tag !== "PlatformError" && c._tag !== "SystemError") return false;
-  const reason = c.reason;
-  return typeof reason === "object" && reason !== null && reason._tag === "NotFound";
+  if (!isObject(cause)) return false;
+  const tag = cause["_tag"];
+  if (tag !== "PlatformError" && tag !== "SystemError") return false;
+  const reason = cause["reason"];
+  if (!isObject(reason)) return false;
+  return reason["_tag"] === "NotFound";
 };
 
 export const mediaRouter = HttpRouter.use((router) =>
@@ -43,7 +44,7 @@ export const mediaRouter = HttpRouter.use((router) =>
               Effect.succeed({
                 body: new Uint8Array(0),
                 contentType: "text/plain",
-                notFound: true as const,
+                notFound: true,
               }),
           ),
         );
