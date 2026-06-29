@@ -102,6 +102,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           editVideo: () => Option.none(),
           editChapters: () => [],
           selectedFile: () => null,
+          selectedPoster: () => null,
           copiedLink: () => false,
           errorMessage: () => Option.none(),
         }),
@@ -128,6 +129,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           editVideo: () => Option.none(),
           editChapters: () => [],
           selectedFile: () => null,
+          selectedPoster: () => null,
           copiedLink: () => false,
           errorMessage: () => Option.none(),
         });
@@ -178,6 +180,8 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
       SelectedFile: (msg: { file: File }) =>
         withEvo(model, { selectedFile: () => msg.file ?? null }),
+      SelectedPoster: (msg: { file: File }) =>
+        withEvo(model, { selectedPoster: () => msg.file ?? null }),
       SubmittedUpload: () => {
         if (!model.selectedFile) {
           return withEvo(model, {
@@ -199,7 +203,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             uploadPct: () => 0,
             errorMessage: () => Option.none(),
           },
-          UploadVideoCmd({ videoId: model.screen.videoId, file: model.selectedFile }),
+          UploadVideoCmd({
+            videoId: model.screen.videoId,
+            file: model.selectedFile,
+            poster: model.selectedPoster,
+          }),
         );
       },
       ReceivedUploadProgress: (msg: { stage: string; pct: number }) =>
@@ -215,6 +223,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           uploadPct: () => 100,
           editVideo: () => Option.some(msg.video),
           selectedFile: () => null,
+          selectedPoster: () => null,
         });
       },
       FailedUpload: (msg: { error: string }) => {

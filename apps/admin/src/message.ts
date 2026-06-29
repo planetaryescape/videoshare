@@ -16,6 +16,7 @@ export const FailedCreateVideo = m("FailedCreateVideo", { error: S.String });
 export const SucceededLoadVideos = m("SucceededLoadVideos", { videos: S.Array(VideoSchema) });
 export const FailedLoadVideos = m("FailedLoadVideos", { error: S.String });
 export const SelectedFile = m("SelectedFile", { file: S.Any });
+export const SelectedPoster = m("SelectedPoster", { file: S.Any });
 export const SubmittedUpload = m("SubmittedUpload");
 export const SucceededUpload = m("SucceededUpload", { video: VideoSchema });
 export const FailedUpload = m("FailedUpload", { error: S.String });
@@ -68,6 +69,7 @@ export const Message = S.Union([
   SucceededLoadVideos,
   FailedLoadVideos,
   SelectedFile,
+  SelectedPoster,
   SubmittedUpload,
   SucceededUpload,
   FailedUpload,
