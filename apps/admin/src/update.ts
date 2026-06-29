@@ -129,8 +129,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           errorMessage: () => Option.none(),
         });
       },
-      UpdatedTitle: (msg: { title: string }) =>
-        withEvo(model, { editTitle: () => msg.title }),
+      UpdatedTitle: (msg: { title: string }) => withEvo(model, { editTitle: () => msg.title }),
       UpdatedDescription: (msg: { description: string }) =>
         withEvo(model, { editDescription: () => msg.description }),
       BlurredEditField: () => {
@@ -160,11 +159,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       FailedSaveVideo: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
       SubmittedCreateVideo: () =>
-        withEvo(
-          model,
-          { errorMessage: () => Option.none() },
-          CreateVideoCmd(),
-        ),
+        withEvo(model, { errorMessage: () => Option.none() }, CreateVideoCmd()),
       SucceededCreateVideo: (msg: { video: Video }) =>
         withEvo(model, {
           videos: () => [msg.video, ...model.videos],
@@ -315,11 +310,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       },
       ClickedRemoveChapter: (msg: { id: string }) => {
         const next = model.editChapters.filter((c) => c.id !== msg.id);
-        return withEvo(
-          model,
-          { editChapters: () => next },
-          ...saveChaptersCmd(model, next),
-        );
+        return withEvo(model, { editChapters: () => next }, ...saveChaptersCmd(model, next));
       },
       UpdatedChapterTitle: (msg: { id: string; title: string }) =>
         withEvo(model, {
@@ -329,18 +320,14 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       UpdatedChapterStart: (msg: { id: string; startSec: number }) =>
         withEvo(model, {
           editChapters: () =>
-            model.editChapters.map((c) =>
-              c.id === msg.id ? { ...c, startSec: msg.startSec } : c,
-            ),
+            model.editChapters.map((c) => (c.id === msg.id ? { ...c, startSec: msg.startSec } : c)),
         }),
-      BlurredChapterField: () =>
-        withCmds(model, ...saveChaptersCmd(model, model.editChapters)),
+      BlurredChapterField: () => withCmds(model, ...saveChaptersCmd(model, model.editChapters)),
       SucceededSaveChapters: (msg: { chapters: ReadonlyArray<Chapter> }) =>
         withEvo(model, { editChapters: () => msg.chapters }),
       FailedSaveChapters: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      ClickedCopyLink: (msg: { url: string }) =>
-        withCmds(model, CopyLinkCmd({ url: msg.url })),
+      ClickedCopyLink: (msg: { url: string }) => withCmds(model, CopyLinkCmd({ url: msg.url })),
       CopiedLink: () => withEvo(model, { copiedLink: () => true }),
     }),
   );

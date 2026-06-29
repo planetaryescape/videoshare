@@ -45,10 +45,7 @@ const uploadProgress = (h: Html, model: Model) => {
     [
       h.div(
         [h.Class("mb-1 flex justify-between text-xs text-gray-400")],
-        [
-          stageLabel(model.uploadStage),
-          indeterminate ? "" : `${model.uploadPct}%`,
-        ],
+        [stageLabel(model.uploadStage), indeterminate ? "" : `${model.uploadPct}%`],
       ),
       h.div(
         [h.Class("h-2 w-full overflow-hidden rounded-full bg-gray-700")],
