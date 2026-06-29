@@ -32,6 +32,7 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
           const video = new Video({
             id: VideoId.make(crypto.randomUUID()),
             slug: generateSlug(),
+            kind: "video",
             title: payload.title,
             description: payload.description ?? null,
             posterKey: null,

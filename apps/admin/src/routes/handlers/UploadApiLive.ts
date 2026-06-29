@@ -38,26 +38,34 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
         });
         const videoIdField = formData.get("videoId");
         const file = formData.get("file");
+        const posterField = formData.get("poster");
         if (typeof videoIdField !== "string" || !(file instanceof File)) {
           return yield* new UploadValidationError({ reason: "videoId and file are required" });
         }
         const videoId = videoIdField;
+        const poster = posterField instanceof File && posterField.size > 0 ? posterField : null;
 
         const found = yield* repo.findById(VideoId.make(videoId));
         if (found._tag === "None") {
           return yield* new VideoNotFoundError({ id: videoId });
         }
 
-        const duration = yield* transcoder.transcode(videoId, file);
+        const { durationSec, kind } = yield* transcoder.transcode(videoId, file);
+
+        if (poster) {
+          yield* transcoder.writePoster(videoId, poster);
+        }
 
         yield* progress.publish({ videoId, stage: "uploading-media", pct: 100 });
         yield* prod.uploadMedia(videoId, storage.videoDir(videoId));
 
+        const hasPoster = poster !== null || kind === "video";
         const updated = new Video({
           ...found.value,
+          kind,
           hlsKey: `media/${videoId}/master.m3u8`,
-          posterKey: `media/${videoId}/poster.jpg`,
-          durationSec: isNaN(duration) ? 0 : duration,
+          posterKey: hasPoster ? `media/${videoId}/poster.jpg` : null,
+          durationSec: isNaN(durationSec) ? 0 : durationSec,
           updatedAt: Date.now(),
         });
         return yield* repo.update(updated);
