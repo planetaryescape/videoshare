@@ -1,6 +1,6 @@
 import { Array, Context, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/unstable/sql";
-import { Chapter, type ChapterId, Video, type VideoId } from "./Video.ts";
+import { Chapter, ChapterId, Slug, Video, VideoId } from "./Video.ts";
 import { PersistenceError, SlugAlreadyExistsError } from "./VideoErrors.ts";
 
 const wrapSqlError =
@@ -32,8 +32,8 @@ interface ChapterRow {
 
 const toVideo = (row: VideoRow): Video =>
   new Video({
-    id: row.id as VideoId,
-    slug: row.slug as Video["slug"],
+    id: VideoId.make(row.id),
+    slug: Slug.make(row.slug),
     title: row.title,
     description: row.description,
     posterKey: row.poster_key,
@@ -47,8 +47,8 @@ const toVideo = (row: VideoRow): Video =>
 
 const toChapter = (row: ChapterRow): Chapter =>
   new Chapter({
-    id: row.id as ChapterId,
-    videoId: row.video_id as VideoId,
+    id: ChapterId.make(row.id),
+    videoId: VideoId.make(row.video_id),
     title: row.title,
     startSec: row.start_sec,
     sortOrder: row.sort_order,
