@@ -1,8 +1,13 @@
 import { S3Client } from "bun";
 import { readdir } from "node:fs/promises";
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type { Chapter, Video } from "@videoshare/shared/Video";
 import { ProdSyncError } from "@videoshare/shared/VideoErrors";
+
+const wrapProdError =
+  (operation: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, ProdSyncError, R> =>
+    Effect.mapError(effect, (cause) => new ProdSyncError({ operation, cause }));
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -24,36 +29,36 @@ const r2 = () =>
     endpoint: `https://${accountId()}.r2.cloudflarestorage.com`,
   });
 
-const prodFail = (operation: string) =>
-  Effect.mapError((cause: unknown) => new ProdSyncError({ operation, cause }));
-
 type D1Param = string | number | null;
 
 const d1Query = (sql: string, params: ReadonlyArray<D1Param>) =>
-  Effect.tryPromise(async () => {
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId()}/d1/database/${databaseId()}/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiToken()}`,
-          "content-type": "application/json",
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId()}/d1/database/${databaseId()}/query`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiToken()}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ sql, params }),
         },
-        body: JSON.stringify({ sql, params }),
-      },
-    );
-    if (!response.ok) {
-      throw new Error(`D1 query failed (${response.status}): ${await response.text()}`);
-    }
-    const result = (await response.json()) as {
-      success: boolean;
-      errors?: ReadonlyArray<{ message: string }>;
-    };
-    if (!result.success) {
-      throw new Error(
-        `D1 query error: ${result.errors?.map((e) => e.message).join(", ") ?? "unknown"}`,
       );
-    }
+      if (!response.ok) {
+        throw new Error(`D1 query failed (${response.status}): ${await response.text()}`);
+      }
+      const result = (await response.json()) as {
+        success: boolean;
+        errors?: ReadonlyArray<{ message: string }>;
+      };
+      if (!result.success) {
+        throw new Error(
+          `D1 query error: ${result.errors?.map((e) => e.message).join(", ") ?? "unknown"}`,
+        );
+      }
+    },
+    catch: (cause) => new ProdSyncError({ operation: "d1Query", cause }),
   });
 
 const contentType = (key: string): string => {
@@ -97,10 +102,13 @@ const uploadDir = (localDir: string, keyPrefix: string) =>
     yield* Effect.forEach(
       files,
       ({ localPath, key }) =>
-        Effect.tryPromise(() => client.write(key, Bun.file(localPath), { type: contentType(key) })),
+        Effect.tryPromise({
+          try: () => client.write(key, Bun.file(localPath), { type: contentType(key) }),
+          catch: (cause) => new ProdSyncError({ operation: "r2.write", cause }),
+        }),
       { concurrency: uploadConcurrency, discard: true },
     );
-  }).pipe(prodFail("uploadDir"));
+  }).pipe(wrapProdError("uploadDir"));
 
 const upsertVideo = (video: Video) =>
   d1Query(
@@ -142,22 +150,68 @@ const replaceChapters = (videoId: string, chapters: ReadonlyArray<Chapter>) =>
     }
   });
 
+export interface ProdSyncService {
+  readonly uploadMedia: (
+    videoId: string,
+    localMediaDir: string,
+  ) => Effect.Effect<void, ProdSyncError>;
+  readonly mediaExists: (videoId: string) => Effect.Effect<boolean, ProdSyncError>;
+  readonly syncMetadata: (
+    video: Video,
+    chapters: ReadonlyArray<Chapter>,
+  ) => Effect.Effect<void, ProdSyncError>;
+  readonly pushToProd: (
+    video: Video,
+    chapters: ReadonlyArray<Chapter>,
+    localMediaDir: string,
+  ) => Effect.Effect<void, ProdSyncError>;
+}
+
+export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admin/ProdSync") {
+  static readonly layer: Layer.Layer<ProdSync> = Layer.succeed(
+    ProdSync,
+    ProdSync.of({
+      uploadMedia: (videoId, localMediaDir) => uploadDir(localMediaDir, `media/${videoId}`),
+      mediaExists: (videoId) =>
+        Effect.tryPromise({
+          try: () => r2().exists(`media/${videoId}/master.m3u8`),
+          catch: (cause) => new ProdSyncError({ operation: "mediaExists", cause }),
+        }).pipe(wrapProdError("mediaExists")),
+      syncMetadata: (video, chapters) =>
+        Effect.gen(function* () {
+          yield* upsertVideo(video);
+          yield* replaceChapters(video.id, chapters);
+        }).pipe(wrapProdError("syncMetadata")),
+      pushToProd: (video, chapters, localMediaDir) =>
+        Effect.gen(function* () {
+          yield* uploadDir(localMediaDir, `media/${video.id}`);
+          yield* upsertVideo(video);
+          yield* replaceChapters(video.id, chapters);
+        }).pipe(wrapProdError("pushToProd")),
+    }),
+  );
+}
+
 export const uploadMedia = (videoId: string, localMediaDir: string) =>
-  uploadDir(localMediaDir, `media/${videoId}`);
+  Effect.gen(function* () {
+    const sync = yield* ProdSync;
+    return yield* sync.uploadMedia(videoId, localMediaDir);
+  }).pipe(Effect.provide(ProdSync.layer));
 
 export const mediaExists = (videoId: string) =>
-  Effect.tryPromise(() => r2().exists(`media/${videoId}/master.m3u8`)).pipe(
-    prodFail("mediaExists"),
-  );
+  Effect.gen(function* () {
+    const sync = yield* ProdSync;
+    return yield* sync.mediaExists(videoId);
+  }).pipe(Effect.provide(ProdSync.layer));
 
 export const syncMetadata = (video: Video, chapters: ReadonlyArray<Chapter>) =>
   Effect.gen(function* () {
-    yield* upsertVideo(video);
-    yield* replaceChapters(video.id, chapters);
-  }).pipe(prodFail("syncMetadata"));
+    const sync = yield* ProdSync;
+    return yield* sync.syncMetadata(video, chapters);
+  }).pipe(Effect.provide(ProdSync.layer));
 
 export const pushToProd = (video: Video, chapters: ReadonlyArray<Chapter>, localMediaDir: string) =>
   Effect.gen(function* () {
-    yield* uploadMedia(video.id, localMediaDir);
-    yield* syncMetadata(video, chapters);
-  });
+    const sync = yield* ProdSync;
+    return yield* sync.pushToProd(video, chapters, localMediaDir);
+  }).pipe(Effect.provide(ProdSync.layer));
