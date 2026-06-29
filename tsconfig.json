@@ -25,7 +25,14 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {},
+      }
+    ]
   },
-  "exclude": ["node_modules", "repos", "**/dist"]
+  "exclude": ["node_modules", "repos", "**/dist", "**/videoshare-hls-output"]
 }

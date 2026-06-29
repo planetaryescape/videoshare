@@ -20,5 +20,4 @@ export const AppLayer = Layer.mergeAll(
   Storage.layer.pipe(Layer.provide(platformLayer)),
   ProdSync.layer,
   VideoRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
-  platformLayer,
-).pipe(Layer.provide(sqlLayer));
+).pipe(Layer.provideMerge(platformLayer), Layer.provide(sqlLayer));

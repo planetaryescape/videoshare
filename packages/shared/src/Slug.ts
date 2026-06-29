@@ -4,9 +4,6 @@ const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 export const generateSlug = (length = 16): Slug => {
   const bytes = crypto.getRandomValues(new Uint8Array(length));
-  let out = "";
-  for (let i = 0; i < length; i++) {
-    out += ALPHABET[bytes[i]! % ALPHABET.length];
-  }
+  const out = Array.from(bytes, (b) => ALPHABET.charAt(b % ALPHABET.length)).join("");
   return Slug.make(out);
 };

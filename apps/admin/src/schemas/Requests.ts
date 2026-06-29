@@ -4,7 +4,7 @@ import { Chapter, Slug, Video, VideoId } from "@videoshare/shared/Video";
 export const ChapterInput = Schema.Struct({
   id: Schema.optional(Schema.String),
   title: Schema.String,
-  startSec: Schema.Number,
+  startSec: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 export type ChapterInput = typeof ChapterInput.Type;
 

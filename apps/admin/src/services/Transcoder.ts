@@ -23,7 +23,7 @@ import type { StorageError } from "../errors/StorageErrors.ts";
 import { ProgressBus } from "./ProgressBus.ts";
 import { Storage } from "./Storage.ts";
 
-const abrRungs = [1080, 720, 480] as const;
+const abrRungs: ReadonlyArray<number> = [1080, 720, 480];
 
 const selectAbrHeights = (sourceHeight: number): ReadonlyArray<number> => {
   const selected = abrRungs.filter((h) => h <= sourceHeight);
@@ -128,18 +128,20 @@ const writePoster = (
       }
       sample = fetched;
 
+      const currentSample: Awaited<ReturnType<VideoSampleSink["getSample"]>> = sample;
       const transformed = yield* Effect.tryPromise({
         try: () =>
-          sample!.transform({
-            width: Math.min(1280, sample!.displayWidth),
+          currentSample.transform({
+            width: Math.min(1280, currentSample.displayWidth),
             roundDimensionsTo: 2,
             alpha: "discard",
           }),
         catch: (cause) => new TranscodeError({ videoId, operation: "transformFrame", cause }),
       });
       frame = transformed;
+      const currentFrame: Awaited<ReturnType<VideoSample["transform"]>> = frame;
 
-      const bmp = yield* toBmpBytes(frame);
+      const bmp = yield* toBmpBytes(currentFrame);
       const jpeg = yield* Effect.tryPromise({
         try: () => new Bun.Image(bmp).jpeg({ quality: 85, progressive: true }).bytes(),
         catch: (cause) => new TranscodeError({ videoId, operation: "encodeJpeg", cause }),
@@ -177,6 +179,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
     Effect.gen(function* () {
       const progress = yield* ProgressBus;
       const storage = yield* Storage;
+      const publishContext = yield* Effect.context<ProgressBus>();
 
       const transcode = (
         videoId: string,
@@ -258,7 +261,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
 
             yield* progress.publish({ videoId, stage: "transcoding", pct: 0 });
             conversion.onProgress = (p) => {
-              Effect.runFork(
+              Effect.runForkWith(publishContext)(
                 progress.publish({
                   videoId,
                   stage: "transcoding",
@@ -266,8 +269,9 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
                 }),
               );
             };
+            const currentConversion: Conversion = conversion;
             yield* Effect.tryPromise({
-              try: () => conversion!.execute(),
+              try: () => currentConversion.execute(),
               catch: (cause) => new TranscodeError({ videoId, operation: "execute", cause }),
             });
 

@@ -20,10 +20,10 @@ export const VideoSchema = S.Struct({
   description: S.NullOr(S.String),
   posterKey: S.NullOr(S.String),
   hlsKey: S.String,
-  durationSec: S.Number,
-  createdAt: S.Number,
-  publishedAt: S.NullOr(S.Number),
-  updatedAt: S.NullOr(S.Number),
+  durationSec: S.Finite,
+  createdAt: S.Finite,
+  publishedAt: S.NullOr(S.Finite),
+  updatedAt: S.NullOr(S.Finite),
 });
 
 export type Chapter = {
@@ -38,14 +38,14 @@ export const ChapterSchema = S.Struct({
   id: S.String,
   videoId: S.String,
   title: S.String,
-  startSec: S.Number,
-  sortOrder: S.Number,
+  startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
+  sortOrder: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 });
 
 export const Model = S.Struct({
   screen: S.Union([
-    S.Struct({ _tag: S.Literal("ListVideos") }),
-    S.Struct({ _tag: S.Literal("EditVideo"), videoId: S.String }),
+    S.TaggedStruct("ListVideos", {}),
+    S.TaggedStruct("EditVideo", { videoId: S.String }),
   ]),
   videos: S.Array(VideoSchema),
   editTitle: S.String,
@@ -55,7 +55,7 @@ export const Model = S.Struct({
   selectedFile: S.Any,
   isUploading: S.Boolean,
   uploadStage: S.String,
-  uploadPct: S.Number,
+  uploadPct: S.Finite,
   isPublishing: S.Boolean,
   isUnpublishing: S.Boolean,
   copiedLink: S.Boolean,

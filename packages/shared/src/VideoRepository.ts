@@ -1,6 +1,6 @@
 import { Array, Context, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/unstable/sql";
-import { Chapter, type ChapterId, Video, type VideoId } from "./Video.ts";
+import { Chapter, ChapterId, Slug, Video, VideoId } from "./Video.ts";
 import { PersistenceError, SlugAlreadyExistsError } from "./VideoErrors.ts";
 
 const wrapSqlError =
@@ -30,28 +30,36 @@ interface ChapterRow {
   readonly sort_order: number;
 }
 
-const toVideo = (row: VideoRow): Video =>
-  new Video({
-    id: row.id as VideoId,
-    slug: row.slug as Video["slug"],
-    title: row.title,
-    description: row.description,
-    posterKey: row.poster_key,
-    hlsKey: row.hls_key,
-    durationSec: row.duration_sec,
-    passwordHash: row.password_hash,
-    createdAt: row.created_at,
-    publishedAt: row.published_at,
-    updatedAt: row.updated_at,
+const toVideo = (row: VideoRow): Effect.Effect<Video, PersistenceError> =>
+  Effect.try({
+    try: () =>
+      new Video({
+        id: VideoId.make(row.id),
+        slug: Slug.make(row.slug),
+        title: row.title,
+        description: row.description,
+        posterKey: row.poster_key,
+        hlsKey: row.hls_key,
+        durationSec: row.duration_sec,
+        passwordHash: row.password_hash,
+        createdAt: row.created_at,
+        publishedAt: row.published_at,
+        updatedAt: row.updated_at,
+      }),
+    catch: (cause) => new PersistenceError({ operation: "decodeVideo", cause }),
   });
 
-const toChapter = (row: ChapterRow): Chapter =>
-  new Chapter({
-    id: row.id as ChapterId,
-    videoId: row.video_id as VideoId,
-    title: row.title,
-    startSec: row.start_sec,
-    sortOrder: row.sort_order,
+const toChapter = (row: ChapterRow): Effect.Effect<Chapter, PersistenceError> =>
+  Effect.try({
+    try: () =>
+      new Chapter({
+        id: ChapterId.make(row.id),
+        videoId: VideoId.make(row.video_id),
+        title: row.title,
+        startSec: row.start_sec,
+        sortOrder: row.sort_order,
+      }),
+    catch: (cause) => new PersistenceError({ operation: "decodeChapter", cause }),
   });
 
 export class VideoRepository extends Context.Service<
@@ -78,17 +86,21 @@ export class VideoRepository extends Context.Service<
 
         const findById = Effect.fn("VideoRepository.findById")(function* (id: VideoId) {
           const rows = yield* sql<VideoRow>`SELECT * FROM videos WHERE id = ${id}`;
-          return Array.head(rows).pipe(Option.map(toVideo));
+          const head = Array.head(rows);
+          if (Option.isNone(head)) return Option.none<Video>();
+          return Option.some(yield* toVideo(head.value));
         }, wrapSqlError("findById"));
 
         const findBySlug = Effect.fn("VideoRepository.findBySlug")(function* (slug: string) {
           const rows = yield* sql<VideoRow>`SELECT * FROM videos WHERE slug = ${slug}`;
-          return Array.head(rows).pipe(Option.map(toVideo));
+          const head = Array.head(rows);
+          if (Option.isNone(head)) return Option.none<Video>();
+          return Option.some(yield* toVideo(head.value));
         }, wrapSqlError("findBySlug"));
 
         const list = Effect.fn("VideoRepository.list")(function* () {
           const rows = yield* sql<VideoRow>`SELECT * FROM videos ORDER BY created_at DESC`;
-          return rows.map(toVideo);
+          return yield* Effect.all(rows.map(toVideo));
         }, wrapSqlError("list"));
 
         const create = Effect.fn("VideoRepository.create")(function* (video: Video) {
@@ -132,7 +144,7 @@ export class VideoRepository extends Context.Service<
         ) {
           const rows =
             yield* sql<ChapterRow>`SELECT * FROM chapters WHERE video_id = ${videoId} ORDER BY sort_order ASC`;
-          return rows.map(toChapter);
+          return yield* Effect.all(rows.map(toChapter));
         }, wrapSqlError("listChapters"));
 
         const replaceChapters = Effect.fn("VideoRepository.replaceChapters")(function* (

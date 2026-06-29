@@ -3,7 +3,7 @@ import { Context, Effect, Layer, PubSub, Ref, Schema, Semaphore, Stream } from "
 export const ProgressEvent = Schema.Struct({
   videoId: Schema.String,
   stage: Schema.String,
-  pct: Schema.Number,
+  pct: Schema.Finite,
 });
 export type ProgressEvent = typeof ProgressEvent.Type;
 
