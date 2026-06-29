@@ -46,6 +46,9 @@ const loadVideo = (env: ViewerEnv, slug: string) =>
         return Option.none<{ readonly video: Video; readonly chapters: ReadonlyArray<Chapter> }>();
       }
       const video = videoOption.value;
+      if (video.publishedAt === null) {
+        return Option.none<{ readonly video: Video; readonly chapters: ReadonlyArray<Chapter> }>();
+      }
       const chapters = yield* repository.listChapters(video.id);
       return Option.some({ video, chapters });
     }),
@@ -321,6 +324,38 @@ const viewerPage = (
 </html>`;
 };
 
+const notFoundPage = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Video not found</title>
+    ${faviconLinks}
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, #1a1630, #09090f 52%); color: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      main { width: min(480px, calc(100vw - 32px)); padding: 40px 32px; border-radius: 24px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); text-align: center; }
+      h1 { margin: 0 0 12px; font-size: 1.75rem; }
+      p { margin: 0; color: #b8c0d0; line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Video not found</h1>
+      <p>This video is no longer available. The link may have changed or the video may have been unpublished.</p>
+    </main>
+  </body>
+</html>`;
+
+const notFoundResponse = () =>
+  new Response(notFoundPage, {
+    status: 404,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+
 const homePage = `<!doctype html>
 <html lang="en">
   <head>
@@ -349,12 +384,12 @@ const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: 
     return new Response("Method Not Allowed", { status: 405 });
   }
   if (file.includes("..")) {
-    return new Response("Not Found", { status: 404 });
+    return notFoundResponse();
   }
 
   const result = await loadVideo(env, slug);
   if (Option.isNone(result)) {
-    return new Response("Not Found", { status: 404 });
+    return notFoundResponse();
   }
 
   const { video } = result.value;
@@ -363,13 +398,13 @@ const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: 
   }
 
   if (isAbsoluteUrl(video.hlsKey)) {
-    return new Response("Not Found", { status: 404 });
+    return notFoundResponse();
   }
 
   const key = `${r2KeyDir(video.hlsKey)}${file}`;
   const object = await env.BUCKET.get(key);
   if (!object) {
-    return new Response("Not Found", { status: 404 });
+    return notFoundResponse();
   }
 
   const headers = new Headers();
@@ -419,7 +454,7 @@ export default {
     const segments = pathname.slice(1).split("/");
     const slug = segments[0] ?? "";
     if (!slug) {
-      return new Response("Not Found", { status: 404 });
+      return notFoundResponse();
     }
 
     if (segments.length > 1) {
@@ -433,7 +468,7 @@ export default {
     try {
       const result = await loadVideo(env, slug);
       if (Option.isNone(result)) {
-        return new Response("Not Found", { status: 404 });
+        return notFoundResponse();
       }
 
       const { video, chapters } = result.value;
