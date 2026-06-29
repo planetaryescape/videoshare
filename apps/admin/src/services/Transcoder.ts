@@ -144,7 +144,7 @@ const writePoster = (
         try: () => new Bun.Image(bmp).jpeg({ quality: 85, progressive: true }).bytes(),
         catch: (cause) => new TranscodeError({ videoId, operation: "encodeJpeg", cause }),
       });
-      yield* storage.writeFile(`videos/${videoId}/poster.jpg`, jpeg);
+      yield* storage.writeFile(`${videoId}/poster.jpg`, jpeg);
     });
 
     return yield* work.pipe(
