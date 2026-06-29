@@ -287,9 +287,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             ? ListVideosScreen()
             : model.screen;
         const videos = removed ? model.videos.filter((v) => v.id !== msg.id) : model.videos;
-        const next = removed
-          ? withEvo(model, { videos: () => videos, screen: () => nextScreen })
-          : noCmd(model);
+        const next =
+          removed || nextScreen !== model.screen
+            ? withEvo(model, { videos: () => videos, screen: () => nextScreen })
+            : noCmd(model);
         closeProgressSocket();
         return next;
       },
