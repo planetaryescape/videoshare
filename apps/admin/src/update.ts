@@ -12,6 +12,7 @@ import {
   PublishVideoCmd,
   SaveChaptersCmd,
   SaveVideoCmd,
+  UnpublishVideoCmd,
   UploadVideoCmd,
 } from "./commands";
 
@@ -200,6 +201,39 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         [
           evo(model, {
             isPublishing: () => false,
+            errorMessage: () => Option.some(msg.error),
+          }),
+          [],
+        ] as const,
+      ClickedUnpublish: (msg: { id: string }) => {
+        if (
+          !window.confirm(
+            "Unpublish this video? It will be taken offline. Local data and R2 media will be removed; you can re-publish from the local files later.",
+          )
+        ) {
+          return [model, []] as const;
+        }
+        return [
+          evo(model, {
+            isUnpublishing: () => true,
+            errorMessage: () => Option.none(),
+          }),
+          [UnpublishVideoCmd({ id: msg.id })],
+        ] as const;
+      },
+      SucceededUnpublish: (msg: { video: Video }) =>
+        [
+          evo(model, {
+            isUnpublishing: () => false,
+            editVideo: () => Option.some(msg.video),
+            videos: () => model.videos.map((v) => (v.id === msg.video.id ? msg.video : v)),
+          }),
+          [],
+        ] as const,
+      FailedUnpublish: (msg: { error: string }) =>
+        [
+          evo(model, {
+            isUnpublishing: () => false,
             errorMessage: () => Option.some(msg.error),
           }),
           [],

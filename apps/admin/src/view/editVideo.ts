@@ -16,6 +16,7 @@ import {
   ClickedCopyLink,
   ClickedPublish,
   ClickedRemoveChapter,
+  ClickedUnpublish,
   type Message,
   SelectedFile,
   SubmittedUpload,
@@ -309,6 +310,20 @@ export const editVideoView = (h: Html, model: Model) => {
                                 : "Publish",
                           ],
                         ),
+                        ...(isPublished(video)
+                          ? [
+                              h.button(
+                                [
+                                  h.Class(
+                                    "rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                                  ),
+                                  h.Disabled(model.isUnpublishing),
+                                  h.OnClick(ClickedUnpublish({ id: video.id })),
+                                ],
+                                [model.isUnpublishing ? "Unpublishing..." : "Unpublish"],
+                              ),
+                            ]
+                          : []),
                         h.button(
                           [
                             h.Class(

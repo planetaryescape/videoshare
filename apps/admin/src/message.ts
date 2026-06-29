@@ -26,6 +26,9 @@ export const ReceivedUploadProgress = m("ReceivedUploadProgress", {
 export const ClickedPublish = m("ClickedPublish", { id: S.String });
 export const SucceededPublish = m("SucceededPublish", { video: VideoSchema });
 export const FailedPublish = m("FailedPublish", { error: S.String });
+export const ClickedUnpublish = m("ClickedUnpublish", { id: S.String });
+export const SucceededUnpublish = m("SucceededUnpublish", { video: VideoSchema });
+export const FailedUnpublish = m("FailedUnpublish", { error: S.String });
 export const ClickedDeleteVideo = m("ClickedDeleteVideo", { id: S.String });
 export const SucceededDeleteVideo = m("SucceededDeleteVideo", { id: S.String });
 export const FailedDeleteVideo = m("FailedDeleteVideo", { error: S.String });
@@ -68,6 +71,9 @@ export const Message = S.Union([
   ClickedPublish,
   SucceededPublish,
   FailedPublish,
+  ClickedUnpublish,
+  SucceededUnpublish,
+  FailedUnpublish,
   ClickedDeleteVideo,
   SucceededDeleteVideo,
   FailedDeleteVideo,

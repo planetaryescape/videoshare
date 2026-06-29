@@ -10,6 +10,7 @@ import {
   FailedPublish,
   FailedSaveChapters,
   FailedSaveVideo,
+  FailedUnpublish,
   FailedUpload,
   SucceededCreateVideo,
   SucceededDeleteVideo,
@@ -18,6 +19,7 @@ import {
   SucceededPublish,
   SucceededSaveChapters,
   SucceededSaveVideo,
+  SucceededUnpublish,
   SucceededUpload,
 } from "./message";
 
@@ -201,6 +203,25 @@ export const PublishVideoCmd = Command.define(
     const data = yield* decodeVideo(raw);
     return SucceededPublish({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedPublish({ error: errMsg(error) })))),
+);
+
+export const UnpublishVideoCmd = Command.define(
+  "UnpublishVideo",
+  { id: S.String },
+  SucceededUnpublish,
+  FailedUnpublish,
+)((input: { id: string }) =>
+  Effect.gen(function* () {
+    const response = yield* Effect.promise<Response>(() =>
+      fetch(`/api/publish/${input.id}/unpublish`, { method: "POST" }),
+    );
+    if (!response.ok) {
+      return yield* Effect.fail(new Error(response.statusText));
+    }
+    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const data = yield* decodeVideo(raw);
+    return SucceededUnpublish({ video: data });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedUnpublish({ error: errMsg(error) })))),
 );
 
 export const DeleteVideoCmd = Command.define(

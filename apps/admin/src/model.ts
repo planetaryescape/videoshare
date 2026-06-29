@@ -57,6 +57,7 @@ export const Model = S.Struct({
   uploadStage: S.String,
   uploadPct: S.Number,
   isPublishing: S.Boolean,
+  isUnpublishing: S.Boolean,
   copiedLink: S.Boolean,
   errorMessage: S.Option(S.String),
 });
@@ -72,6 +73,7 @@ export type Model = {
   readonly uploadStage: string;
   readonly uploadPct: number;
   readonly isPublishing: boolean;
+  readonly isUnpublishing: boolean;
   readonly copiedLink: boolean;
   readonly errorMessage: Option.Option<string>;
 };
@@ -88,6 +90,7 @@ export const initialModel = (): Model => ({
   uploadStage: "",
   uploadPct: 0,
   isPublishing: false,
+  isUnpublishing: false,
   copiedLink: false,
   errorMessage: Option.none(),
 });
