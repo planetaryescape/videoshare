@@ -179,6 +179,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
     Effect.gen(function* () {
       const progress = yield* ProgressBus;
       const storage = yield* Storage;
+      const publishContext = yield* Effect.context<ProgressBus>();
 
       const transcode = (
         videoId: string,
@@ -260,7 +261,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
 
             yield* progress.publish({ videoId, stage: "transcoding", pct: 0 });
             conversion.onProgress = (p) => {
-              Effect.runFork(
+              Effect.runForkWith(publishContext)(
                 progress.publish({
                   videoId,
                   stage: "transcoding",

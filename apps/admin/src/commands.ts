@@ -25,6 +25,15 @@ import {
 
 const SERVER_ORIGIN = `http://${location.hostname}:3001`;
 
+class HttpError extends S.TaggedErrorClass<HttpError>()("HttpError", {
+  status: S.Finite,
+  statusText: S.String,
+}) {
+  override get message(): string {
+    return `HTTP ${this.status} ${this.statusText}`;
+  }
+}
+
 const VideoDetailResponse = S.Struct({
   video: VideoSchema,
   chapters: S.Array(ChapterSchema),
@@ -33,9 +42,10 @@ const ChaptersResponse = S.Struct({ chapters: S.Array(ChapterSchema) });
 
 const decodeResponse = <A>(schema: S.Codec<A>) => {
   const decode = S.decodeUnknownOption(schema);
-  return (raw: unknown): Effect.Effect<A, Error> =>
+  return (raw: unknown): Effect.Effect<A, HttpError> =>
     Option.match(decode(raw), {
-      onNone: () => Effect.fail(new Error("Unexpected response shape")),
+      onNone: () =>
+        Effect.fail(new HttpError({ status: 0, statusText: "Unexpected response shape" })),
       onSome: (value) => Effect.succeed(value),
     });
 };
@@ -57,7 +67,7 @@ export const LoadVideos = Command.define(
   Effect.gen(function* () {
     const response = yield* Effect.promise<Response>(() => fetch("/api/videos"));
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeVideoList(raw);
@@ -79,7 +89,7 @@ export const CreateVideoCmd = Command.define(
       }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeVideo(raw);
@@ -102,7 +112,7 @@ export const SaveVideoCmd = Command.define(
       }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeVideoWrapped(raw);
@@ -119,7 +129,7 @@ export const LoadVideoDetail = Command.define(
   Effect.gen(function* () {
     const response = yield* Effect.promise<Response>(() => fetch(`/api/videos/${input.id}`));
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeVideoDetail(raw);
@@ -142,7 +152,7 @@ export const SaveChaptersCmd = Command.define(
       }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeChapters(raw);
@@ -167,7 +177,7 @@ export const UploadVideoCmd = Command.define(
       }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeVideo(raw);
@@ -181,9 +191,11 @@ export const CopyLinkCmd = Command.define(
   CopiedLink,
 )((input: { url: string }) =>
   Effect.gen(function* () {
-    yield* Effect.promise(() => navigator.clipboard.writeText(input.url));
+    yield* Effect.promise(() => navigator.clipboard.writeText(input.url)).pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
     return CopiedLink();
-  }).pipe(Effect.catch(() => Effect.succeed(CopiedLink()))),
+  }),
 );
 
 export const PublishVideoCmd = Command.define(
@@ -197,7 +209,7 @@ export const PublishVideoCmd = Command.define(
       fetch(`/api/publish/${input.id}`, { method: "POST" }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeVideo(raw);
@@ -216,7 +228,7 @@ export const UnpublishVideoCmd = Command.define(
       fetch(`/api/publish/${input.id}/unpublish`, { method: "POST" }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* Effect.promise<unknown>(() => response.json());
     const data = yield* decodeVideo(raw);
@@ -235,7 +247,7 @@ export const DeleteVideoCmd = Command.define(
       fetch(`/api/videos/${input.id}`, { method: "DELETE" }),
     );
     if (!response.ok) {
-      return yield* Effect.fail(new Error(response.statusText));
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     return SucceededDeleteVideo({ id: input.id });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedDeleteVideo({ error: errMsg(error) })))),
