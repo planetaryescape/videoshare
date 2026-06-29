@@ -28,7 +28,7 @@ import {
 
 type Html = ReturnType<typeof html<Message>>;
 
-const stageLabel = (stage: string, pct: number): string => {
+const stageLabel = (stage: string): string => {
   if (stage === "uploading") return "Uploading file...";
   if (stage === "transcoding") return "Transcoding";
   if (stage === "poster") return "Generating poster...";
@@ -46,7 +46,7 @@ const uploadProgress = (h: Html, model: Model) => {
       h.div(
         [h.Class("mb-1 flex justify-between text-xs text-gray-400")],
         [
-          stageLabel(model.uploadStage, model.uploadPct),
+          stageLabel(model.uploadStage),
           indeterminate ? "" : `${model.uploadPct}%`,
         ],
       ),
