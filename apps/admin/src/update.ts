@@ -1,8 +1,8 @@
-import { Match as M, Option } from "effect";
+import { Match as M, Option, Schema as S } from "effect";
 import type { Command } from "foldkit";
 import { evo } from "foldkit/struct";
 import { initialModel, type Chapter, type Model, type Video } from "./model";
-import type { Message } from "./message";
+import { ReceivedUploadProgress, type Message } from "./message";
 import {
   CopyLinkCmd,
   CreateVideoCmd,
@@ -20,6 +20,43 @@ type Cmd = Command.Command<Message>;
 type Update = readonly [Model, ReadonlyArray<Cmd>];
 
 export const init = (): Update => [initialModel(), [LoadVideos()]];
+
+export const PROGRESS_EVENT = "videoshare:upload-progress";
+
+let progressSocket: WebSocket | null = null;
+
+const ProgressFrame = S.Struct({ stage: S.String, pct: S.Number });
+const decodeFrame = S.decodeUnknownOption(S.fromJsonString(ProgressFrame));
+
+const WS_ORIGIN = `ws://${location.hostname}:3001`;
+
+const openProgressSocket = (videoId: string) => {
+  if (progressSocket && progressSocket.readyState <= WebSocket.OPEN) {
+    progressSocket.close();
+  }
+  const ws = new WebSocket(`${WS_ORIGIN}/ws?videoId=${encodeURIComponent(videoId)}`);
+  ws.addEventListener("message", (event) => {
+    const decoded = decodeFrame(event.data);
+    if (Option.isSome(decoded)) {
+      window.dispatchEvent(
+        new CustomEvent(PROGRESS_EVENT, {
+          detail: ReceivedUploadProgress({
+            stage: decoded.value.stage,
+            pct: decoded.value.pct,
+          }),
+        }),
+      );
+    }
+  });
+  progressSocket = ws;
+};
+
+const closeProgressSocket = () => {
+  if (progressSocket) {
+    progressSocket.close();
+    progressSocket = null;
+  }
+};
 
 const saveChaptersCmd = (model: Model, chapters: ReadonlyArray<Chapter>): ReadonlyArray<Cmd> => {
   if (Option.isNone(model.editVideo)) {
@@ -62,8 +99,9 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           }),
           [LoadVideoDetail({ id: msg.id })],
         ] as const,
-      ClickedBack: () =>
-        [
+      ClickedBack: () => {
+        closeProgressSocket();
+        return [
           evo(model, {
             screen: () => ({ _tag: "ListVideos" as const }),
             editTitle: () => "",
@@ -75,7 +113,8 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             errorMessage: () => Option.none(),
           }),
           [],
-        ] as const,
+        ] as const;
+      },
       UpdatedTitle: (msg: { title: string }) =>
         [evo(model, { editTitle: () => msg.title }), []] as const,
       UpdatedDescription: (msg: { description: string }) =>
@@ -141,6 +180,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         if (model.screen._tag !== "EditVideo") {
           return [model, []] as const;
         }
+        openProgressSocket(model.screen.videoId);
         return [
           evo(model, {
             isUploading: () => true,
@@ -159,8 +199,9 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           }),
           [],
         ] as const,
-      SucceededUpload: (msg: { video: Video }) =>
-        [
+      SucceededUpload: (msg: { video: Video }) => {
+        closeProgressSocket();
+        return [
           evo(model, {
             isUploading: () => false,
             uploadStage: () => "done",
@@ -169,9 +210,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             selectedFile: () => null,
           }),
           [],
-        ] as const,
-      FailedUpload: (msg: { error: string }) =>
-        [
+        ] as const;
+      },
+      FailedUpload: (msg: { error: string }) => {
+        closeProgressSocket();
+        return [
           evo(model, {
             isUploading: () => false,
             uploadStage: () => "",
@@ -179,7 +222,8 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             errorMessage: () => Option.some(msg.error),
           }),
           [],
-        ] as const,
+        ] as const;
+      },
       ClickedPublish: (msg: { id: string }) =>
         [
           evo(model, {
