@@ -236,7 +236,7 @@ const ogTags = (origin: string, slug: string, video: Video) => {
   const imageUrl = absoluteUrl(origin, resolveMediaUrl(slug, video.posterKey));
   const description = video.description ?? "";
   const tags = [
-    `<meta property="og:type" content="video.other">`,
+    `<meta property="og:type" content="${video.kind === "audio" ? "music.song" : "video.other"}">`,
     `<meta property="og:title" content="${escapeHtml(video.title)}">`,
     `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
     `<meta property="og:site_name" content="VideoShare">`,
@@ -261,6 +261,7 @@ const viewerPage = (
   video: Video,
   chapters: ReadonlyArray<Chapter>,
 ) => {
+  const isAudio = video.kind === "audio";
   const chaptersTrack = chaptersTrackFor(chapters);
   const posterUrl = resolveMediaUrl(slug, video.posterKey);
   const manifestUrl = resolveMediaUrl(slug, video.hlsKey);
@@ -285,6 +286,7 @@ const viewerPage = (
       p { margin: 0; color: #b8c0d0; line-height: 1.6; }
       .player-shell { overflow: hidden; border-radius: 24px; background: #000; box-shadow: 0 24px 80px rgba(0,0,0,0.45); }
       media-player { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+      media-player[view-type="audio"] { aspect-ratio: auto; }
       media-video-layout { --media-brand: #7c5cff; --media-focus-ring-color: #9b87ff; }
       .meta { display: grid; gap: 24px; margin-top: 24px; }
       .chapters { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
@@ -299,7 +301,7 @@ const viewerPage = (
         <media-player
           title="${escapeHtml(video.title)}"
           src="${escapeHtml(manifestUrl ?? video.hlsKey)}"
-          view-type="video"
+          view-type="${isAudio ? "audio" : "video"}"
           stream-type="on-demand"
           playsinline
           crossorigin
