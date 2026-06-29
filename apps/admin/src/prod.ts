@@ -150,6 +150,54 @@ const replaceChapters = (videoId: string, chapters: ReadonlyArray<Chapter>) =>
     }
   });
 
+const listPrefixKeys = (prefix: string) =>
+  Effect.gen(function* () {
+    const client = r2();
+    const keys: Array<string> = [];
+    let startAfter: string | undefined;
+    while (true) {
+      const page = yield* Effect.tryPromise({
+        try: () =>
+          client.list({
+            prefix,
+            maxKeys: 1000,
+            ...(startAfter !== undefined ? { startAfter } : {}),
+          }),
+        catch: (cause) => new ProdSyncError({ operation: "r2.list", cause }),
+      });
+      for (const obj of page.contents ?? []) {
+        if (obj.key) keys.push(obj.key);
+      }
+      if (!page.isTruncated) return keys;
+      const next = page.contents?.at(-1)?.key;
+      if (!next) return keys;
+      startAfter = next;
+    }
+  });
+
+const removeR2Prefix = (videoId: string) =>
+  Effect.gen(function* () {
+    const client = r2();
+    const keys = yield* listPrefixKeys(`media/${videoId}/`);
+    yield* Effect.forEach(
+      keys,
+      (key) =>
+        Effect.tryPromise({
+          try: () => client.delete(key),
+          catch: (cause) => new ProdSyncError({ operation: "r2.delete", cause }),
+        }),
+      { concurrency: 8, discard: true },
+    );
+  }).pipe(wrapProdError("removeMedia"));
+
+const unpublishVideo = (videoId: string) =>
+  d1Query(`UPDATE videos SET published_at = NULL WHERE id = ?`, [videoId]).pipe(
+    wrapProdError("unpublish"),
+  );
+
+const deleteVideoRow = (videoId: string) =>
+  d1Query(`DELETE FROM videos WHERE id = ?`, [videoId]).pipe(wrapProdError("removeFromProd"));
+
 export interface ProdSyncService {
   readonly uploadMedia: (
     videoId: string,
@@ -165,6 +213,9 @@ export interface ProdSyncService {
     chapters: ReadonlyArray<Chapter>,
     localMediaDir: string,
   ) => Effect.Effect<void, ProdSyncError>;
+  readonly removeMedia: (videoId: string) => Effect.Effect<void, ProdSyncError>;
+  readonly unpublish: (videoId: string) => Effect.Effect<void, ProdSyncError>;
+  readonly removeFromProd: (videoId: string) => Effect.Effect<void, ProdSyncError>;
 }
 
 export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admin/ProdSync") {
@@ -188,6 +239,13 @@ export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admi
           yield* upsertVideo(video);
           yield* replaceChapters(video.id, chapters);
         }).pipe(wrapProdError("pushToProd")),
+      removeMedia: (videoId) => removeR2Prefix(videoId),
+      unpublish: (videoId) => unpublishVideo(videoId),
+      removeFromProd: (videoId) =>
+        Effect.gen(function* () {
+          yield* removeR2Prefix(videoId);
+          yield* deleteVideoRow(videoId);
+        }),
     }),
   );
 }
@@ -214,4 +272,22 @@ export const pushToProd = (video: Video, chapters: ReadonlyArray<Chapter>, local
   Effect.gen(function* () {
     const sync = yield* ProdSync;
     return yield* sync.pushToProd(video, chapters, localMediaDir);
+  }).pipe(Effect.provide(ProdSync.layer));
+
+export const removeMedia = (videoId: string) =>
+  Effect.gen(function* () {
+    const sync = yield* ProdSync;
+    return yield* sync.removeMedia(videoId);
+  }).pipe(Effect.provide(ProdSync.layer));
+
+export const unpublish = (videoId: string) =>
+  Effect.gen(function* () {
+    const sync = yield* ProdSync;
+    return yield* sync.unpublish(videoId);
+  }).pipe(Effect.provide(ProdSync.layer));
+
+export const removeFromProd = (videoId: string) =>
+  Effect.gen(function* () {
+    const sync = yield* ProdSync;
+    return yield* sync.removeFromProd(videoId);
   }).pipe(Effect.provide(ProdSync.layer));
