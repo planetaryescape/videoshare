@@ -21,7 +21,7 @@ export const SucceededUpload = m("SucceededUpload", { video: VideoSchema });
 export const FailedUpload = m("FailedUpload", { error: S.String });
 export const ReceivedUploadProgress = m("ReceivedUploadProgress", {
   stage: S.String,
-  pct: S.Finite,
+  pct: S.Finite.check(S.isBetween({ minimum: 0, maximum: 100 })),
 });
 export const ClickedPublish = m("ClickedPublish", { id: S.String });
 export const SucceededPublish = m("SucceededPublish", { video: VideoSchema });
