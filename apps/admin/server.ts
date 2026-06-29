@@ -40,9 +40,10 @@ const appLayer = Layer.mergeAll(
 
 // Build `appLayer` once via a `ManagedRuntime` so its resources (in
 // particular the `SqliteClient` connection) stay alive for the lifetime
-// of the server. Share that context between the HTTP handler and the
-// WebSocket fiber so transcode progress events published via the
-// `ProgressBus` reach subscribed sockets.
+// of the server. Reuse `appContext` for the WebSocket progress handler
+// so transcode progress events published via the `ProgressBus` reach
+// subscribed sockets (the `ProgressBus` instance is shared with the
+// HTTP `Transcoder`).
 const appRuntime = ManagedRuntime.make(appLayer);
 const appContext = await appRuntime.context();
 const appContextLayer = Layer.succeedContext(appContext);
@@ -53,7 +54,9 @@ const fullLayer = Layer.mergeAll(handlersLayer, AdminApiLive, mediaRouter, corsM
 
 const { handler } = HttpRouter.toWebHandler(fullLayer, { disableLogger: false });
 
-const progressRuntime = ManagedRuntime.make(ProgressBus.layer);
+const progressRuntime = ManagedRuntime.make(Layer.succeedContext(appContext), {
+  memoMap: appRuntime.memoMap,
+});
 const progressHandler = makeProgressHandler(progressRuntime);
 
 Bun.serve<ProgressSocketData>({
