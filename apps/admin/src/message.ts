@@ -51,6 +51,7 @@ export const SucceededSaveChapters = m("SucceededSaveChapters", {
 export const FailedSaveChapters = m("FailedSaveChapters", { error: S.String });
 export const ClickedCopyLink = m("ClickedCopyLink", { url: S.String });
 export const CopiedLink = m("CopiedLink");
+export const FailedCopyLink = m("FailedCopyLink", { error: S.String });
 
 export const Message = S.Union([
   ClickedNewVideo,
@@ -91,5 +92,6 @@ export const Message = S.Union([
   FailedSaveChapters,
   ClickedCopyLink,
   CopiedLink,
+  FailedCopyLink,
 ]);
 export type Message = S.Schema.Type<typeof Message>;

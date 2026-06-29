@@ -337,5 +337,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
       ClickedCopyLink: (msg: { url: string }) => withCmds(model, CopyLinkCmd({ url: msg.url })),
       CopiedLink: () => withEvo(model, { copiedLink: () => true }),
+      FailedCopyLink: (msg: { error: string }) =>
+        withEvo(model, { errorMessage: () => Option.some(msg.error) }),
     }),
   );

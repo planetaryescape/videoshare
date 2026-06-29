@@ -3,6 +3,7 @@ import { Command } from "foldkit";
 import { ChapterSchema, errMsg, type Chapter, VideoSchema } from "./model";
 import {
   CopiedLink,
+  FailedCopyLink,
   FailedCreateVideo,
   FailedDeleteVideo,
   FailedLoadVideoDetail,
@@ -189,13 +190,15 @@ export const CopyLinkCmd = Command.define(
   "CopyLink",
   { url: S.String },
   CopiedLink,
+  FailedCopyLink,
 )((input: { url: string }) =>
   Effect.gen(function* () {
-    yield* Effect.promise(() => navigator.clipboard.writeText(input.url)).pipe(
-      Effect.orElseSucceed(() => undefined),
-    );
+    yield* Effect.tryPromise({
+      try: () => navigator.clipboard.writeText(input.url),
+      catch: (error) => errMsg(error),
+    });
     return CopiedLink();
-  }),
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedCopyLink({ error })))),
 );
 
 export const PublishVideoCmd = Command.define(
