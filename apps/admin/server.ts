@@ -43,7 +43,7 @@ const appLayer = Layer.mergeAll(
 // of the server. Share that context between the HTTP handler and the
 // WebSocket fiber so transcode progress events published via the
 // `ProgressBus` reach subscribed sockets.
-const appRuntime = ManagedRuntime.make(appLayer as never);
+const appRuntime = ManagedRuntime.make(appLayer);
 const appContext = await appRuntime.context();
 const appContextLayer = Layer.succeedContext(appContext);
 
@@ -51,11 +51,10 @@ const fullLayer = Layer.mergeAll(handlersLayer, AdminApiLive, mediaRouter, corsM
   Layer.provide(appContextLayer),
 );
 
-const { handler } = HttpRouter.toWebHandler(fullLayer as never, { disableLogger: false });
+const { handler } = HttpRouter.toWebHandler(fullLayer, { disableLogger: false });
 
-const progressHandler = makeProgressHandler(
-  appRuntime as unknown as ManagedRuntime.ManagedRuntime<ProgressBus, never>,
-);
+const progressRuntime = ManagedRuntime.make(ProgressBus.layer);
+const progressHandler = makeProgressHandler(progressRuntime);
 
 Bun.serve<ProgressSocketData>({
   port: 3001,
@@ -67,7 +66,7 @@ Bun.serve<ProgressSocketData>({
       if (server.upgrade(req, { data: { videoId, fiber: null } })) return undefined;
       return new Response("Upgrade failed", { status: 400 });
     }
-    return handler(req);
+    return handler(req, appContext);
   },
   websocket: {
     open(ws) {
