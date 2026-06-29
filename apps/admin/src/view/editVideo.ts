@@ -30,7 +30,7 @@ type Html = ReturnType<typeof html<Message>>;
 
 const stageLabel = (stage: string, pct: number): string => {
   if (stage === "uploading") return "Uploading file...";
-  if (stage === "transcoding") return `Transcoding ${pct}%`;
+  if (stage === "transcoding") return "Transcoding";
   if (stage === "poster") return "Generating poster...";
   if (stage === "uploading-media") return "Uploading to R2...";
   if (stage === "done") return "Done";
