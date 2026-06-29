@@ -23,6 +23,7 @@
     "format": "oxfmt --write apps packages",
     "format:check": "oxfmt --check apps packages",
     "check-all": "bun run lint && bun run format:check && bun run typecheck",
+    "postinstall": "bun run lsp:patch",
     "lsp:patch": "effect-tsgo patch",
     "lsp:unpatch": "effect-tsgo unpatch"
   },
