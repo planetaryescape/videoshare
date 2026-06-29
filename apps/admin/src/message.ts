@@ -21,7 +21,7 @@ export const SucceededUpload = m("SucceededUpload", { video: VideoSchema });
 export const FailedUpload = m("FailedUpload", { error: S.String });
 export const ReceivedUploadProgress = m("ReceivedUploadProgress", {
   stage: S.String,
-  pct: S.Number,
+  pct: S.Finite,
 });
 export const ClickedPublish = m("ClickedPublish", { id: S.String });
 export const SucceededPublish = m("SucceededPublish", { video: VideoSchema });
@@ -40,7 +40,7 @@ export const FailedLoadVideoDetail = m("FailedLoadVideoDetail", { error: S.Strin
 export const ClickedAddChapter = m("ClickedAddChapter");
 export const ClickedRemoveChapter = m("ClickedRemoveChapter", { id: S.String });
 export const UpdatedChapterTitle = m("UpdatedChapterTitle", { id: S.String, title: S.String });
-export const UpdatedChapterStart = m("UpdatedChapterStart", { id: S.String, startSec: S.Number });
+export const UpdatedChapterStart = m("UpdatedChapterStart", { id: S.String, startSec: S.Finite });
 export const BlurredChapterField = m("BlurredChapterField");
 export const SucceededSaveChapters = m("SucceededSaveChapters", {
   chapters: S.Array(ChapterSchema),

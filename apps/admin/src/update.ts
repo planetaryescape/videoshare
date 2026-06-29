@@ -44,7 +44,7 @@ export const PROGRESS_EVENT = "videoshare:upload-progress";
 
 let progressSocket: WebSocket | null = null;
 
-const ProgressFrame = S.Struct({ stage: S.String, pct: S.Number });
+const ProgressFrame = S.Struct({ stage: S.String, pct: S.Finite });
 const decodeFrame = S.decodeUnknownOption(S.fromJsonString(ProgressFrame));
 
 const WS_ORIGIN = `ws://${location.hostname}:3001`;
