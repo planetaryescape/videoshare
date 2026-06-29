@@ -40,7 +40,10 @@ export const FailedLoadVideoDetail = m("FailedLoadVideoDetail", { error: S.Strin
 export const ClickedAddChapter = m("ClickedAddChapter");
 export const ClickedRemoveChapter = m("ClickedRemoveChapter", { id: S.String });
 export const UpdatedChapterTitle = m("UpdatedChapterTitle", { id: S.String, title: S.String });
-export const UpdatedChapterStart = m("UpdatedChapterStart", { id: S.String, startSec: S.Finite });
+export const UpdatedChapterStart = m("UpdatedChapterStart", {
+  id: S.String,
+  startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
+});
 export const BlurredChapterField = m("BlurredChapterField");
 export const SucceededSaveChapters = m("SucceededSaveChapters", {
   chapters: S.Array(ChapterSchema),

@@ -38,8 +38,8 @@ export const ChapterSchema = S.Struct({
   id: S.String,
   videoId: S.String,
   title: S.String,
-  startSec: S.Finite,
-  sortOrder: S.Finite,
+  startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
+  sortOrder: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 });
 
 export const Model = S.Struct({
