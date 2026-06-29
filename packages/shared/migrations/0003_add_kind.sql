@@ -1,0 +1,1 @@
+ALTER TABLE videos ADD COLUMN kind TEXT NOT NULL DEFAULT 'video';

@@ -12,6 +12,9 @@ export const Slug = Schema.String.check(
 ).pipe(Schema.brand("Slug"));
 export type Slug = typeof Slug.Type;
 
+export const Kind = Schema.Literals(["video", "audio"]);
+export type Kind = typeof Kind.Type;
+
 export class Chapter extends Schema.Class<Chapter>("Chapter")({
   id: ChapterId,
   videoId: VideoId,
@@ -23,6 +26,7 @@ export class Chapter extends Schema.Class<Chapter>("Chapter")({
 export class Video extends Schema.Class<Video>("Video")({
   id: VideoId,
   slug: Slug,
+  kind: Kind,
   title: Schema.String.check(Schema.isNonEmpty()),
   description: Schema.NullOr(Schema.String),
   posterKey: Schema.NullOr(Schema.String),

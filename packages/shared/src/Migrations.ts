@@ -38,4 +38,7 @@ export const migrate = Effect.gen(function* () {
     yield* sql`ALTER TABLE videos ADD COLUMN updated_at INTEGER`;
     yield* sql`UPDATE videos SET updated_at = created_at WHERE updated_at IS NULL`;
   }
+  if (!columns.some((column) => column.name === "kind")) {
+    yield* sql`ALTER TABLE videos ADD COLUMN kind TEXT NOT NULL DEFAULT 'video'`;
+  }
 });
