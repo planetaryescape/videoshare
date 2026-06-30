@@ -26,6 +26,17 @@ type ViewerEnv = {
 const cookieMaxAgeSeconds = 60 * 60 * 24;
 const assetCacheControl = "public, max-age=31536000, immutable";
 
+const hashString = (value: string) => {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const assetVersion = hashString(playerCss + playerScript);
+
 const faviconLinks = `<link rel="icon" type="image/png" sizes="32x32" href="/_assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/_assets/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/_assets/apple-touch-icon.png">`;
@@ -277,7 +288,7 @@ const viewerPage = (
     <title>${escapeHtml(video.title)}</title>
     ${faviconLinks}
     ${ogTags(origin, slug, video)}
-    <link rel="stylesheet" href="/_assets/player.css">
+    <link rel="stylesheet" href="/_assets/player.css?v=${assetVersion}">
     <style>
       :root { color-scheme: dark; }
       body { margin: 0; background: radial-gradient(circle at top, #1a1630, #09090f 52%); color: #f5f7fb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -286,18 +297,19 @@ const viewerPage = (
       p { margin: 0; color: #b8c0d0; line-height: 1.6; }
       .player-shell { overflow: hidden; border-radius: 24px; background: #000; box-shadow: 0 24px 80px rgba(0,0,0,0.45); }
       media-player { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
-      media-player[view-type="audio"] { aspect-ratio: auto; }
+      media-player[data-view-type="audio"] { aspect-ratio: auto; background: transparent; }
+      .player-shell.is-audio { background: transparent; box-shadow: none; border-radius: 0; }
       media-video-layout { --media-brand: #7c5cff; --media-focus-ring-color: #9b87ff; }
       .meta { display: grid; gap: 24px; margin-top: 24px; }
       .chapters { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
       .chapters li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.05); color: #d7deea; }
       .slug { margin-top: 20px; font-size: 0.85rem; color: #8e98ab; }
     </style>
-    <script type="module" src="/_assets/player.js"></script>
+    <script type="module" src="/_assets/player.js?v=${assetVersion}"></script>
   </head>
   <body>
     <main>
-      <div class="player-shell">
+      <div class="player-shell${isAudio ? " is-audio" : ""}">
         <media-player
           title="${escapeHtml(video.title)}"
           src="${escapeHtml(manifestUrl ?? video.hlsKey)}"
