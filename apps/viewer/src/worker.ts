@@ -297,6 +297,7 @@ const viewerPage = (
       p { margin: 0; color: #b8c0d0; line-height: 1.6; }
       .player-shell { overflow: hidden; border-radius: 24px; background: #000; box-shadow: 0 24px 80px rgba(0,0,0,0.45); }
       media-player { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+      media-player[view-type="audio"],
       media-player[data-view-type="audio"] { aspect-ratio: auto; background: transparent; }
       .player-shell.is-audio { background: transparent; box-shadow: none; border-radius: 0; }
       media-video-layout { --media-brand: #7c5cff; --media-focus-ring-color: #9b87ff; }
