@@ -11,6 +11,7 @@ import {
 import {
   BlurredChapterField,
   BlurredEditField,
+  ClearedPoster,
   ClickedAddChapter,
   ClickedBack,
   ClickedCopyLink,
@@ -269,12 +270,21 @@ export const editVideoView = (h: Html, model: Model) => {
                     ...(model.selectedPoster
                       ? [
                           h.div(
-                            [h.Class("mt-3 text-sm text-gray-300")],
+                            [h.Class("mt-3 flex items-center gap-2 text-sm text-gray-300")],
                             [
                               "Cover: ",
                               h.span(
                                 [h.Class("font-medium text-white")],
                                 [model.selectedPoster.name],
+                              ),
+                              h.button(
+                                [
+                                  h.Class(
+                                    "ml-1 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
+                                  ),
+                                  h.OnClick(ClearedPoster()),
+                                ],
+                                ["Remove"],
                               ),
                             ],
                           ),

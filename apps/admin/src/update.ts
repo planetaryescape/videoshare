@@ -182,6 +182,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         withEvo(model, { selectedFile: () => msg.file ?? null }),
       SelectedPoster: (msg: { file: File }) =>
         withEvo(model, { selectedPoster: () => msg.file ?? null }),
+      ClearedPoster: () => withEvo(model, { selectedPoster: () => null }),
       SubmittedUpload: () => {
         if (!model.selectedFile) {
           return withEvo(model, {
