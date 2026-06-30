@@ -170,7 +170,7 @@ const writePosterImage = (
     const jpeg = yield* Effect.tryPromise({
       try: () =>
         new Bun.Image(file)
-          .resize(1280, undefined, { fit: "inside", withoutEnlargement: true })
+          .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
           .jpeg({ quality: 85, progressive: true })
           .bytes(),
       catch: (cause) => new PosterDecodeError({ filename: file.name, cause }),

@@ -53,7 +53,15 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
         const { durationSec, kind } = yield* transcoder.transcode(videoId, file);
 
         if (poster) {
-          yield* transcoder.writePoster(videoId, poster);
+          yield* transcoder.writePoster(videoId, poster).pipe(
+            Effect.catchTag(
+              "PosterDecodeError",
+              (err) =>
+                new UploadValidationError({
+                  reason: `Invalid cover image: ${err.message}`,
+                }),
+            ),
+          );
         }
 
         yield* progress.publish({ videoId, stage: "uploading-media", pct: 100 });
