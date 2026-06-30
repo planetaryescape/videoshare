@@ -67,12 +67,17 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
         yield* progress.publish({ videoId, stage: "uploading-media", pct: 100 });
         yield* prod.uploadMedia(videoId, storage.videoDir(videoId));
 
-        const hasPoster = poster !== null || kind === "video";
+        const posterKey =
+          poster !== null
+            ? `media/${videoId}/poster.jpg`
+            : kind === "video"
+              ? `media/${videoId}/poster.jpg`
+              : found.value.posterKey;
         const updated = new Video({
           ...found.value,
           kind,
           hlsKey: `media/${videoId}/master.m3u8`,
-          posterKey: hasPoster ? `media/${videoId}/poster.jpg` : null,
+          posterKey,
           durationSec: isNaN(durationSec) ? 0 : durationSec,
           updatedAt: Date.now(),
         });
