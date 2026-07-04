@@ -12,7 +12,8 @@ import {
   QUALITY_HIGH,
   VideoSampleSink,
 } from "mediabunny";
-import type { VideoSample } from "mediabunny";
+import type { ConversionAudioOptions, VideoSample } from "mediabunny";
+import type { Kind } from "@videoshare/shared/Video";
 import {
   InvalidConversionError,
   NoVideoTrackError,
@@ -160,15 +161,41 @@ const writePoster = (
     );
   });
 
+const writePosterImage = (
+  videoId: string,
+  file: File,
+): Effect.Effect<void, PosterDecodeError | StorageError, Storage> =>
+  Effect.gen(function* () {
+    const storage = yield* Storage;
+    const jpeg = yield* Effect.tryPromise({
+      try: () =>
+        new Bun.Image(file)
+          .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 85, progressive: true })
+          .bytes(),
+      catch: (cause) => new PosterDecodeError({ filename: file.name, cause }),
+    });
+    yield* storage.writeFile(`${videoId}/poster.jpg`, jpeg);
+  });
+
+export interface TranscodeResult {
+  readonly durationSec: number;
+  readonly kind: Kind;
+}
+
 export interface TranscoderService {
   readonly transcode: (
     videoId: string,
     file: File,
   ) => Effect.Effect<
-    number,
+    TranscodeResult,
     NoVideoTrackError | PosterDecodeError | TranscodeError | InvalidConversionError | StorageError,
     Storage
   >;
+  readonly writePoster: (
+    videoId: string,
+    file: File,
+  ) => Effect.Effect<void, PosterDecodeError | StorageError, Storage>;
 }
 
 export class Transcoder extends Context.Service<Transcoder, TranscoderService>()(
@@ -185,7 +212,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
         videoId: string,
         file: File,
       ): Effect.Effect<
-        number,
+        TranscodeResult,
         | NoVideoTrackError
         | PosterDecodeError
         | TranscodeError
@@ -206,6 +233,13 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
                 new TranscodeError({ videoId, operation: "computeDuration", cause }),
             });
 
+            const videoTrack = yield* Effect.tryPromise({
+              try: () => input.getPrimaryVideoTrack(),
+              catch: (cause) =>
+                new TranscodeError({ videoId, operation: "getPrimaryVideoTrack", cause }),
+            });
+            const kind: Kind = videoTrack ? "video" : "audio";
+
             const output = new Output({
               format: new HlsOutputFormat({
                 segmentFormat: new MpegTsOutputFormat(),
@@ -217,33 +251,45 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
               ),
             });
 
+            const audioConfig: ConversionAudioOptions = {
+              codec: "aac",
+              bitrate: 128_000,
+              numberOfChannels: 2,
+              sampleRate: 48_000,
+            };
+
             const built = yield* Effect.tryPromise({
               try: () =>
-                Conversion.init({
-                  input,
-                  output,
-                  tracks: "primary",
-                  video: async (track) => {
-                    const sourceWidth = await track.getDisplayWidth();
-                    const sourceHeight = await track.getDisplayHeight();
-                    return selectAbrHeights(sourceHeight).map((height) => ({
-                      codec: "avc",
-                      width: Math.max(2, Math.round((sourceWidth * height) / sourceHeight / 2) * 2),
-                      height,
-                      fit: "contain",
-                      frameRate: 30,
-                      bitrate: QUALITY_HIGH,
-                      keyFrameInterval: 2,
-                      alpha: "discard",
-                    }));
-                  },
-                  audio: {
-                    codec: "aac",
-                    bitrate: 128_000,
-                    numberOfChannels: 2,
-                    sampleRate: 48_000,
-                  },
-                }),
+                kind === "video"
+                  ? Conversion.init({
+                      input,
+                      output,
+                      tracks: "primary",
+                      video: async (track) => {
+                        const sourceWidth = await track.getDisplayWidth();
+                        const sourceHeight = await track.getDisplayHeight();
+                        return selectAbrHeights(sourceHeight).map((height) => ({
+                          codec: "avc",
+                          width: Math.max(
+                            2,
+                            Math.round((sourceWidth * height) / sourceHeight / 2) * 2,
+                          ),
+                          height,
+                          fit: "contain",
+                          frameRate: 30,
+                          bitrate: QUALITY_HIGH,
+                          keyFrameInterval: 2,
+                          alpha: "discard",
+                        }));
+                      },
+                      audio: audioConfig,
+                    })
+                  : Conversion.init({
+                      input,
+                      output,
+                      tracks: "primary",
+                      audio: audioConfig,
+                    }),
               catch: (cause) =>
                 new TranscodeError({ videoId, operation: "Conversion.init", cause }),
             });
@@ -275,11 +321,13 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
               catch: (cause) => new TranscodeError({ videoId, operation: "execute", cause }),
             });
 
-            yield* progress.publish({ videoId, stage: "poster", pct: 99 });
-            yield* writePoster(videoId, file);
+            if (kind === "video") {
+              yield* progress.publish({ videoId, stage: "poster", pct: 99 });
+              yield* writePoster(videoId, file);
+            }
 
             yield* progress.publish({ videoId, stage: "done", pct: 100 });
-            return Number.isFinite(duration) ? duration : 0;
+            return { durationSec: Number.isFinite(duration) ? duration : 0, kind };
           });
 
           return yield* work.pipe(
@@ -292,7 +340,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
           );
         });
 
-      return Transcoder.of({ transcode });
+      return Transcoder.of({ transcode, writePoster: writePosterImage });
     }),
   );
 }

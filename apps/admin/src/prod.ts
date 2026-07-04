@@ -119,10 +119,11 @@ const uploadDir = (localDir: string, keyPrefix: string) =>
 
 const upsertVideo = (video: Video) =>
   d1Query(
-    `INSERT INTO videos (id, slug, title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO videos (id, slug, kind, title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        slug = excluded.slug,
+       kind = excluded.kind,
        title = excluded.title,
        description = excluded.description,
        poster_key = excluded.poster_key,
@@ -134,6 +135,7 @@ const upsertVideo = (video: Video) =>
     [
       video.id,
       video.slug,
+      video.kind,
       video.title,
       video.description,
       video.posterKey,

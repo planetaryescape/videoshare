@@ -11,6 +11,7 @@ import {
 import {
   BlurredChapterField,
   BlurredEditField,
+  ClearedPoster,
   ClickedAddChapter,
   ClickedBack,
   ClickedCopyLink,
@@ -19,6 +20,7 @@ import {
   ClickedUnpublish,
   type Message,
   SelectedFile,
+  SelectedPoster,
   SubmittedUpload,
   UpdatedChapterStart,
   UpdatedChapterTitle,
@@ -229,14 +231,14 @@ export const editVideoView = (h: Html, model: Model) => {
                   [
                     h.label(
                       [h.Class("block text-sm font-medium text-gray-300 mb-3")],
-                      ["Upload MP4"],
+                      ["Upload video or audio mix"],
                     ),
                     h.input([
                       h.Class(
                         "block text-sm text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-700 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-600",
                       ),
                       h.Type("file"),
-                      h.Accept(".mp4,video/mp4"),
+                      h.Accept(".mp4,video/mp4,.mp3,.m4a,.aac,.flac,audio/*"),
                       h.OnFileChange((files) => SelectedFile({ file: files[0] })),
                     ]),
                     ...(model.selectedFile
@@ -248,6 +250,41 @@ export const editVideoView = (h: Html, model: Model) => {
                               h.span(
                                 [h.Class("font-medium text-white")],
                                 [model.selectedFile.name],
+                              ),
+                            ],
+                          ),
+                        ]
+                      : []),
+                    h.label(
+                      [h.Class("mt-4 block text-sm font-medium text-gray-300 mb-3")],
+                      ["Cover image (optional)"],
+                    ),
+                    h.input([
+                      h.Class(
+                        "block text-sm text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-700 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-600",
+                      ),
+                      h.Type("file"),
+                      h.Accept("image/*"),
+                      h.OnFileChange((files) => SelectedPoster({ file: files[0] })),
+                    ]),
+                    ...(model.selectedPoster
+                      ? [
+                          h.div(
+                            [h.Class("mt-3 flex items-center gap-2 text-sm text-gray-300")],
+                            [
+                              "Cover: ",
+                              h.span(
+                                [h.Class("font-medium text-white")],
+                                [model.selectedPoster.name],
+                              ),
+                              h.button(
+                                [
+                                  h.Class(
+                                    "ml-1 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
+                                  ),
+                                  h.OnClick(ClearedPoster()),
+                                ],
+                                ["Remove"],
                               ),
                             ],
                           ),

@@ -53,6 +53,7 @@ export const Model = S.Struct({
   editVideo: S.Option(VideoSchema),
   editChapters: S.Array(ChapterSchema),
   selectedFile: S.Any,
+  selectedPoster: S.Any,
   isUploading: S.Boolean,
   uploadStage: S.String,
   uploadPct: S.Finite,
@@ -69,6 +70,7 @@ export type Model = {
   readonly editVideo: Option.Option<Video>;
   readonly editChapters: ReadonlyArray<Chapter>;
   readonly selectedFile: File | null;
+  readonly selectedPoster: File | null;
   readonly isUploading: boolean;
   readonly uploadStage: string;
   readonly uploadPct: number;
@@ -86,6 +88,7 @@ export const initialModel = (): Model => ({
   editVideo: Option.none(),
   editChapters: [],
   selectedFile: null,
+  selectedPoster: null,
   isUploading: false,
   uploadStage: "",
   uploadPct: 0,

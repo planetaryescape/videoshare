@@ -1,6 +1,6 @@
-import { Array, Context, Effect, Layer, Option } from "effect";
+import { Array, Context, Effect, Layer, Option, Schema } from "effect";
 import { SqlClient } from "effect/unstable/sql";
-import { Chapter, ChapterId, Slug, Video, VideoId } from "./Video.ts";
+import { Chapter, ChapterId, Kind, Slug, Video, VideoId } from "./Video.ts";
 import { PersistenceError, SlugAlreadyExistsError } from "./VideoErrors.ts";
 
 const wrapSqlError =
@@ -11,6 +11,7 @@ const wrapSqlError =
 interface VideoRow {
   readonly id: string;
   readonly slug: string;
+  readonly kind: string;
   readonly title: string;
   readonly description: string | null;
   readonly poster_key: string | null;
@@ -36,6 +37,7 @@ const toVideo = (row: VideoRow): Effect.Effect<Video, PersistenceError> =>
       new Video({
         id: VideoId.make(row.id),
         slug: Slug.make(row.slug),
+        kind: Schema.decodeUnknownSync(Kind)(row.kind),
         title: row.title,
         description: row.description,
         posterKey: row.poster_key,
@@ -111,8 +113,8 @@ export class VideoRepository extends Context.Service<
             return yield* new SlugAlreadyExistsError({ slug: video.slug });
           }
           yield* sql`
-            INSERT INTO videos (id, slug, title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at, updated_at)
-            VALUES (${video.id}, ${video.slug}, ${video.title}, ${video.description}, ${video.posterKey}, ${video.hlsKey}, ${video.durationSec}, ${video.passwordHash}, ${video.createdAt}, ${video.publishedAt}, ${video.updatedAt})
+            INSERT INTO videos (id, slug, kind, title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at, updated_at)
+            VALUES (${video.id}, ${video.slug}, ${video.kind}, ${video.title}, ${video.description}, ${video.posterKey}, ${video.hlsKey}, ${video.durationSec}, ${video.passwordHash}, ${video.createdAt}, ${video.publishedAt}, ${video.updatedAt})
           `;
           return video;
         }, wrapSqlError("create"));
@@ -121,6 +123,7 @@ export class VideoRepository extends Context.Service<
           yield* sql`
             UPDATE videos SET
               slug = ${video.slug},
+              kind = ${video.kind},
               title = ${video.title},
               description = ${video.description},
               poster_key = ${video.posterKey},

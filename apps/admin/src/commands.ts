@@ -163,14 +163,17 @@ export const SaveChaptersCmd = Command.define(
 
 export const UploadVideoCmd = Command.define(
   "UploadVideo",
-  { videoId: S.String, file: S.Any },
+  { videoId: S.String, file: S.Any, poster: S.Any },
   SucceededUpload,
   FailedUpload,
-)((input: { videoId: string; file: File }) =>
+)((input: { videoId: string; file: File; poster: File | null }) =>
   Effect.gen(function* () {
     const formData = new FormData();
     formData.append("videoId", input.videoId);
     formData.append("file", input.file);
+    if (input.poster) {
+      formData.append("poster", input.poster);
+    }
     const response = yield* Effect.promise<Response>(() =>
       fetch(`${SERVER_ORIGIN}/api/upload`, {
         method: "POST",
