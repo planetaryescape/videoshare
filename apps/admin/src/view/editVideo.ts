@@ -90,7 +90,7 @@ const chaptersSection = (h: Html, model: Model) =>
       h.div(
         [h.Class("mb-3 flex items-center justify-between")],
         [
-          h.label([h.Class("text-sm font-medium text-gray-300")], ["Chapters"]),
+          h.h2([h.Class("text-sm font-medium text-gray-300")], ["Chapters"]),
           Button.view<Message>({
             onClick: ClickedAddChapter(),
             toView: ({ button }) =>
@@ -199,6 +199,7 @@ export const editVideoView = (h: Html, model: Model) => {
     [
       Button.view<Message>({
         onClick: ClickedBack(),
+        isDisabled: model.isUploading,
         toView: ({ button }) =>
           h.button(
             [
@@ -306,7 +307,7 @@ export const editVideoView = (h: Html, model: Model) => {
                 h.div(
                   [],
                   [
-                    h.label([h.Class("block text-sm font-medium text-gray-300 mb-1")], ["Poster"]),
+                    h.p([h.Class("block text-sm font-medium text-gray-300 mb-1")], ["Poster"]),
                     h.img([
                       h.Src(`/${video.posterKey}`),
                       h.Alt(`Poster for ${video.title}`),
@@ -321,7 +322,7 @@ export const editVideoView = (h: Html, model: Model) => {
                 h.div(
                   [h.Class("rounded-lg border border-dashed border-gray-600 bg-gray-900/50 p-6")],
                   [
-                    h.label(
+                    h.p(
                       [h.Class("block text-sm font-medium text-gray-300 mb-3")],
                       ["Upload video or audio mix"],
                     ),
@@ -359,7 +360,7 @@ export const editVideoView = (h: Html, model: Model) => {
                           ),
                         ]
                       : []),
-                    h.label(
+                    h.p(
                       [h.Class("mt-4 block text-sm font-medium text-gray-300 mb-3")],
                       ["Cover image (optional)"],
                     ),

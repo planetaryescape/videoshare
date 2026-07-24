@@ -1,6 +1,6 @@
 import { Effect, Option, Queue, Schema as S, Stream } from "effect";
 import { Subscription } from "foldkit";
-import { FailedUpload, ReceivedUploadProgress, type Message } from "./message";
+import { FailedUploadProgress, ReceivedUploadProgress, type Message } from "./message";
 import type { Model } from "./model";
 
 const ProgressFrame = S.Struct({
@@ -24,7 +24,7 @@ const uploadProgressStream = (videoId: string): Stream.Stream<Message> =>
             return;
           }
           isTerminated = true;
-          Queue.offerUnsafe(queue, FailedUpload({ error }));
+          Queue.offerUnsafe(queue, FailedUploadProgress({ error }));
           Queue.endUnsafe(queue);
         };
 
@@ -64,10 +64,7 @@ export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
     { maybeUploadingVideoId: S.Option(S.String) },
     {
       modelToDependencies: (model) => ({
-        maybeUploadingVideoId:
-          model.isUploading && model.screen._tag === "EditVideo"
-            ? Option.some(model.screen.videoId)
-            : Option.none(),
+        maybeUploadingVideoId: model.uploadingVideoId,
       }),
       dependenciesToStream: ({ maybeUploadingVideoId }) =>
         Option.match(maybeUploadingVideoId, {

@@ -85,21 +85,26 @@ export const update: (model: Model, message: Message) => Update = (model, messag
     M.withReturnType<Update>(),
     M.tagsExhaustive({
       ClickedEditVideo: (msg: { id: string }) =>
-        withEvo(
-          model,
-          {
-            screen: () => EditVideo({ videoId: msg.id }),
-            editTitle: () => "",
-            editDescription: () => "",
-            editVideo: () => Option.none(),
-            editChapters: () => [],
-            chapterValidationError: () => Option.none(),
-            copiedLink: () => false,
-            errorMessage: () => Option.none(),
-          },
-          LoadVideoDetail({ id: msg.id }),
-        ),
+        model.isUploading
+          ? noCmd(model)
+          : withEvo(
+              model,
+              {
+                screen: () => EditVideo({ videoId: msg.id }),
+                editTitle: () => "",
+                editDescription: () => "",
+                editVideo: () => Option.none(),
+                editChapters: () => [],
+                chapterValidationError: () => Option.none(),
+                copiedLink: () => false,
+                errorMessage: () => Option.none(),
+              },
+              LoadVideoDetail({ id: msg.id }),
+            ),
       ClickedBack: () => {
+        if (model.isUploading) {
+          return noCmd(model);
+        }
         return withEvo(model, {
           screen: () => ListVideos(),
           editTitle: () => "",
@@ -228,16 +233,18 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               Option.some("Save the video before uploading to create a stable identifier"),
           });
         }
+        const videoId = model.screen.videoId;
         return withEvo(
           model,
           {
             isUploading: () => true,
+            uploadingVideoId: () => Option.some(videoId),
             uploadStage: () => "uploading",
             uploadPct: () => 0,
             errorMessage: () => Option.none(),
           },
           UploadVideoCmd({
-            videoId: model.screen.videoId,
+            videoId,
             file: model.selectedFile.value,
             poster: model.selectedPoster,
           }),
@@ -251,6 +258,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       SucceededUpload: (msg: { video: Video }) => {
         return withEvo(model, {
           isUploading: () => false,
+          uploadingVideoId: () => Option.none(),
           uploadStage: () => "done",
           uploadPct: () => 100,
           editVideo: () => Option.some(msg.video),
@@ -261,11 +269,14 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       FailedUpload: (msg: { error: string }) => {
         return withEvo(model, {
           isUploading: () => false,
+          uploadingVideoId: () => Option.none(),
           uploadStage: () => "",
           uploadPct: () => 0,
           errorMessage: () => Option.some(msg.error),
         });
       },
+      FailedUploadProgress: ({ error }) =>
+        withEvo(model, { errorMessage: () => Option.some(error) }),
       ClickedPublish: (msg: { id: string }) =>
         withEvo(
           model,

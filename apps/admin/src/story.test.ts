@@ -5,14 +5,19 @@ import { CreateVideoCmd, GenerateChapterId, LoadVideos } from "./commands";
 import {
   BlurredChapterField,
   ClickedAddChapter,
+  ClickedBack,
   ClickedConfirmPendingAction,
   ClickedDeleteVideo,
+  ClickedEditVideo,
   FailedCreateVideo,
   FailedLoadVideos,
+  FailedUploadProgress,
   GeneratedChapterId,
   SubmittedCreateVideo,
+  SubmittedUpload,
   SucceededCreateVideo,
   SucceededLoadVideos,
+  SucceededUpload,
 } from "./message";
 import { EditVideo, initialModel, type Video } from "./model";
 import { init, update } from "./update";
@@ -146,5 +151,34 @@ describe("admin story", () => {
 
     expect(confirmedModel.pendingConfirmation).toEqual(Option.none());
     expect(confirmedCommands.map((command) => command.name)).toContain("DeleteVideo");
+  });
+
+  test("keeps upload ownership until the upload command finishes", () => {
+    const [uploadingModel] = update(
+      {
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some(video),
+        selectedFile: Option.some(new File(["video"], "video.mp4", { type: "video/mp4" })),
+      },
+      SubmittedUpload(),
+    );
+
+    expect(uploadingModel.uploadingVideoId).toEqual(Option.some(video.id));
+
+    const [afterProgressFailure] = update(
+      uploadingModel,
+      FailedUploadProgress({ error: "Progress unavailable" }),
+    );
+    expect(afterProgressFailure.isUploading).toBe(true);
+    expect(afterProgressFailure.uploadingVideoId).toEqual(Option.some(video.id));
+
+    const [afterBack] = update(afterProgressFailure, ClickedBack());
+    const [afterEdit] = update(afterBack, ClickedEditVideo({ id: "video-2" }));
+    expect(afterEdit.screen).toEqual(EditVideo({ videoId: video.id }));
+
+    const [completedModel] = update(afterEdit, SucceededUpload({ video }));
+    expect(completedModel.isUploading).toBe(false);
+    expect(completedModel.uploadingVideoId).toEqual(Option.none());
   });
 });

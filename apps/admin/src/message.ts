@@ -25,6 +25,7 @@ export const ClearedPoster = m("ClearedPoster");
 export const SubmittedUpload = m("SubmittedUpload");
 export const SucceededUpload = m("SucceededUpload", { video: VideoSchema });
 export const FailedUpload = m("FailedUpload", { error: S.String });
+export const FailedUploadProgress = m("FailedUploadProgress", { error: S.String });
 export const ReceivedUploadProgress = m("ReceivedUploadProgress", {
   stage: S.String,
   pct: S.Finite.check(S.isBetween({ minimum: 0, maximum: 100 })),
@@ -86,6 +87,7 @@ export const Message = S.Union([
   SubmittedUpload,
   SucceededUpload,
   FailedUpload,
+  FailedUploadProgress,
   ReceivedUploadProgress,
   ClickedPublish,
   SucceededPublish,
