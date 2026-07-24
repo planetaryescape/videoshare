@@ -43,7 +43,10 @@
     "@effect/platform-node": ">=4.0.0-beta.101 || >=4.0.0",
     "@effect/sql-d1": "4.0.0-beta.101",
     "@effect/sql-sqlite-bun": "4.0.0-beta.101",
+    "@tailwindcss/vite": "^4.3.3",
     "alchemy": "2.0.0-beta.64",
-    "effect": ">=4.0.0-beta.101 || >=4.0.0"
+    "effect": ">=4.0.0-beta.101 || >=4.0.0",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.1.5"
   }
 }

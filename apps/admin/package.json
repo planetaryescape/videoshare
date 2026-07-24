@@ -10,15 +10,15 @@
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.101",
     "@effect/sql-sqlite-bun": "4.0.0-beta.101",
-    "@mediabunny/server": "^1.46.0",
+    "@mediabunny/server": "^1.51.0",
     "@videoshare/shared": "workspace:*",
     "effect": ">=4.0.0-beta.101 || >=4.0.0",
-    "foldkit": "^0.106.0",
-    "mediabunny": "^1.46.0",
+    "foldkit": "^0.132.0",
+    "mediabunny": "^1.51.0",
     "tailwindcss": "^4"
   },
   "devDependencies": {
-    "@foldkit/vite-plugin": "^0.8.0",
+    "@foldkit/vite-plugin": "^0.11.1",
     "@tailwindcss/vite": "^4",
     "typescript": "^7.0.2",
     "vite": "^8"
