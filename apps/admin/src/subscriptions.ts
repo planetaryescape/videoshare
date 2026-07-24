@@ -1,30 +1,79 @@
-import { Effect, Queue, Stream } from "effect";
+import { Effect, Option, Queue, Schema as S, Stream } from "effect";
 import { Subscription } from "foldkit";
-import type { Model as ModelSchema } from "./model";
-import type { Message as MessageSchema } from "./message";
-import { PROGRESS_EVENT } from "./update";
+import { FailedUpload, ReceivedUploadProgress, type Message } from "./message";
+import type { Model } from "./model";
 
-type Model = ModelSchema;
-type Message = MessageSchema;
+const ProgressFrame = S.Struct({
+  stage: S.String,
+  pct: S.Finite.check(S.isBetween({ minimum: 0, maximum: 100 })),
+});
 
-const isMessageEvent = (event: Event): event is CustomEvent<Message> =>
-  event instanceof CustomEvent;
+const decodeFrame = S.decodeUnknownOption(S.fromJsonString(ProgressFrame));
 
-export const subscriptions = Subscription.make<Model, Message>()(() => ({
-  uploadProgress: Subscription.persistent(
-    Stream.callback<Message>((queue) =>
-      Effect.gen(function* () {
-        const handler = (event: Event) => {
-          if (!isMessageEvent(event)) return;
-          Queue.offerUnsafe(queue, event.detail);
-        };
-        window.addEventListener(PROGRESS_EVENT, handler);
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => {
-            window.removeEventListener(PROGRESS_EVENT, handler);
-          }),
+const uploadProgressStream = (videoId: string): Stream.Stream<Message> =>
+  Stream.callback<Message>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        const socket = new WebSocket(
+          `ws://${location.hostname}:3001/ws?videoId=${encodeURIComponent(videoId)}`,
         );
+        let isTerminated = false;
+
+        const terminate = (error: string) => {
+          if (isTerminated) {
+            return;
+          }
+          isTerminated = true;
+          Queue.offerUnsafe(queue, FailedUpload({ error }));
+          Queue.endUnsafe(queue);
+        };
+
+        const handleMessage = (event: MessageEvent) => {
+          const decoded = decodeFrame(event.data);
+          if (Option.isSome(decoded)) {
+            Queue.offerUnsafe(
+              queue,
+              ReceivedUploadProgress({
+                stage: decoded.value.stage,
+                pct: decoded.value.pct,
+              }),
+            );
+          }
+        };
+        const handleClose = () => terminate("Upload progress connection closed");
+        const handleError = () => terminate("Upload progress connection failed");
+
+        socket.addEventListener("message", handleMessage);
+        socket.addEventListener("close", handleClose);
+        socket.addEventListener("error", handleError);
+
+        return { socket, handleMessage, handleClose, handleError };
       }),
-    ),
+      ({ socket, handleMessage, handleClose, handleError }) =>
+        Effect.sync(() => {
+          socket.removeEventListener("message", handleMessage);
+          socket.removeEventListener("close", handleClose);
+          socket.removeEventListener("error", handleError);
+          socket.close();
+        }),
+    ).pipe(Effect.flatMap(() => Effect.never)),
+  );
+
+export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
+  uploadProgress: entry(
+    { maybeUploadingVideoId: S.Option(S.String) },
+    {
+      modelToDependencies: (model) => ({
+        maybeUploadingVideoId:
+          model.isUploading && model.screen._tag === "EditVideo"
+            ? Option.some(model.screen.videoId)
+            : Option.none(),
+      }),
+      dependenciesToStream: ({ maybeUploadingVideoId }) =>
+        Option.match(maybeUploadingVideoId, {
+          onNone: () => Stream.empty,
+          onSome: uploadProgressStream,
+        }),
+    },
   ),
 }));

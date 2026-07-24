@@ -1,14 +1,9 @@
-import { Match as M, Option, Schema as S } from "effect";
+import { Match as M, Option } from "effect";
 import { FileDrop } from "@foldkit/ui";
 import { Command } from "foldkit";
 import { makeConstrainedEvo } from "foldkit/struct";
 import { EditVideo, initialModel, ListVideos, type Chapter, type Model, type Video } from "./model";
-import {
-  GotPosterFileDropMessage,
-  GotVideoFileDropMessage,
-  ReceivedUploadProgress,
-  type Message,
-} from "./message";
+import { GotPosterFileDropMessage, GotVideoFileDropMessage, type Message } from "./message";
 import {
   CopyLinkCmd,
   CreateVideoCmd,
@@ -41,46 +36,6 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
 
 export const init = (): Update => [initialModel(), [LoadVideos()]];
 
-export const PROGRESS_EVENT = "videoshare:upload-progress";
-
-let progressSocket: WebSocket | null = null;
-
-const ProgressFrame = S.Struct({
-  stage: S.String,
-  pct: S.Finite.check(S.isBetween({ minimum: 0, maximum: 100 })),
-});
-const decodeFrame = S.decodeUnknownOption(S.fromJsonString(ProgressFrame));
-
-const WS_ORIGIN = `ws://${location.hostname}:3001`;
-
-const openProgressSocket = (videoId: string) => {
-  if (progressSocket && progressSocket.readyState <= WebSocket.OPEN) {
-    progressSocket.close();
-  }
-  const ws = new WebSocket(`${WS_ORIGIN}/ws?videoId=${encodeURIComponent(videoId)}`);
-  ws.addEventListener("message", (event) => {
-    const decoded = decodeFrame(event.data);
-    if (Option.isSome(decoded)) {
-      window.dispatchEvent(
-        new CustomEvent(PROGRESS_EVENT, {
-          detail: ReceivedUploadProgress({
-            stage: decoded.value.stage,
-            pct: decoded.value.pct,
-          }),
-        }),
-      );
-    }
-  });
-  progressSocket = ws;
-};
-
-const closeProgressSocket = () => {
-  if (progressSocket) {
-    progressSocket.close();
-    progressSocket = null;
-  }
-};
-
 const saveChaptersCmd = (model: Model, chapters: ReadonlyArray<Chapter>): ReadonlyArray<Cmd> => {
   if (Option.isNone(model.editVideo)) {
     return [];
@@ -110,7 +65,6 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           LoadVideoDetail({ id: msg.id }),
         ),
       ClickedBack: () => {
-        closeProgressSocket();
         return withEvo(model, {
           screen: () => ListVideos(),
           editTitle: () => "",
@@ -238,7 +192,6 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               Option.some("Save the video before uploading to create a stable identifier"),
           });
         }
-        openProgressSocket(model.screen.videoId);
         return withEvo(
           model,
           {
@@ -260,7 +213,6 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           uploadPct: () => msg.pct,
         }),
       SucceededUpload: (msg: { video: Video }) => {
-        closeProgressSocket();
         return withEvo(model, {
           isUploading: () => false,
           uploadStage: () => "done",
@@ -271,7 +223,6 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         });
       },
       FailedUpload: (msg: { error: string }) => {
-        closeProgressSocket();
         return withEvo(model, {
           isUploading: () => false,
           uploadStage: () => "",
@@ -344,7 +295,6 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           removed || nextScreen !== model.screen
             ? withEvo(model, { videos: () => videos, screen: () => nextScreen })
             : noCmd(model);
-        closeProgressSocket();
         return next;
       },
       FailedDeleteVideo: (msg: { error: string }) =>
