@@ -60,17 +60,29 @@ const decodeVideo = decodeResponse(VideoSchema);
 const decodeVideoWrapped = decodeResponse(VideoWrappedResponse);
 const decodeVideoList = decodeResponse(VideoListResponse);
 
+const tryFetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  Effect.tryPromise({
+    try: (signal) => fetch(input, { ...init, signal }),
+    catch: errMsg,
+  });
+
+const tryJson = (response: Response) =>
+  Effect.tryPromise({
+    try: () => response.json(),
+    catch: errMsg,
+  });
+
 export const LoadVideos = Command.define(
   "LoadVideos",
   SucceededLoadVideos,
   FailedLoadVideos,
 )(
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() => fetch("/api/videos"));
+    const response = yield* tryFetch("/api/videos");
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeVideoList(raw);
     return SucceededLoadVideos({ videos: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadVideos({ error: errMsg(error) })))),
@@ -82,17 +94,15 @@ export const CreateVideoCmd = Command.define(
   FailedCreateVideo,
 )(
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() =>
-      fetch("/api/videos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Untitled", description: "" }),
-      }),
-    );
+    const response = yield* tryFetch("/api/videos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Untitled", description: "" }),
+    });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeVideo(raw);
     return SucceededCreateVideo({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedCreateVideo({ error: errMsg(error) })))),
@@ -105,17 +115,15 @@ export const SaveVideoCmd = Command.define(
   FailedSaveVideo,
 )((input: { id: string; title: string; description: string }) =>
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() =>
-      fetch(`/api/videos/${input.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: input.title, description: input.description }),
-      }),
-    );
+    const response = yield* tryFetch(`/api/videos/${input.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: input.title, description: input.description }),
+    });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeVideoWrapped(raw);
     return SucceededSaveVideo({ video: data.video });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveVideo({ error: errMsg(error) })))),
@@ -128,11 +136,11 @@ export const LoadVideoDetail = Command.define(
   FailedLoadVideoDetail,
 )((input: { id: string }) =>
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() => fetch(`/api/videos/${input.id}`));
+    const response = yield* tryFetch(`/api/videos/${input.id}`);
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeVideoDetail(raw);
     return SucceededLoadVideoDetail({ video: data.video, chapters: data.chapters });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadVideoDetail({ error: errMsg(error) })))),
@@ -145,17 +153,15 @@ export const SaveChaptersCmd = Command.define(
   FailedSaveChapters,
 )((input: { id: string; chapters: ReadonlyArray<Chapter> }) =>
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() =>
-      fetch(`/api/videos/${input.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chapters: input.chapters }),
-      }),
-    );
+    const response = yield* tryFetch(`/api/videos/${input.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chapters: input.chapters }),
+    });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeChapters(raw);
     return SucceededSaveChapters({ chapters: data.chapters });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveChapters({ error: errMsg(error) })))),
@@ -174,16 +180,14 @@ export const UploadVideoCmd = Command.define(
     if (input.poster) {
       formData.append("poster", input.poster);
     }
-    const response = yield* Effect.promise<Response>(() =>
-      fetch(`${SERVER_ORIGIN}/api/upload`, {
-        method: "POST",
-        body: formData,
-      }),
-    );
+    const response = yield* tryFetch(`${SERVER_ORIGIN}/api/upload`, {
+      method: "POST",
+      body: formData,
+    });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeVideo(raw);
     return SucceededUpload({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedUpload({ error: errMsg(error) })))),
@@ -211,13 +215,11 @@ export const PublishVideoCmd = Command.define(
   FailedPublish,
 )((input: { id: string }) =>
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() =>
-      fetch(`/api/publish/${input.id}`, { method: "POST" }),
-    );
+    const response = yield* tryFetch(`/api/publish/${input.id}`, { method: "POST" });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeVideo(raw);
     return SucceededPublish({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedPublish({ error: errMsg(error) })))),
@@ -230,13 +232,11 @@ export const UnpublishVideoCmd = Command.define(
   FailedUnpublish,
 )((input: { id: string }) =>
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() =>
-      fetch(`/api/publish/${input.id}/unpublish`, { method: "POST" }),
-    );
+    const response = yield* tryFetch(`/api/publish/${input.id}/unpublish`, { method: "POST" });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    const raw = yield* Effect.promise<unknown>(() => response.json());
+    const raw = yield* tryJson(response);
     const data = yield* decodeVideo(raw);
     return SucceededUnpublish({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedUnpublish({ error: errMsg(error) })))),
@@ -249,9 +249,7 @@ export const DeleteVideoCmd = Command.define(
   FailedDeleteVideo,
 )((input: { id: string }) =>
   Effect.gen(function* () {
-    const response = yield* Effect.promise<Response>(() =>
-      fetch(`/api/videos/${input.id}`, { method: "DELETE" }),
-    );
+    const response = yield* tryFetch(`/api/videos/${input.id}`, { method: "DELETE" });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
