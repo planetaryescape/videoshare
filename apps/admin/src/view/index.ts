@@ -8,7 +8,7 @@ export const view = (model: Model) => {
   const h = html<Message>();
   return {
     title: "Videoshare Admin",
-    body: h.div(
+    body: h.main(
       [h.Class("min-h-screen bg-gray-950")],
       [
         h.div(

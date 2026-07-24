@@ -46,11 +46,24 @@ const uploadProgress = (h: Html, model: Model) => {
     [h.Class("mt-4")],
     [
       h.div(
-        [h.Class("mb-1 flex justify-between text-xs text-gray-400")],
+        [
+          h.AriaAtomic(true),
+          h.AriaLive("polite"),
+          h.Class("mb-1 flex justify-between text-xs text-gray-400"),
+        ],
         [stageLabel(model.uploadStage), indeterminate ? "" : `${model.uploadPct}%`],
       ),
       h.div(
-        [h.Class("h-2 w-full overflow-hidden rounded-full bg-gray-700")],
+        [
+          h.Role("progressbar"),
+          h.AriaLabel("Upload and transcode progress"),
+          h.AriaValuemin(0),
+          h.AriaValuemax(100),
+          ...(indeterminate
+            ? []
+            : [h.AriaValuenow(model.uploadPct), h.AriaValuetext(`${model.uploadPct}%`)]),
+          h.Class("h-2 w-full overflow-hidden rounded-full bg-gray-700"),
+        ],
         [
           h.div(
             [
@@ -79,6 +92,7 @@ const chaptersSection = (h: Html, model: Model) =>
           h.label([h.Class("text-sm font-medium text-gray-300")], ["Chapters"]),
           h.button(
             [
+              h.Type("button"),
               h.Class(
                 "rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-600 transition-colors",
               ),
@@ -91,10 +105,13 @@ const chaptersSection = (h: Html, model: Model) =>
       ...(model.editChapters.length === 0
         ? [h.p([h.Class("text-sm text-gray-500")], ["No chapters yet."])]
         : model.editChapters.map((chapter) =>
-            h.div(
+            h.keyed("div")(
+              chapter.id,
               [h.Class("mb-2 flex items-center gap-2")],
               [
                 h.input([
+                  h.Id(`chapter-${chapter.id}-start`),
+                  h.AriaLabel("Chapter start time in seconds"),
                   h.Class(
                     "w-24 rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
                   ),
@@ -108,6 +125,8 @@ const chaptersSection = (h: Html, model: Model) =>
                   h.OnBlur(BlurredChapterField()),
                 ]),
                 h.input([
+                  h.Id(`chapter-${chapter.id}-title`),
+                  h.AriaLabel("Chapter title"),
                   h.Class(
                     "flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
                   ),
@@ -119,6 +138,12 @@ const chaptersSection = (h: Html, model: Model) =>
                 ]),
                 h.button(
                   [
+                    h.Type("button"),
+                    h.AriaLabel(
+                      chapter.title.trim() === ""
+                        ? "Remove untitled chapter"
+                        : `Remove chapter ${chapter.title}`,
+                    ),
                     h.Class(
                       "rounded-lg px-2 py-1.5 text-sm text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
                     ),
@@ -140,6 +165,7 @@ export const editVideoView = (h: Html, model: Model) => {
     [
       h.button(
         [
+          h.Type("button"),
           h.Class(
             "mb-6 flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors",
           ),
@@ -164,6 +190,7 @@ export const editVideoView = (h: Html, model: Model) => {
         ? [
             h.div(
               [
+                h.Role("alert"),
                 h.Class(
                   "mb-4 rounded-lg bg-red-900/50 border border-red-700 px-4 py-3 text-sm text-red-200",
                 ),
@@ -178,8 +205,12 @@ export const editVideoView = (h: Html, model: Model) => {
           h.div(
             [],
             [
-              h.label([h.Class("block text-sm font-medium text-gray-300 mb-1")], ["Title"]),
+              h.label(
+                [h.For("video-title"), h.Class("block text-sm font-medium text-gray-300 mb-1")],
+                ["Title"],
+              ),
               h.input([
+                h.Id("video-title"),
                 h.Class(
                   "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
                 ),
@@ -194,9 +225,16 @@ export const editVideoView = (h: Html, model: Model) => {
           h.div(
             [],
             [
-              h.label([h.Class("block text-sm font-medium text-gray-300 mb-1")], ["Description"]),
+              h.label(
+                [
+                  h.For("video-description"),
+                  h.Class("block text-sm font-medium text-gray-300 mb-1"),
+                ],
+                ["Description"],
+              ),
               h.textarea(
                 [
+                  h.Id("video-description"),
                   h.Class(
                     "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
                   ),
@@ -217,7 +255,7 @@ export const editVideoView = (h: Html, model: Model) => {
                     h.label([h.Class("block text-sm font-medium text-gray-300 mb-1")], ["Poster"]),
                     h.img([
                       h.Src(`/${video.posterKey}`),
-                      h.Alt("Poster"),
+                      h.Alt(`Poster for ${video.title}`),
                       h.Class("w-full max-w-sm rounded-lg border border-gray-700"),
                     ]),
                   ],
@@ -279,6 +317,7 @@ export const editVideoView = (h: Html, model: Model) => {
                               ),
                               h.button(
                                 [
+                                  h.Type("button"),
                                   h.Class(
                                     "ml-1 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
                                   ),
@@ -292,6 +331,7 @@ export const editVideoView = (h: Html, model: Model) => {
                       : []),
                     h.button(
                       [
+                        h.Type("button"),
                         h.Class(
                           "mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                         ),
@@ -319,7 +359,7 @@ export const editVideoView = (h: Html, model: Model) => {
                               ),
                             ],
                             [
-                              h.span([h.Class("text-amber-400")], ["●"]),
+                              h.span([h.AriaHidden(true), h.Class("text-amber-400")], ["●"]),
                               "Local changes are not live yet. Republish to update.",
                             ],
                           ),
@@ -330,6 +370,7 @@ export const editVideoView = (h: Html, model: Model) => {
                       [
                         h.button(
                           [
+                            h.Type("button"),
                             h.Class(
                               "rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                             ),
@@ -348,6 +389,7 @@ export const editVideoView = (h: Html, model: Model) => {
                           ? [
                               h.button(
                                 [
+                                  h.Type("button"),
                                   h.Class(
                                     "rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                                   ),
@@ -360,6 +402,7 @@ export const editVideoView = (h: Html, model: Model) => {
                           : []),
                         h.button(
                           [
+                            h.Type("button"),
                             h.Class(
                               "rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600 transition-colors",
                             ),

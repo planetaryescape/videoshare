@@ -17,13 +17,23 @@ import {
 type Html = ReturnType<typeof html<Message>>;
 
 const renderRow = (h: Html, video: Video) =>
-  h.tr(
+  h.keyed("tr")(
+    video.id,
+    [h.Class("transition-colors hover:bg-gray-800/50")],
     [
-      h.Class("cursor-pointer transition-colors hover:bg-gray-800/50"),
-      h.OnClick(ClickedEditVideo({ id: video.id })),
-    ],
-    [
-      h.td([h.Class("px-4 py-3 font-medium text-white")], [video.title]),
+      h.td(
+        [h.Class("px-4 py-3")],
+        [
+          h.button(
+            [
+              h.Type("button"),
+              h.Class("font-medium text-white transition-colors hover:text-blue-300"),
+              h.OnClick(ClickedEditVideo({ id: video.id })),
+            ],
+            [video.title],
+          ),
+        ],
+      ),
       h.td([h.Class("px-4 py-3 text-gray-400 font-mono text-xs")], [video.slug]),
       h.td(
         [h.Class("px-4 py-3")],
@@ -66,6 +76,7 @@ const renderRow = (h: Html, video: Video) =>
         [
           h.button(
             [
+              h.Type("button"),
               h.Class(
                 "rounded px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors",
               ),
@@ -78,7 +89,7 @@ const renderRow = (h: Html, video: Video) =>
     ],
   );
 
-const renderRows = (h: Html, model: Model): ReadonlyArray<any> => {
+const renderRows = (h: Html, model: Model) => {
   if (model.videos.length === 0) {
     return [
       h.tr(
@@ -100,6 +111,7 @@ export const listVideosView = (h: Html, model: Model) =>
           h.h1([h.Class("text-2xl font-bold text-white")], ["Videos"]),
           h.button(
             [
+              h.Type("button"),
               h.Class(
                 "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors",
               ),
@@ -113,6 +125,7 @@ export const listVideosView = (h: Html, model: Model) =>
         ? [
             h.div(
               [
+                h.Role("alert"),
                 h.Class(
                   "mb-4 rounded-lg bg-red-900/50 border border-red-700 px-4 py-3 text-sm text-red-200",
                 ),
@@ -127,6 +140,7 @@ export const listVideosView = (h: Html, model: Model) =>
           h.table(
             [h.Class("w-full text-left text-sm")],
             [
+              h.caption([h.Class("sr-only")], ["Videos available to edit and publish"]),
               h.thead(
                 [],
                 [
