@@ -1,4 +1,5 @@
 import { Option } from "effect";
+import { Button } from "@foldkit/ui";
 import type { html } from "foldkit/html";
 import {
   formatDate,
@@ -24,14 +25,17 @@ const renderRow = (h: Html, video: Video) =>
       h.td(
         [h.Class("px-4 py-3")],
         [
-          h.button(
-            [
-              h.Type("button"),
-              h.Class("font-medium text-white transition-colors hover:text-blue-300"),
-              h.OnClick(ClickedEditVideo({ id: video.id })),
-            ],
-            [video.title],
-          ),
+          Button.view<Message>({
+            onClick: ClickedEditVideo({ id: video.id }),
+            toView: ({ button }) =>
+              h.button(
+                [
+                  ...button,
+                  h.Class("font-medium text-white transition-colors hover:text-blue-300"),
+                ],
+                [video.title],
+              ),
+          }),
         ],
       ),
       h.td([h.Class("px-4 py-3 text-gray-400 font-mono text-xs")], [video.slug]),
@@ -74,16 +78,19 @@ const renderRow = (h: Html, video: Video) =>
       h.td(
         [h.Class("px-4 py-3")],
         [
-          h.button(
-            [
-              h.Type("button"),
-              h.Class(
-                "rounded px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors",
+          Button.view<Message>({
+            onClick: ClickedDeleteVideo({ id: video.id }),
+            toView: ({ button }) =>
+              h.button(
+                [
+                  ...button,
+                  h.Class(
+                    "rounded px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors",
+                  ),
+                ],
+                ["Delete"],
               ),
-              h.OnClick(ClickedDeleteVideo({ id: video.id })),
-            ],
-            ["Delete"],
-          ),
+          }),
         ],
       ),
     ],
@@ -109,16 +116,19 @@ export const listVideosView = (h: Html, model: Model) =>
         [h.Class("flex items-center justify-between mb-8")],
         [
           h.h1([h.Class("text-2xl font-bold text-white")], ["Videos"]),
-          h.button(
-            [
-              h.Type("button"),
-              h.Class(
-                "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors",
+          Button.view<Message>({
+            onClick: SubmittedCreateVideo(),
+            toView: ({ button }) =>
+              h.button(
+                [
+                  ...button,
+                  h.Class(
+                    "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors",
+                  ),
+                ],
+                ["New Video"],
               ),
-              h.OnClick(SubmittedCreateVideo()),
-            ],
-            ["New Video"],
-          ),
+          }),
         ],
       ),
       ...(Option.isSome(model.errorMessage)

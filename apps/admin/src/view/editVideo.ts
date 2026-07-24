@@ -1,5 +1,5 @@
 import { Option } from "effect";
-import { FileDrop } from "@foldkit/ui";
+import { Button, FileDrop, Input, Textarea } from "@foldkit/ui";
 import type { html } from "foldkit/html";
 import {
   formatDate,
@@ -91,16 +91,19 @@ const chaptersSection = (h: Html, model: Model) =>
         [h.Class("mb-3 flex items-center justify-between")],
         [
           h.label([h.Class("text-sm font-medium text-gray-300")], ["Chapters"]),
-          h.button(
-            [
-              h.Type("button"),
-              h.Class(
-                "rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-600 transition-colors",
+          Button.view<Message>({
+            onClick: ClickedAddChapter(),
+            toView: ({ button }) =>
+              h.button(
+                [
+                  ...button,
+                  h.Class(
+                    "rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-600 transition-colors",
+                  ),
+                ],
+                ["+ Add chapter"],
               ),
-              h.OnClick(ClickedAddChapter()),
-            ],
-            ["+ Add chapter"],
-          ),
+          }),
         ],
       ),
       ...(model.editChapters.length === 0
@@ -110,48 +113,70 @@ const chaptersSection = (h: Html, model: Model) =>
               chapter.id,
               [h.Class("mb-2 flex items-center gap-2")],
               [
-                h.input([
-                  h.Id(`chapter-${chapter.id}-start`),
-                  h.AriaLabel("Chapter start time in seconds"),
-                  h.Class(
-                    "w-24 rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
-                  ),
-                  h.Type("number"),
-                  h.Min("0"),
-                  h.Value(String(chapter.startSec)),
-                  h.Placeholder("sec"),
-                  h.OnInput((value) =>
+                Input.view<Message>({
+                  id: `chapter-${chapter.id}-start`,
+                  value: String(chapter.startSec),
+                  type: "number",
+                  placeholder: "sec",
+                  onInput: (value) =>
                     UpdatedChapterStart({ id: chapter.id, startSec: Number(value) || 0 }),
-                  ),
-                  h.OnBlur(BlurredChapterField()),
-                ]),
-                h.input([
-                  h.Id(`chapter-${chapter.id}-title`),
-                  h.AriaLabel("Chapter title"),
-                  h.Class(
-                    "flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
-                  ),
-                  h.Type("text"),
-                  h.Value(chapter.title),
-                  h.Placeholder("Chapter title"),
-                  h.OnInput((value) => UpdatedChapterTitle({ id: chapter.id, title: value })),
-                  h.OnBlur(BlurredChapterField()),
-                ]),
-                h.button(
-                  [
-                    h.Type("button"),
-                    h.AriaLabel(
-                      chapter.title.trim() === ""
-                        ? "Remove untitled chapter"
-                        : `Remove chapter ${chapter.title}`,
+                  toView: ({ input, label, description }) =>
+                    h.div(
+                      [h.Class("w-24")],
+                      [
+                        h.label([...label, h.Class("sr-only")], ["Chapter start time"]),
+                        h.input([
+                          ...input,
+                          h.Min("0"),
+                          h.OnBlur(BlurredChapterField()),
+                          h.Class(
+                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
+                          ),
+                        ]),
+                        h.span([...description, h.Class("sr-only")], ["Start time in seconds"]),
+                      ],
                     ),
-                    h.Class(
-                      "rounded-lg px-2 py-1.5 text-sm text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
+                }),
+                Input.view<Message>({
+                  id: `chapter-${chapter.id}-title`,
+                  value: chapter.title,
+                  placeholder: "Chapter title",
+                  isInvalid: chapter.title.trim() === "",
+                  onInput: (value) => UpdatedChapterTitle({ id: chapter.id, title: value }),
+                  toView: ({ input, label, description }) =>
+                    h.div(
+                      [h.Class("flex-1")],
+                      [
+                        h.label([...label, h.Class("sr-only")], ["Chapter title"]),
+                        h.input([
+                          ...input,
+                          h.OnBlur(BlurredChapterField()),
+                          h.Class(
+                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
+                          ),
+                        ]),
+                        h.span([...description, h.Class("sr-only")], ["Chapter title"]),
+                      ],
                     ),
-                    h.OnClick(ClickedRemoveChapter({ id: chapter.id })),
-                  ],
-                  ["✕"],
-                ),
+                }),
+                Button.view<Message>({
+                  onClick: ClickedRemoveChapter({ id: chapter.id }),
+                  toView: ({ button }) =>
+                    h.button(
+                      [
+                        ...button,
+                        h.AriaLabel(
+                          chapter.title.trim() === ""
+                            ? "Remove untitled chapter"
+                            : `Remove chapter ${chapter.title}`,
+                        ),
+                        h.Class(
+                          "rounded-lg px-2 py-1.5 text-sm text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
+                        ),
+                      ],
+                      ["✕"],
+                    ),
+                }),
               ],
             ),
           )),
@@ -172,28 +197,31 @@ export const editVideoView = (h: Html, model: Model) => {
   return h.div(
     [h.Class("mx-auto max-w-2xl")],
     [
-      h.button(
-        [
-          h.Type("button"),
-          h.Class(
-            "mb-6 flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors",
-          ),
-          h.OnClick(ClickedBack()),
-        ],
-        [
-          h.svg(
+      Button.view<Message>({
+        onClick: ClickedBack(),
+        toView: ({ button }) =>
+          h.button(
             [
-              h.Class("h-4 w-4"),
-              h.ViewBox("0 0 24 24"),
-              h.Fill("none"),
-              h.Stroke("currentColor"),
-              h.StrokeWidth("2"),
+              ...button,
+              h.Class(
+                "mb-6 flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors",
+              ),
             ],
-            [h.path([h.D("M15 19l-7-7 7-7")], [])],
+            [
+              h.svg(
+                [
+                  h.Class("h-4 w-4"),
+                  h.ViewBox("0 0 24 24"),
+                  h.Fill("none"),
+                  h.Stroke("currentColor"),
+                  h.StrokeWidth("2"),
+                ],
+                [h.path([h.D("M15 19l-7-7 7-7")], [])],
+              ),
+              " Back to videos",
+            ],
           ),
-          " Back to videos",
-        ],
-      ),
+      }),
       h.h1([h.Class("mb-8 text-2xl font-bold text-white")], [video ? video.title : "New Video"]),
       ...(Option.isSome(model.errorMessage)
         ? [
@@ -214,46 +242,63 @@ export const editVideoView = (h: Html, model: Model) => {
           h.div(
             [],
             [
-              h.label(
-                [h.For("video-title"), h.Class("block text-sm font-medium text-gray-300 mb-1")],
-                ["Title"],
-              ),
-              h.input([
-                h.Id("video-title"),
-                h.Class(
-                  "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
-                ),
-                h.Type("text"),
-                h.Value(model.editTitle),
-                h.Placeholder("Video title"),
-                h.OnInput((value) => UpdatedTitle({ title: value })),
-                h.OnBlur(BlurredEditField()),
-              ]),
+              Input.view<Message>({
+                id: "video-title",
+                value: model.editTitle,
+                placeholder: "Video title",
+                onInput: (value) => UpdatedTitle({ title: value }),
+                toView: ({ input, label, description }) =>
+                  h.div(
+                    [],
+                    [
+                      h.label(
+                        [...label, h.Class("block text-sm font-medium text-gray-300 mb-1")],
+                        ["Title"],
+                      ),
+                      h.input([
+                        ...input,
+                        h.OnBlur(BlurredEditField()),
+                        h.Class(
+                          "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
+                        ),
+                      ]),
+                      h.span([...description, h.Class("sr-only")], ["Video title"]),
+                    ],
+                  ),
+              }),
             ],
           ),
           h.div(
             [],
             [
-              h.label(
-                [
-                  h.For("video-description"),
-                  h.Class("block text-sm font-medium text-gray-300 mb-1"),
-                ],
-                ["Description"],
-              ),
-              h.textarea(
-                [
-                  h.Id("video-description"),
-                  h.Class(
-                    "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
+              Textarea.view<Message>({
+                id: "video-description",
+                value: model.editDescription,
+                rows: 3,
+                placeholder: "Video description",
+                onInput: (value) => UpdatedDescription({ description: value }),
+                toView: ({ textarea, label, description }) =>
+                  h.div(
+                    [],
+                    [
+                      h.label(
+                        [...label, h.Class("block text-sm font-medium text-gray-300 mb-1")],
+                        ["Description"],
+                      ),
+                      h.textarea(
+                        [
+                          ...textarea,
+                          h.OnBlur(BlurredEditField()),
+                          h.Class(
+                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
+                          ),
+                        ],
+                        [],
+                      ),
+                      h.span([...description, h.Class("sr-only")], ["Optional video description"]),
+                    ],
                   ),
-                  h.Placeholder("Video description"),
-                  h.Rows(3),
-                  h.OnInput((value) => UpdatedDescription({ description: value })),
-                  h.OnBlur(BlurredEditField()),
-                ],
-                [model.editDescription],
-              ),
+              }),
             ],
           ),
           ...(video?.posterKey
@@ -348,31 +393,37 @@ export const editVideoView = (h: Html, model: Model) => {
                                 [h.Class("font-medium text-white")],
                                 [model.selectedPoster.value.name],
                               ),
-                              h.button(
-                                [
-                                  h.Type("button"),
-                                  h.Class(
-                                    "ml-1 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
+                              Button.view<Message>({
+                                onClick: ClearedPoster(),
+                                toView: ({ button }) =>
+                                  h.button(
+                                    [
+                                      ...button,
+                                      h.Class(
+                                        "ml-1 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
+                                      ),
+                                    ],
+                                    ["Remove"],
                                   ),
-                                  h.OnClick(ClearedPoster()),
-                                ],
-                                ["Remove"],
-                              ),
+                              }),
                             ],
                           ),
                         ]
                       : []),
-                    h.button(
-                      [
-                        h.Type("button"),
-                        h.Class(
-                          "mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    Button.view<Message>({
+                      onClick: SubmittedUpload(),
+                      isDisabled: model.isUploading || Option.isNone(model.selectedFile),
+                      toView: ({ button }) =>
+                        h.button(
+                          [
+                            ...button,
+                            h.Class(
+                              "mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:not-data-[disabled]:bg-blue-500 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
+                            ),
+                          ],
+                          [model.isUploading ? "Uploading & Transcoding..." : "Upload & Transcode"],
                         ),
-                        h.Disabled(model.isUploading || Option.isNone(model.selectedFile)),
-                        h.OnClick(SubmittedUpload()),
-                      ],
-                      [model.isUploading ? "Uploading & Transcoding..." : "Upload & Transcode"],
-                    ),
+                    }),
                     ...(model.isUploading ? [uploadProgress(h, model)] : []),
                   ],
                 ),
@@ -401,48 +452,57 @@ export const editVideoView = (h: Html, model: Model) => {
                     h.div(
                       [h.Class("flex gap-3")],
                       [
-                        h.button(
-                          [
-                            h.Type("button"),
-                            h.Class(
-                              "rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                        Button.view<Message>({
+                          onClick: ClickedPublish({ id: video.id }),
+                          isDisabled: model.isPublishing,
+                          toView: ({ button }) =>
+                            h.button(
+                              [
+                                ...button,
+                                h.Class(
+                                  "rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:not-data-[disabled]:bg-green-500 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
+                                ),
+                              ],
+                              [
+                                model.isPublishing
+                                  ? "Publishing..."
+                                  : isPublished(video)
+                                    ? "Republish"
+                                    : "Publish",
+                              ],
                             ),
-                            h.Disabled(model.isPublishing),
-                            h.OnClick(ClickedPublish({ id: video.id })),
-                          ],
-                          [
-                            model.isPublishing
-                              ? "Publishing..."
-                              : isPublished(video)
-                                ? "Republish"
-                                : "Publish",
-                          ],
-                        ),
+                        }),
                         ...(isPublished(video)
                           ? [
-                              h.button(
-                                [
-                                  h.Type("button"),
-                                  h.Class(
-                                    "rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                              Button.view<Message>({
+                                onClick: ClickedUnpublish({ id: video.id }),
+                                isDisabled: model.isUnpublishing,
+                                toView: ({ button }) =>
+                                  h.button(
+                                    [
+                                      ...button,
+                                      h.Class(
+                                        "rounded-lg bg-amber-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:not-data-[disabled]:bg-amber-600 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
+                                      ),
+                                    ],
+                                    [model.isUnpublishing ? "Unpublishing..." : "Unpublish"],
                                   ),
-                                  h.Disabled(model.isUnpublishing),
-                                  h.OnClick(ClickedUnpublish({ id: video.id })),
-                                ],
-                                [model.isUnpublishing ? "Unpublishing..." : "Unpublish"],
-                              ),
+                              }),
                             ]
                           : []),
-                        h.button(
-                          [
-                            h.Type("button"),
-                            h.Class(
-                              "rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600 transition-colors",
+                        Button.view<Message>({
+                          onClick: ClickedCopyLink({ url: shareUrl(video.slug) }),
+                          toView: ({ button }) =>
+                            h.button(
+                              [
+                                ...button,
+                                h.Class(
+                                  "rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600 transition-colors",
+                                ),
+                              ],
+                              [model.copiedLink ? "Copied!" : "Copy link"],
                             ),
-                            h.OnClick(ClickedCopyLink({ url: shareUrl(video.slug) })),
-                          ],
-                          [model.copiedLink ? "Copied!" : "Copy link"],
-                        ),
+                        }),
                       ],
                     ),
                   ],

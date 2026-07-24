@@ -1,4 +1,4 @@
-import { Dialog } from "@foldkit/ui";
+import { Button, Dialog } from "@foldkit/ui";
 import { Option } from "effect";
 import type { html } from "foldkit/html";
 import {
@@ -57,26 +57,32 @@ export const confirmationDialogView = (h: Html, model: Model) => {
                     h.div(
                       [h.Class("mt-6 flex justify-end gap-3")],
                       [
-                        h.button(
-                          [
-                            ...closeButton,
-                            h.Type("button"),
-                            h.Class(
-                              "rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600",
+                        Button.view<Message>({
+                          toView: ({ button }) =>
+                            h.button(
+                              [
+                                ...button,
+                                ...closeButton,
+                                h.Class(
+                                  "rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600",
+                                ),
+                              ],
+                              ["Cancel"],
                             ),
-                          ],
-                          ["Cancel"],
-                        ),
-                        h.button(
-                          [
-                            h.Type("button"),
-                            h.Class(
-                              "rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500",
+                        }),
+                        Button.view<Message>({
+                          onClick: ClickedConfirmPendingAction(),
+                          toView: ({ button }) =>
+                            h.button(
+                              [
+                                ...button,
+                                h.Class(
+                                  "rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500",
+                                ),
+                              ],
+                              [isDelete ? "Delete" : "Unpublish"],
                             ),
-                            h.OnClick(ClickedConfirmPendingAction()),
-                          ],
-                          [isDelete ? "Delete" : "Unpublish"],
-                        ),
+                        }),
                       ],
                     ),
                   ],
