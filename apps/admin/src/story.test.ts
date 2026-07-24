@@ -9,14 +9,19 @@ import {
   ClickedConfirmPendingAction,
   ClickedDeleteVideo,
   ClickedEditVideo,
+  ClickedUnpublish,
   FailedCreateVideo,
+  FailedDeleteVideo,
   FailedLoadVideos,
+  FailedUnpublish,
   FailedUploadProgress,
   GeneratedChapterId,
   SubmittedCreateVideo,
   SubmittedUpload,
   SucceededCreateVideo,
+  SucceededDeleteVideo,
   SucceededLoadVideos,
+  SucceededUnpublish,
   SucceededUpload,
 } from "./message";
 import { EditVideo, initialModel, type Video } from "./model";
@@ -180,5 +185,42 @@ describe("admin story", () => {
     const [completedModel] = update(afterEdit, SucceededUpload({ video }));
     expect(completedModel.isUploading).toBe(false);
     expect(completedModel.uploadingVideoId).toEqual(Option.none());
+  });
+
+  test("applies delete success and failure outcomes", () => {
+    const model = { ...initialModel(), videos: [video] };
+    const [deletedModel] = update(model, SucceededDeleteVideo({ id: video.id }));
+    const [failedModel] = update(model, FailedDeleteVideo({ error: "Delete failed" }));
+
+    expect(deletedModel.videos).toEqual([]);
+    expect(failedModel.errorMessage).toEqual(Option.some("Delete failed"));
+  });
+
+  test("confirms unpublish and applies its outcomes", () => {
+    const publishedVideo = { ...video, publishedAt: 1_750_000_002_000 };
+    const model = {
+      ...initialModel(),
+      screen: EditVideo({ videoId: video.id }),
+      videos: [publishedVideo],
+      editVideo: Option.some(publishedVideo),
+    };
+    const [pendingModel] = update(model, ClickedUnpublish({ id: video.id }));
+    const [confirmedModel, commands] = update(pendingModel, ClickedConfirmPendingAction());
+
+    expect(confirmedModel.isUnpublishing).toBe(true);
+    expect(commands.map((command) => command.name)).toContain("UnpublishVideo");
+
+    const [unpublishedModel] = update(
+      confirmedModel,
+      SucceededUnpublish({ video: { ...publishedVideo, publishedAt: null } }),
+    );
+    const [failedModel] = update(confirmedModel, FailedUnpublish({ error: "Unpublish failed" }));
+
+    expect(unpublishedModel.isUnpublishing).toBe(false);
+    expect(unpublishedModel.editVideo).toEqual(
+      Option.some({ ...publishedVideo, publishedAt: null }),
+    );
+    expect(failedModel.isUnpublishing).toBe(false);
+    expect(failedModel.errorMessage).toEqual(Option.some("Unpublish failed"));
   });
 });
