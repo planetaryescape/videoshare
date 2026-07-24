@@ -1,9 +1,24 @@
 import { Match as M, Option } from "effect";
-import { FileDrop } from "@foldkit/ui";
+import { Dialog, FileDrop } from "@foldkit/ui";
 import { Command } from "foldkit";
 import { makeConstrainedEvo } from "foldkit/struct";
-import { EditVideo, initialModel, ListVideos, type Chapter, type Model, type Video } from "./model";
-import { GotPosterFileDropMessage, GotVideoFileDropMessage, type Message } from "./message";
+import {
+  DeleteVideoConfirmation,
+  EditVideo,
+  initialModel,
+  ListVideos,
+  UnpublishVideoConfirmation,
+  type Chapter,
+  type Model,
+  type PendingConfirmation,
+  type Video,
+} from "./model";
+import {
+  GotConfirmationDialogMessage,
+  GotPosterFileDropMessage,
+  GotVideoFileDropMessage,
+  type Message,
+} from "./message";
 import {
   CopyLinkCmd,
   CreateVideoCmd,
@@ -50,6 +65,18 @@ const saveChapters = (model: Model, chapters: ReadonlyArray<Chapter>): Update =>
     nextModel,
     { chapterValidationError: () => Option.none() },
     SaveChaptersCmd({ id: model.editVideo.value.id, chapters }),
+  );
+};
+
+const openConfirmation = (model: Model, pendingConfirmation: PendingConfirmation): Update => {
+  const [confirmationDialog, commands] = Dialog.open(model.confirmationDialog);
+  return withEvo(
+    model,
+    {
+      confirmationDialog: () => confirmationDialog,
+      pendingConfirmation: () => Option.some(pendingConfirmation),
+    },
+    ...Command.mapMessages(commands, (message) => GotConfirmationDialogMessage({ message })),
   );
 };
 
@@ -259,21 +286,55 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           isPublishing: () => false,
           errorMessage: () => Option.some(msg.error),
         }),
-      ClickedUnpublish: (msg: { id: string }) => {
-        if (
-          !window.confirm(
-            "Unpublish this video? It will be taken offline. Local data and R2 media will be removed; you can re-publish from the local files later.",
-          )
-        ) {
+      ClickedUnpublish: ({ id }) =>
+        openConfirmation(model, UnpublishVideoConfirmation({ videoId: id })),
+      GotConfirmationDialogMessage: ({ message }) => {
+        const [confirmationDialog, commands, maybeOutMessage] = Dialog.update(
+          model.confirmationDialog,
+          message,
+        );
+        return withEvo(
+          model,
+          {
+            confirmationDialog: () => confirmationDialog,
+            pendingConfirmation: () =>
+              Option.isSome(maybeOutMessage) && maybeOutMessage.value._tag === "Closed"
+                ? Option.none()
+                : model.pendingConfirmation,
+          },
+          ...Command.mapMessages(commands, (message) => GotConfirmationDialogMessage({ message })),
+        );
+      },
+      ClickedConfirmPendingAction: () => {
+        if (Option.isNone(model.pendingConfirmation)) {
           return noCmd(model);
+        }
+        const pendingConfirmation = model.pendingConfirmation.value;
+        const [confirmationDialog, dialogCommands] = Dialog.close(model.confirmationDialog);
+        const commands = Command.mapMessages(dialogCommands, (message) =>
+          GotConfirmationDialogMessage({ message }),
+        );
+        if (pendingConfirmation._tag === "DeleteVideoConfirmation") {
+          return withEvo(
+            model,
+            {
+              confirmationDialog: () => confirmationDialog,
+              pendingConfirmation: () => Option.none(),
+            },
+            ...commands,
+            DeleteVideoCmd({ id: pendingConfirmation.videoId }),
+          );
         }
         return withEvo(
           model,
           {
+            confirmationDialog: () => confirmationDialog,
+            pendingConfirmation: () => Option.none(),
             isUnpublishing: () => true,
             errorMessage: () => Option.none(),
           },
-          UnpublishVideoCmd({ id: msg.id }),
+          ...commands,
+          UnpublishVideoCmd({ id: pendingConfirmation.videoId }),
         );
       },
       SucceededUnpublish: (msg: { video: Video }) =>
@@ -287,12 +348,8 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           isUnpublishing: () => false,
           errorMessage: () => Option.some(msg.error),
         }),
-      ClickedDeleteVideo: (msg: { id: string }) => {
-        if (!window.confirm("Delete this video?")) {
-          return noCmd(model);
-        }
-        return withCmds(model, DeleteVideoCmd({ id: msg.id }));
-      },
+      ClickedDeleteVideo: ({ id }) =>
+        openConfirmation(model, DeleteVideoConfirmation({ videoId: id })),
       SucceededDeleteVideo: (msg: { id: string }) => {
         const removed = model.videos.find((v) => v.id === msg.id);
         const nextScreen =

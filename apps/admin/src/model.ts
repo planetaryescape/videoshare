@@ -1,7 +1,7 @@
 import { Schema as S, Option } from "effect";
 import { File as FoldkitFile } from "foldkit";
 import { ts } from "foldkit/schema";
-import { FileDrop } from "@foldkit/ui";
+import { Dialog, FileDrop } from "@foldkit/ui";
 
 export const VideoSchema = S.Struct({
   id: S.String,
@@ -31,6 +31,10 @@ export const EditVideo = ts("EditVideo", {
   videoId: S.String.check(S.isMinLength(1)),
 });
 export const Screen = S.Union([ListVideos, EditVideo]);
+export const DeleteVideoConfirmation = ts("DeleteVideoConfirmation", { videoId: S.String });
+export const UnpublishVideoConfirmation = ts("UnpublishVideoConfirmation", { videoId: S.String });
+export const PendingConfirmation = S.Union([DeleteVideoConfirmation, UnpublishVideoConfirmation]);
+export type PendingConfirmation = typeof PendingConfirmation.Type;
 
 export const Model = S.Struct({
   screen: Screen,
@@ -42,6 +46,8 @@ export const Model = S.Struct({
   chapterValidationError: S.Option(S.String),
   videoFileDrop: FileDrop.Model,
   posterFileDrop: FileDrop.Model,
+  confirmationDialog: Dialog.Model,
+  pendingConfirmation: S.Option(PendingConfirmation),
   selectedFile: S.Option(FoldkitFile.File),
   selectedPoster: S.Option(FoldkitFile.File),
   isUploading: S.Boolean,
@@ -64,6 +70,8 @@ export const initialModel = (): Model => ({
   chapterValidationError: Option.none(),
   videoFileDrop: FileDrop.init({ id: "video-file" }),
   posterFileDrop: FileDrop.init({ id: "poster-file" }),
+  confirmationDialog: Dialog.init({ id: "video-action-confirmation" }),
+  pendingConfirmation: Option.none(),
   selectedFile: Option.none(),
   selectedPoster: Option.none(),
   isUploading: false,

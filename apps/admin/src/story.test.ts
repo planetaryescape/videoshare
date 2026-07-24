@@ -3,8 +3,10 @@ import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
 import { CreateVideoCmd, GenerateChapterId, LoadVideos } from "./commands";
 import {
-  ClickedAddChapter,
   BlurredChapterField,
+  ClickedAddChapter,
+  ClickedConfirmPendingAction,
+  ClickedDeleteVideo,
   FailedCreateVideo,
   FailedLoadVideos,
   GeneratedChapterId,
@@ -127,5 +129,22 @@ describe("admin story", () => {
         ),
       ),
     );
+  });
+
+  test("waits for confirmation before deleting", () => {
+    const [pendingModel, pendingCommands] = update(
+      initialModel(),
+      ClickedDeleteVideo({ id: video.id }),
+    );
+
+    expect(pendingModel.pendingConfirmation).toEqual(
+      Option.some({ _tag: "DeleteVideoConfirmation", videoId: video.id }),
+    );
+    expect(pendingCommands.map((command) => command.name)).not.toContain("DeleteVideo");
+
+    const [confirmedModel, confirmedCommands] = update(pendingModel, ClickedConfirmPendingAction());
+
+    expect(confirmedModel.pendingConfirmation).toEqual(Option.none());
+    expect(confirmedCommands.map((command) => command.name)).toContain("DeleteVideo");
   });
 });

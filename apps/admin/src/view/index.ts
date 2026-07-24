@@ -1,6 +1,7 @@
 import { html } from "foldkit/html";
 import type { Message } from "../message";
 import type { Model } from "../model";
+import { confirmationDialogView } from "./confirmationDialog";
 import { editVideoView } from "./editVideo";
 import { listVideosView } from "./listVideos";
 
@@ -13,7 +14,10 @@ export const view = (model: Model) => {
       [
         h.div(
           [h.Class("px-6 py-8")],
-          [model.screen._tag === "ListVideos" ? listVideosView(h, model) : editVideoView(h, model)],
+          [
+            model.screen._tag === "ListVideos" ? listVideosView(h, model) : editVideoView(h, model),
+            confirmationDialogView(h, model),
+          ],
         ),
       ],
     ),

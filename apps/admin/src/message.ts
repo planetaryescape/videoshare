@@ -1,5 +1,5 @@
 import { Schema as S } from "effect";
-import { FileDrop } from "@foldkit/ui";
+import { Dialog, FileDrop } from "@foldkit/ui";
 import { m } from "foldkit/message";
 import { ChapterSchema, VideoSchema } from "./model";
 
@@ -33,6 +33,10 @@ export const ClickedPublish = m("ClickedPublish", { id: S.String });
 export const SucceededPublish = m("SucceededPublish", { video: VideoSchema });
 export const FailedPublish = m("FailedPublish", { error: S.String });
 export const ClickedUnpublish = m("ClickedUnpublish", { id: S.String });
+export const GotConfirmationDialogMessage = m("GotConfirmationDialogMessage", {
+  message: Dialog.Message,
+});
+export const ClickedConfirmPendingAction = m("ClickedConfirmPendingAction");
 export const SucceededUnpublish = m("SucceededUnpublish", { video: VideoSchema });
 export const FailedUnpublish = m("FailedUnpublish", { error: S.String });
 export const ClickedDeleteVideo = m("ClickedDeleteVideo", { id: S.String });
@@ -87,6 +91,8 @@ export const Message = S.Union([
   SucceededPublish,
   FailedPublish,
   ClickedUnpublish,
+  GotConfirmationDialogMessage,
+  ClickedConfirmPendingAction,
   SucceededUnpublish,
   FailedUnpublish,
   ClickedDeleteVideo,
