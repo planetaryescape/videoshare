@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { CreateVideoCmd, GenerateChapterId, LoadVideos } from "./commands";
 import {
   ClickedAddChapter,
+  BlurredChapterField,
   FailedCreateVideo,
   FailedLoadVideos,
   GeneratedChapterId,
@@ -97,6 +98,33 @@ describe("admin story", () => {
             sortOrder: 0,
           },
         ]),
+      ),
+    );
+  });
+
+  test("surfaces invalid chapter drafts", () => {
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some(video),
+        editChapters: [
+          {
+            id: "chapter-1",
+            videoId: video.id,
+            title: "",
+            startSec: 0,
+            sortOrder: 0,
+          },
+        ],
+      }),
+      Story.message(BlurredChapterField()),
+      Story.Command.expectNone(),
+      Story.model((model) =>
+        expect(model.chapterValidationError).toEqual(
+          Option.some("Every chapter needs a title before saving"),
+        ),
       ),
     );
   });

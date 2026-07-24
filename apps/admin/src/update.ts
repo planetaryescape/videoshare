@@ -36,14 +36,21 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
 
 export const init = (): Update => [initialModel(), [LoadVideos()]];
 
-const saveChaptersCmd = (model: Model, chapters: ReadonlyArray<Chapter>): ReadonlyArray<Cmd> => {
+const saveChapters = (model: Model, chapters: ReadonlyArray<Chapter>): Update => {
+  const nextModel = evoModel(model, { editChapters: () => chapters });
   if (Option.isNone(model.editVideo)) {
-    return [];
+    return noCmd(nextModel);
   }
   if (chapters.some((c) => c.title.trim() === "")) {
-    return [];
+    return withEvo(nextModel, {
+      chapterValidationError: () => Option.some("Every chapter needs a title before saving"),
+    });
   }
-  return [SaveChaptersCmd({ id: model.editVideo.value.id, chapters })];
+  return withEvo(
+    nextModel,
+    { chapterValidationError: () => Option.none() },
+    SaveChaptersCmd({ id: model.editVideo.value.id, chapters }),
+  );
 };
 
 export const update: (model: Model, message: Message) => Update = (model, message) =>
@@ -59,6 +66,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             editDescription: () => "",
             editVideo: () => Option.none(),
             editChapters: () => [],
+            chapterValidationError: () => Option.none(),
             copiedLink: () => false,
             errorMessage: () => Option.none(),
           },
@@ -71,6 +79,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           editDescription: () => "",
           editVideo: () => Option.none(),
           editChapters: () => [],
+          chapterValidationError: () => Option.none(),
           selectedFile: () => Option.none(),
           selectedPoster: () => Option.none(),
           copiedLink: () => false,
@@ -305,6 +314,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           editTitle: () => msg.video.title,
           editDescription: () => msg.video.description ?? "",
           editChapters: () => msg.chapters,
+          chapterValidationError: () => Option.none(),
         }),
       FailedLoadVideoDetail: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
@@ -331,21 +341,30 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       },
       ClickedRemoveChapter: (msg: { id: string }) => {
         const next = model.editChapters.filter((c) => c.id !== msg.id);
-        return withEvo(model, { editChapters: () => next }, ...saveChaptersCmd(model, next));
+        return saveChapters(model, next);
       },
       UpdatedChapterTitle: (msg: { id: string; title: string }) =>
         withEvo(model, {
           editChapters: () =>
             model.editChapters.map((c) => (c.id === msg.id ? { ...c, title: msg.title } : c)),
+          chapterValidationError: () =>
+            model.editChapters.every(
+              (chapter) => (chapter.id === msg.id ? msg.title : chapter.title).trim() !== "",
+            )
+              ? Option.none()
+              : model.chapterValidationError,
         }),
       UpdatedChapterStart: (msg: { id: string; startSec: number }) =>
         withEvo(model, {
           editChapters: () =>
             model.editChapters.map((c) => (c.id === msg.id ? { ...c, startSec: msg.startSec } : c)),
         }),
-      BlurredChapterField: () => withCmds(model, ...saveChaptersCmd(model, model.editChapters)),
+      BlurredChapterField: () => saveChapters(model, model.editChapters),
       SucceededSaveChapters: (msg: { chapters: ReadonlyArray<Chapter> }) =>
-        withEvo(model, { editChapters: () => msg.chapters }),
+        withEvo(model, {
+          editChapters: () => msg.chapters,
+          chapterValidationError: () => Option.none(),
+        }),
       FailedSaveChapters: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
       ClickedCopyLink: (msg: { url: string }) => withCmds(model, CopyLinkCmd({ url: msg.url })),

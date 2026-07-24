@@ -155,6 +155,14 @@ const chaptersSection = (h: Html, model: Model) =>
               ],
             ),
           )),
+      ...(Option.isSome(model.chapterValidationError)
+        ? [
+            h.p(
+              [h.Role("alert"), h.Class("mt-2 text-sm text-red-300")],
+              [model.chapterValidationError.value],
+            ),
+          ]
+        : []),
     ],
   );
 
