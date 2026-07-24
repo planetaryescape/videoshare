@@ -1,4 +1,5 @@
-import { Schema as S, Effect, Option } from "effect";
+import { BrowserCrypto } from "@effect/platform-browser";
+import { Crypto, Effect, Option, Schema as S } from "effect";
 import { Command, File as FoldkitFile } from "foldkit";
 import { ChapterSchema, errMsg, type Chapter, VideoSchema } from "./model";
 import {
@@ -13,6 +14,7 @@ import {
   FailedSaveVideo,
   FailedUnpublish,
   FailedUpload,
+  GeneratedChapterId,
   SucceededCreateVideo,
   SucceededDeleteVideo,
   SucceededLoadVideoDetail,
@@ -71,6 +73,18 @@ const tryJson = (response: Response) =>
     try: () => response.json(),
     catch: errMsg,
   });
+
+export const GenerateChapterId = Command.define(
+  "GenerateChapterId",
+  { videoId: S.String },
+  GeneratedChapterId,
+)(({ videoId }) =>
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const chapterId = yield* Effect.orDie(crypto.randomUUIDv4);
+    return GeneratedChapterId({ chapterId, videoId });
+  }).pipe(Effect.provide(BrowserCrypto.layer)),
+);
 
 export const LoadVideos = Command.define(
   "LoadVideos",

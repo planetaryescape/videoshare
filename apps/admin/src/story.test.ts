@@ -1,15 +1,17 @@
 import { Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
-import { CreateVideoCmd, LoadVideos } from "./commands";
+import { CreateVideoCmd, GenerateChapterId, LoadVideos } from "./commands";
 import {
+  ClickedAddChapter,
   FailedCreateVideo,
   FailedLoadVideos,
+  GeneratedChapterId,
   SubmittedCreateVideo,
   SucceededCreateVideo,
   SucceededLoadVideos,
 } from "./message";
-import { initialModel, type Video } from "./model";
+import { EditVideo, initialModel, type Video } from "./model";
 import { init, update } from "./update";
 
 const video: Video = {
@@ -68,6 +70,34 @@ describe("admin story", () => {
       Story.message(SubmittedCreateVideo()),
       Story.Command.resolve(CreateVideoCmd, FailedCreateVideo({ error: "Create failed" })),
       Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Create failed"))),
+    );
+  });
+
+  test("adds chapters after generating an id", () => {
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some(video),
+      }),
+      Story.message(ClickedAddChapter()),
+      Story.Command.expectExact(GenerateChapterId({ videoId: video.id })),
+      Story.Command.resolve(
+        GenerateChapterId,
+        GeneratedChapterId({ chapterId: "chapter-1", videoId: video.id }),
+      ),
+      Story.model((model) =>
+        expect(model.editChapters).toEqual([
+          {
+            id: "chapter-1",
+            videoId: video.id,
+            title: "",
+            startSec: 0,
+            sortOrder: 0,
+          },
+        ]),
+      ),
     );
   });
 });

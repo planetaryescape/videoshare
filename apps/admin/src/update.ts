@@ -13,6 +13,7 @@ import {
   CopyLinkCmd,
   CreateVideoCmd,
   DeleteVideoCmd,
+  GenerateChapterId,
   LoadVideoDetail,
   LoadVideos,
   PublishVideoCmd,
@@ -358,9 +359,18 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       FailedLoadVideoDetail: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
       ClickedAddChapter: () => {
+        if (Option.isNone(model.editVideo)) {
+          return noCmd(model);
+        }
+        return withCmds(model, GenerateChapterId({ videoId: model.editVideo.value.id }));
+      },
+      GeneratedChapterId: ({ chapterId, videoId }) => {
+        if (Option.isNone(model.editVideo) || model.editVideo.value.id !== videoId) {
+          return noCmd(model);
+        }
         const newChapter: Chapter = {
-          id: crypto.randomUUID(),
-          videoId: Option.isSome(model.editVideo) ? model.editVideo.value.id : "",
+          id: chapterId,
+          videoId,
           title: "",
           startSec: 0,
           sortOrder: model.editChapters.length,

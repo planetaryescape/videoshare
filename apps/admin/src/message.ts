@@ -44,6 +44,10 @@ export const SucceededLoadVideoDetail = m("SucceededLoadVideoDetail", {
 });
 export const FailedLoadVideoDetail = m("FailedLoadVideoDetail", { error: S.String });
 export const ClickedAddChapter = m("ClickedAddChapter");
+export const GeneratedChapterId = m("GeneratedChapterId", {
+  chapterId: S.String,
+  videoId: S.String,
+});
 export const ClickedRemoveChapter = m("ClickedRemoveChapter", { id: S.String });
 export const UpdatedChapterTitle = m("UpdatedChapterTitle", { id: S.String, title: S.String });
 export const UpdatedChapterStart = m("UpdatedChapterStart", {
@@ -91,6 +95,7 @@ export const Message = S.Union([
   SucceededLoadVideoDetail,
   FailedLoadVideoDetail,
   ClickedAddChapter,
+  GeneratedChapterId,
   ClickedRemoveChapter,
   UpdatedChapterTitle,
   UpdatedChapterStart,
