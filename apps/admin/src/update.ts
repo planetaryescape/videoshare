@@ -1,8 +1,14 @@
 import { Match as M, Option, Schema as S } from "effect";
-import type { Command } from "foldkit";
+import { FileDrop } from "@foldkit/ui";
+import { Command } from "foldkit";
 import { makeConstrainedEvo } from "foldkit/struct";
-import { initialModel, type Chapter, type Model, type Video } from "./model";
-import { ReceivedUploadProgress, type Message } from "./message";
+import { EditVideo, initialModel, ListVideos, type Chapter, type Model, type Video } from "./model";
+import {
+  GotPosterFileDropMessage,
+  GotVideoFileDropMessage,
+  ReceivedUploadProgress,
+  type Message,
+} from "./message";
 import {
   CopyLinkCmd,
   CreateVideoCmd,
@@ -31,12 +37,6 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
   evoModel(model, patch),
   cmds,
 ];
-
-const ListVideosScreen = (): { _tag: "ListVideos" } => ({ _tag: "ListVideos" });
-const EditVideoScreen = (videoId: string): { _tag: "EditVideo"; videoId: string } => ({
-  _tag: "EditVideo",
-  videoId,
-});
 
 export const init = (): Update => [initialModel(), [LoadVideos()]];
 
@@ -94,23 +94,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
   M.value(message).pipe(
     M.withReturnType<Update>(),
     M.tagsExhaustive({
-      ClickedNewVideo: () =>
-        withEvo(model, {
-          screen: () => EditVideoScreen(""),
-          editTitle: () => "",
-          editDescription: () => "",
-          editVideo: () => Option.none(),
-          editChapters: () => [],
-          selectedFile: () => null,
-          selectedPoster: () => null,
-          copiedLink: () => false,
-          errorMessage: () => Option.none(),
-        }),
       ClickedEditVideo: (msg: { id: string }) =>
         withEvo(
           model,
           {
-            screen: () => EditVideoScreen(msg.id),
+            screen: () => EditVideo({ videoId: msg.id }),
             editTitle: () => "",
             editDescription: () => "",
             editVideo: () => Option.none(),
@@ -123,13 +111,13 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       ClickedBack: () => {
         closeProgressSocket();
         return withEvo(model, {
-          screen: () => ListVideosScreen(),
+          screen: () => ListVideos(),
           editTitle: () => "",
           editDescription: () => "",
           editVideo: () => Option.none(),
           editChapters: () => [],
-          selectedFile: () => null,
-          selectedPoster: () => null,
+          selectedFile: () => Option.none(),
+          selectedPoster: () => Option.none(),
           copiedLink: () => false,
           errorMessage: () => Option.none(),
         });
@@ -168,7 +156,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       SucceededCreateVideo: (msg: { video: Video }) =>
         withEvo(model, {
           videos: () => [msg.video, ...model.videos],
-          screen: () => EditVideoScreen(msg.video.id),
+          screen: () => EditVideo({ videoId: msg.video.id }),
           editTitle: () => msg.video.title,
           editDescription: () => msg.video.description ?? "",
           editVideo: () => Option.some(msg.video),
@@ -178,18 +166,72 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       SucceededLoadVideos: (msg) => withEvo(model, { videos: () => msg.videos }),
       FailedLoadVideos: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SelectedFile: (msg: { file: File }) =>
-        withEvo(model, { selectedFile: () => msg.file ?? null }),
-      SelectedPoster: (msg: { file: File }) =>
-        withEvo(model, { selectedPoster: () => msg.file ?? null }),
-      ClearedPoster: () => withEvo(model, { selectedPoster: () => null }),
+      GotVideoFileDropMessage: ({ message }) => {
+        const [videoFileDrop, commands, maybeOutMessage] = FileDrop.update(
+          model.videoFileDrop,
+          message,
+        );
+        const selectedFile = Option.match(maybeOutMessage, {
+          onNone: () => model.selectedFile,
+          onSome: (outMessage) =>
+            outMessage._tag === "ReceivedFiles"
+              ? Option.some(outMessage.files[0])
+              : model.selectedFile,
+        });
+        const errorMessage = Option.match(maybeOutMessage, {
+          onNone: () => model.errorMessage,
+          onSome: (outMessage) =>
+            outMessage._tag === "RejectedNonFiles"
+              ? Option.some("Please select a video or audio file")
+              : Option.none(),
+        });
+        return withEvo(
+          model,
+          {
+            videoFileDrop: () => videoFileDrop,
+            selectedFile: () => selectedFile,
+            errorMessage: () => errorMessage,
+          },
+          ...Command.mapMessages(commands, (message) => GotVideoFileDropMessage({ message })),
+        );
+      },
+      GotPosterFileDropMessage: ({ message }) => {
+        const [posterFileDrop, commands, maybeOutMessage] = FileDrop.update(
+          model.posterFileDrop,
+          message,
+        );
+        const selectedPoster = Option.match(maybeOutMessage, {
+          onNone: () => model.selectedPoster,
+          onSome: (outMessage) =>
+            outMessage._tag === "ReceivedFiles"
+              ? Option.some(outMessage.files[0])
+              : model.selectedPoster,
+        });
+        const errorMessage = Option.match(maybeOutMessage, {
+          onNone: () => model.errorMessage,
+          onSome: (outMessage) =>
+            outMessage._tag === "RejectedNonFiles"
+              ? Option.some("Please select an image file")
+              : Option.none(),
+        });
+        return withEvo(
+          model,
+          {
+            posterFileDrop: () => posterFileDrop,
+            selectedPoster: () => selectedPoster,
+            errorMessage: () => errorMessage,
+          },
+          ...Command.mapMessages(commands, (message) => GotPosterFileDropMessage({ message })),
+        );
+      },
+      ClearedPoster: () => withEvo(model, { selectedPoster: () => Option.none() }),
       SubmittedUpload: () => {
-        if (!model.selectedFile) {
+        if (Option.isNone(model.selectedFile)) {
           return withEvo(model, {
             errorMessage: () => Option.some("Please select a file first"),
           });
         }
-        if (model.screen._tag !== "EditVideo" || model.screen.videoId === "") {
+        if (model.screen._tag !== "EditVideo") {
           return withEvo(model, {
             errorMessage: () =>
               Option.some("Save the video before uploading to create a stable identifier"),
@@ -206,7 +248,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           },
           UploadVideoCmd({
             videoId: model.screen.videoId,
-            file: model.selectedFile,
+            file: model.selectedFile.value,
             poster: model.selectedPoster,
           }),
         );
@@ -223,8 +265,8 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           uploadStage: () => "done",
           uploadPct: () => 100,
           editVideo: () => Option.some(msg.video),
-          selectedFile: () => null,
-          selectedPoster: () => null,
+          selectedFile: () => Option.none(),
+          selectedPoster: () => Option.none(),
         });
       },
       FailedUpload: (msg: { error: string }) => {
@@ -294,7 +336,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         const removed = model.videos.find((v) => v.id === msg.id);
         const nextScreen =
           model.screen._tag === "EditVideo" && model.screen.videoId === msg.id
-            ? ListVideosScreen()
+            ? ListVideos()
             : model.screen;
         const videos = removed ? model.videos.filter((v) => v.id !== msg.id) : model.videos;
         const next =

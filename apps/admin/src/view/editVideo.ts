@@ -1,4 +1,5 @@
 import { Option } from "effect";
+import { FileDrop } from "@foldkit/ui";
 import type { html } from "foldkit/html";
 import {
   formatDate,
@@ -18,9 +19,9 @@ import {
   ClickedPublish,
   ClickedRemoveChapter,
   ClickedUnpublish,
+  GotPosterFileDropMessage,
+  GotVideoFileDropMessage,
   type Message,
-  SelectedFile,
-  SelectedPoster,
   SubmittedUpload,
   UpdatedChapterStart,
   UpdatedChapterTitle,
@@ -271,15 +272,27 @@ export const editVideoView = (h: Html, model: Model) => {
                       [h.Class("block text-sm font-medium text-gray-300 mb-3")],
                       ["Upload video or audio mix"],
                     ),
-                    h.input([
-                      h.Class(
-                        "block text-sm text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-700 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-600",
-                      ),
-                      h.Type("file"),
-                      h.Accept(".mp4,video/mp4,.mp3,.m4a,.aac,.flac,audio/*"),
-                      h.OnFileChange((files) => SelectedFile({ file: files[0] })),
-                    ]),
-                    ...(model.selectedFile
+                    h.submodel({
+                      slotId: model.videoFileDrop.id,
+                      model: model.videoFileDrop,
+                      view: FileDrop.view,
+                      viewInputs: {
+                        accept: [".mp4", "video/mp4", ".mp3", ".m4a", ".aac", ".flac", "audio/*"],
+                        isDisabled: model.isUploading,
+                        toView: ({ root, input }) =>
+                          h.label(
+                            [
+                              ...root,
+                              h.Class(
+                                "block cursor-pointer rounded-lg border border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-300 transition-colors hover:border-gray-600 data-[drag-over]:border-blue-500 data-[drag-over]:bg-blue-950/30",
+                              ),
+                            ],
+                            ["Drop a file here or click to browse", h.input(input)],
+                          ),
+                      },
+                      toParentMessage: (message) => GotVideoFileDropMessage({ message }),
+                    }),
+                    ...(Option.isSome(model.selectedFile)
                       ? [
                           h.div(
                             [h.Class("mt-3 text-sm text-gray-300")],
@@ -287,7 +300,7 @@ export const editVideoView = (h: Html, model: Model) => {
                               "Selected: ",
                               h.span(
                                 [h.Class("font-medium text-white")],
-                                [model.selectedFile.name],
+                                [model.selectedFile.value.name],
                               ),
                             ],
                           ),
@@ -297,15 +310,27 @@ export const editVideoView = (h: Html, model: Model) => {
                       [h.Class("mt-4 block text-sm font-medium text-gray-300 mb-3")],
                       ["Cover image (optional)"],
                     ),
-                    h.input([
-                      h.Class(
-                        "block text-sm text-gray-400 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-700 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-600",
-                      ),
-                      h.Type("file"),
-                      h.Accept("image/*"),
-                      h.OnFileChange((files) => SelectedPoster({ file: files[0] })),
-                    ]),
-                    ...(model.selectedPoster
+                    h.submodel({
+                      slotId: model.posterFileDrop.id,
+                      model: model.posterFileDrop,
+                      view: FileDrop.view,
+                      viewInputs: {
+                        accept: ["image/*"],
+                        isDisabled: model.isUploading,
+                        toView: ({ root, input }) =>
+                          h.label(
+                            [
+                              ...root,
+                              h.Class(
+                                "block cursor-pointer rounded-lg border border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-300 transition-colors hover:border-gray-600 data-[drag-over]:border-blue-500 data-[drag-over]:bg-blue-950/30",
+                              ),
+                            ],
+                            ["Drop an image here or click to browse", h.input(input)],
+                          ),
+                      },
+                      toParentMessage: (message) => GotPosterFileDropMessage({ message }),
+                    }),
+                    ...(Option.isSome(model.selectedPoster)
                       ? [
                           h.div(
                             [h.Class("mt-3 flex items-center gap-2 text-sm text-gray-300")],
@@ -313,7 +338,7 @@ export const editVideoView = (h: Html, model: Model) => {
                               "Cover: ",
                               h.span(
                                 [h.Class("font-medium text-white")],
-                                [model.selectedPoster.name],
+                                [model.selectedPoster.value.name],
                               ),
                               h.button(
                                 [
@@ -335,7 +360,7 @@ export const editVideoView = (h: Html, model: Model) => {
                         h.Class(
                           "mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                         ),
-                        h.Disabled(model.isUploading || !model.selectedFile),
+                        h.Disabled(model.isUploading || Option.isNone(model.selectedFile)),
                         h.OnClick(SubmittedUpload()),
                       ],
                       [model.isUploading ? "Uploading & Transcoding..." : "Upload & Transcode"],

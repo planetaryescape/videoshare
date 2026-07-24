@@ -1,8 +1,8 @@
 import { Schema as S } from "effect";
+import { FileDrop } from "@foldkit/ui";
 import { m } from "foldkit/message";
 import { ChapterSchema, VideoSchema } from "./model";
 
-export const ClickedNewVideo = m("ClickedNewVideo");
 export const ClickedEditVideo = m("ClickedEditVideo", { id: S.String });
 export const ClickedBack = m("ClickedBack");
 export const UpdatedTitle = m("UpdatedTitle", { title: S.String });
@@ -15,8 +15,12 @@ export const SucceededCreateVideo = m("SucceededCreateVideo", { video: VideoSche
 export const FailedCreateVideo = m("FailedCreateVideo", { error: S.String });
 export const SucceededLoadVideos = m("SucceededLoadVideos", { videos: S.Array(VideoSchema) });
 export const FailedLoadVideos = m("FailedLoadVideos", { error: S.String });
-export const SelectedFile = m("SelectedFile", { file: S.Any });
-export const SelectedPoster = m("SelectedPoster", { file: S.Any });
+export const GotVideoFileDropMessage = m("GotVideoFileDropMessage", {
+  message: FileDrop.Message,
+});
+export const GotPosterFileDropMessage = m("GotPosterFileDropMessage", {
+  message: FileDrop.Message,
+});
 export const ClearedPoster = m("ClearedPoster");
 export const SubmittedUpload = m("SubmittedUpload");
 export const SucceededUpload = m("SucceededUpload", { video: VideoSchema });
@@ -56,7 +60,6 @@ export const CopiedLink = m("CopiedLink");
 export const FailedCopyLink = m("FailedCopyLink", { error: S.String });
 
 export const Message = S.Union([
-  ClickedNewVideo,
   ClickedEditVideo,
   ClickedBack,
   UpdatedTitle,
@@ -69,8 +72,8 @@ export const Message = S.Union([
   FailedCreateVideo,
   SucceededLoadVideos,
   FailedLoadVideos,
-  SelectedFile,
-  SelectedPoster,
+  GotVideoFileDropMessage,
+  GotPosterFileDropMessage,
   ClearedPoster,
   SubmittedUpload,
   SucceededUpload,

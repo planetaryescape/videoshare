@@ -1,5 +1,5 @@
 import { Schema as S, Effect, Option } from "effect";
-import { Command } from "foldkit";
+import { Command, File as FoldkitFile } from "foldkit";
 import { ChapterSchema, errMsg, type Chapter, VideoSchema } from "./model";
 import {
   CopiedLink,
@@ -169,16 +169,20 @@ export const SaveChaptersCmd = Command.define(
 
 export const UploadVideoCmd = Command.define(
   "UploadVideo",
-  { videoId: S.String, file: S.Any, poster: S.Any },
+  {
+    videoId: S.String,
+    file: FoldkitFile.File,
+    poster: S.Option(FoldkitFile.File),
+  },
   SucceededUpload,
   FailedUpload,
-)((input: { videoId: string; file: File; poster: File | null }) =>
+)((input) =>
   Effect.gen(function* () {
     const formData = new FormData();
     formData.append("videoId", input.videoId);
     formData.append("file", input.file);
-    if (input.poster) {
-      formData.append("poster", input.poster);
+    if (Option.isSome(input.poster)) {
+      formData.append("poster", input.poster.value);
     }
     const response = yield* tryFetch(`${SERVER_ORIGIN}/api/upload`, {
       method: "POST",

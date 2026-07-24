@@ -1,17 +1,7 @@
 import { Schema as S, Option } from "effect";
-
-export type Video = {
-  readonly id: string;
-  readonly slug: string;
-  readonly title: string;
-  readonly description: string | null;
-  readonly posterKey: string | null;
-  readonly hlsKey: string;
-  readonly durationSec: number;
-  readonly createdAt: number;
-  readonly publishedAt: number | null;
-  readonly updatedAt: number | null;
-};
+import { File as FoldkitFile } from "foldkit";
+import { ts } from "foldkit/schema";
+import { FileDrop } from "@foldkit/ui";
 
 export const VideoSchema = S.Struct({
   id: S.String,
@@ -25,14 +15,7 @@ export const VideoSchema = S.Struct({
   publishedAt: S.NullOr(S.Finite),
   updatedAt: S.NullOr(S.Finite),
 });
-
-export type Chapter = {
-  readonly id: string;
-  readonly videoId: string;
-  readonly title: string;
-  readonly startSec: number;
-  readonly sortOrder: number;
-};
+export type Video = typeof VideoSchema.Type;
 
 export const ChapterSchema = S.Struct({
   id: S.String,
@@ -41,19 +24,25 @@ export const ChapterSchema = S.Struct({
   startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
   sortOrder: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 });
+export type Chapter = typeof ChapterSchema.Type;
+
+export const ListVideos = ts("ListVideos");
+export const EditVideo = ts("EditVideo", {
+  videoId: S.String.check(S.isMinLength(1)),
+});
+export const Screen = S.Union([ListVideos, EditVideo]);
 
 export const Model = S.Struct({
-  screen: S.Union([
-    S.TaggedStruct("ListVideos", {}),
-    S.TaggedStruct("EditVideo", { videoId: S.String }),
-  ]),
+  screen: Screen,
   videos: S.Array(VideoSchema),
   editTitle: S.String,
   editDescription: S.String,
   editVideo: S.Option(VideoSchema),
   editChapters: S.Array(ChapterSchema),
-  selectedFile: S.Any,
-  selectedPoster: S.Any,
+  videoFileDrop: FileDrop.Model,
+  posterFileDrop: FileDrop.Model,
+  selectedFile: S.Option(FoldkitFile.File),
+  selectedPoster: S.Option(FoldkitFile.File),
   isUploading: S.Boolean,
   uploadStage: S.String,
   uploadPct: S.Finite,
@@ -62,33 +51,19 @@ export const Model = S.Struct({
   copiedLink: S.Boolean,
   errorMessage: S.Option(S.String),
 });
-export type Model = {
-  readonly screen: { _tag: "ListVideos" } | { _tag: "EditVideo"; videoId: string };
-  readonly videos: ReadonlyArray<Video>;
-  readonly editTitle: string;
-  readonly editDescription: string;
-  readonly editVideo: Option.Option<Video>;
-  readonly editChapters: ReadonlyArray<Chapter>;
-  readonly selectedFile: File | null;
-  readonly selectedPoster: File | null;
-  readonly isUploading: boolean;
-  readonly uploadStage: string;
-  readonly uploadPct: number;
-  readonly isPublishing: boolean;
-  readonly isUnpublishing: boolean;
-  readonly copiedLink: boolean;
-  readonly errorMessage: Option.Option<string>;
-};
+export type Model = typeof Model.Type;
 
 export const initialModel = (): Model => ({
-  screen: { _tag: "ListVideos" },
+  screen: ListVideos(),
   videos: [],
   editTitle: "",
   editDescription: "",
   editVideo: Option.none(),
   editChapters: [],
-  selectedFile: null,
-  selectedPoster: null,
+  videoFileDrop: FileDrop.init({ id: "video-file" }),
+  posterFileDrop: FileDrop.init({ id: "poster-file" }),
+  selectedFile: Option.none(),
+  selectedPoster: Option.none(),
   isUploading: false,
   uploadStage: "",
   uploadPct: 0,
