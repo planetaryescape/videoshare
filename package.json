@@ -28,22 +28,22 @@
     "lsp:unpatch": "effect-tsgo unpatch"
   },
   "devDependencies": {
-    "@effect/tsgo": "^0.15.0",
+    "@effect/tsgo": "^0.24.3",
     "@types/bun": "latest",
-    "oxfmt": "^0.53.0",
-    "oxlint": "^1.68.0",
-    "turbo": "^2.9.16",
-    "typescript": "^7.0.1-rc"
+    "oxfmt": "^0.60.0",
+    "oxlint": "^1.75.0",
+    "turbo": "^2.10.6",
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
     "typescript": "^7.0.1-rc"
   },
   "dependencies": {
-    "@effect/platform-bun": ">=4.0.0-beta.78 || >=4.0.0",
-    "@effect/platform-node": ">=4.0.0-beta.78 || >=4.0.0",
-    "@effect/sql-d1": "4.0.0-beta.78",
-    "@effect/sql-sqlite-bun": "4.0.0-beta.78",
-    "alchemy": "^2.0.0-beta.52",
-    "effect": ">=4.0.0-beta.78 || >=4.0.0"
+    "@effect/platform-bun": ">=4.0.0-beta.101 || >=4.0.0",
+    "@effect/platform-node": ">=4.0.0-beta.101 || >=4.0.0",
+    "@effect/sql-d1": "4.0.0-beta.101",
+    "@effect/sql-sqlite-bun": "4.0.0-beta.101",
+    "alchemy": "2.0.0-beta.64",
+    "effect": ">=4.0.0-beta.101 || >=4.0.0"
   }
 }

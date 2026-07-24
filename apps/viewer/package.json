@@ -6,9 +6,9 @@
     "build": "bun build ./src/player.entry.ts --outfile ./generated/player.js --target browser --format esm --minify && bun build ./src/player.css --outfile ./generated/player.css --target browser --minify"
   },
   "dependencies": {
-    "@effect/sql-d1": "4.0.0-beta.78",
+    "@effect/sql-d1": "4.0.0-beta.101",
     "@videoshare/shared": "workspace:*",
-    "effect": ">=4.0.0-beta.78 || >=4.0.0",
+    "effect": ">=4.0.0-beta.101 || >=4.0.0",
     "vidstack": "^0.6.15"
   }
 }
