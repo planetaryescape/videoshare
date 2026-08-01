@@ -11,9 +11,9 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const viewerHost = "video.planetaryescape.co.za";
 
-    const bucket = yield* Cloudflare.R2Bucket("VideoBucket");
+    const bucket = yield* Cloudflare.R2.Bucket("VideoBucket");
 
-    const db = yield* Cloudflare.D1Database("VideoDatabase", {
+    const db = yield* Cloudflare.D1.Database("VideoDatabase", {
       migrationsDir: "./packages/shared/migrations",
       importFiles: ["./packages/shared/seed/0001_demo_video.sql"],
     });
