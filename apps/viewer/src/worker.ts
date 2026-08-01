@@ -277,7 +277,14 @@ const viewerPage = (
   const posterUrl = resolveMediaUrl(slug, video.posterKey);
   const manifestUrl = resolveMediaUrl(slug, video.hlsKey);
   const chapterItems = chapters
-    .map((chapter) => `<li>${escapeHtml(chapter.title)} <span>${chapter.startSec}s</span></li>`)
+    .map(
+      (chapter) => `<li>
+        <button type="button" data-chapter-start="${chapter.startSec}" aria-label="Seek to ${escapeHtml(chapter.title)} at ${chapter.startSec} seconds">
+          <span>${escapeHtml(chapter.title)}</span>
+          <span class="chapter-time">${chapter.startSec}s</span>
+        </button>
+      </li>`,
+    )
     .join("");
 
   return `<!doctype html>
@@ -303,7 +310,12 @@ const viewerPage = (
       media-video-layout { --media-brand: #7c5cff; --media-focus-ring-color: #9b87ff; }
       .meta { display: grid; gap: 24px; margin-top: 24px; }
       .chapters { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
-      .chapters li { display: flex; justify-content: space-between; gap: 16px; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.05); color: #d7deea; }
+      .chapters button { display: flex; width: 100%; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 0; border-radius: 14px; background: rgba(255,255,255,0.05); color: #d7deea; font: inherit; text-align: left; cursor: pointer; transition: background-color 150ms ease, transform 150ms ease; }
+      .chapters button:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
+      .chapters button:focus-visible { outline: 2px solid #9b87ff; outline-offset: 2px; }
+      .chapters button[data-active] { background: rgba(124,92,255,0.22); color: #fff; box-shadow: inset 3px 0 #9b87ff; }
+      .chapters button[data-active] .chapter-time { color: #c9beff; }
+      .chapter-time { color: #b8c0d0; }
       .slug { margin-top: 20px; font-size: 0.85rem; color: #8e98ab; }
     </style>
     <script type="module" src="/_assets/player.js?v=${assetVersion}"></script>
