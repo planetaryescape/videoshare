@@ -6,6 +6,7 @@ import { Dialog, FileDrop } from "@foldkit/ui";
 export const VideoSchema = S.Struct({
   id: S.String,
   slug: S.String,
+  kind: S.Literals(["video", "audio"]),
   title: S.String,
   description: S.NullOr(S.String),
   posterKey: S.NullOr(S.String),

@@ -1,7 +1,7 @@
 import { Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
-import { CreateVideoCmd, GenerateChapterId, LoadVideos } from "./commands";
+import { CreateVideoCmd, FocusChapterTitle, GenerateChapterId, LoadVideos } from "./commands";
 import {
   BlurredChapterField,
   ClickedAddChapter,
@@ -15,6 +15,7 @@ import {
   FailedLoadVideos,
   FailedUnpublish,
   FailedUploadProgress,
+  FocusedChapterTitle,
   GeneratedChapterId,
   SubmittedCreateVideo,
   SubmittedUpload,
@@ -30,6 +31,7 @@ import { init, update } from "./update";
 const video: Video = {
   id: "video-1",
   slug: "fixture-video",
+  kind: "video",
   title: "Fixture Video",
   description: "Fixture description",
   posterKey: null,
@@ -98,15 +100,17 @@ describe("admin story", () => {
       Story.Command.expectExact(GenerateChapterId({ videoId: video.id })),
       Story.Command.resolve(
         GenerateChapterId,
-        GeneratedChapterId({ chapterId: "chapter-1", videoId: video.id }),
+        GeneratedChapterId({ chapterId: "chapter-1", videoId: video.id, startSec: 42 }),
       ),
+      Story.Command.expectExact(FocusChapterTitle({ chapterId: "chapter-1" })),
+      Story.Command.resolve(FocusChapterTitle, FocusedChapterTitle({ chapterId: "chapter-1" })),
       Story.model((model) =>
         expect(model.editChapters).toEqual([
           {
             id: "chapter-1",
             videoId: video.id,
             title: "",
-            startSec: 0,
+            startSec: 42,
             sortOrder: 0,
           },
         ]),

@@ -8,6 +8,7 @@ import {
   isPublished,
   shareUrl,
   type Model,
+  type Video,
 } from "../model";
 import {
   BlurredChapterField,
@@ -23,13 +24,15 @@ import {
   GotVideoFileDropMessage,
   type Message,
   SubmittedUpload,
-  UpdatedChapterStart,
   UpdatedChapterTitle,
   UpdatedDescription,
   UpdatedTitle,
 } from "../message";
 
 type Html = ReturnType<typeof html<Message>>;
+
+const localMediaUrl = (key: string) =>
+  `/media/${key.startsWith("media/") ? key.slice("media/".length) : key}`;
 
 const stageLabel = (stage: string): string => {
   if (stage === "uploading") return "Uploading file...";
@@ -83,6 +86,46 @@ const uploadProgress = (h: Html, model: Model) => {
   );
 };
 
+const reviewPlayer = (h: Html, video: Video) =>
+  h.section(
+    [h.Class("overflow-hidden rounded-xl border border-gray-800 bg-gray-900/50")],
+    [
+      h.div(
+        [h.Class("border-b border-gray-800 px-4 py-3")],
+        [
+          h.h2([h.Class("text-sm font-medium text-gray-200")], ["Review playback"]),
+          h.p(
+            [h.Class("mt-1 text-sm text-gray-400")],
+            ["Run your final playthrough here and tag chapters as you watch."],
+          ),
+        ],
+      ),
+      h.div(
+        [h.Class(video.kind === "audio" ? "p-4" : "bg-black")],
+        [
+          (video.kind === "audio" ? h.audio : h.video)(
+            [
+              h.Id("chapter-player"),
+              h.Title(video.title),
+              h.Src(localMediaUrl(video.hlsKey)),
+              h.Controls(true),
+              h.Preload("metadata"),
+              h.Playsinline(true),
+              h.Crossorigin("anonymous"),
+              ...(video.kind === "video" && video.posterKey
+                ? [h.Poster(localMediaUrl(video.posterKey))]
+                : []),
+              h.Class(
+                video.kind === "audio" ? "block w-full" : "block aspect-video w-full bg-black",
+              ),
+            ],
+            [],
+          ),
+        ],
+      ),
+    ],
+  );
+
 const chaptersSection = (h: Html, model: Model) =>
   h.div(
     [h.Class("rounded-lg border border-gray-800 bg-gray-900/50 p-4")],
@@ -91,20 +134,21 @@ const chaptersSection = (h: Html, model: Model) =>
         [h.Class("mb-3 flex items-center justify-between")],
         [
           h.h2([h.Class("text-sm font-medium text-gray-300")], ["Chapters"]),
-          Button.view<Message>({
-            onClick: ClickedAddChapter(),
-            toView: ({ button }) =>
-              h.button(
-                [
-                  ...button,
-                  h.Class(
-                    "rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-600 transition-colors",
-                  ),
-                ],
-                ["+ Add chapter"],
+          h.button(
+            [
+              h.Type("button"),
+              h.OnClick(ClickedAddChapter()),
+              h.Class(
+                "min-h-11 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
               ),
-          }),
+            ],
+            ["Create chapter"],
+          ),
         ],
+      ),
+      h.p(
+        [h.Class("mb-3 text-sm text-gray-400")],
+        ["Play the media, then create a chapter to capture the current timestamp."],
       ),
       ...(model.editChapters.length === 0
         ? [h.p([h.Class("text-sm text-gray-500")], ["No chapters yet."])]
@@ -113,30 +157,15 @@ const chaptersSection = (h: Html, model: Model) =>
               chapter.id,
               [h.Class("mb-2 flex items-center gap-2")],
               [
-                Input.view<Message>({
-                  id: `chapter-${chapter.id}-start`,
-                  value: String(chapter.startSec),
-                  type: "number",
-                  placeholder: "sec",
-                  onInput: (value) =>
-                    UpdatedChapterStart({ id: chapter.id, startSec: Number(value) || 0 }),
-                  toView: ({ input, label, description }) =>
-                    h.div(
-                      [h.Class("w-24")],
-                      [
-                        h.label([...label, h.Class("sr-only")], ["Chapter start time"]),
-                        h.input([
-                          ...input,
-                          h.Min("0"),
-                          h.OnBlur(BlurredChapterField()),
-                          h.Class(
-                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
-                          ),
-                        ]),
-                        h.span([...description, h.Class("sr-only")], ["Start time in seconds"]),
-                      ],
+                h.time(
+                  [
+                    h.Class(
+                      "w-16 shrink-0 rounded-md bg-gray-800 px-2 py-2 text-center font-mono text-sm text-blue-300",
                     ),
-                }),
+                    h.Title(`${chapter.startSec} seconds`),
+                  ],
+                  [formatDuration(chapter.startSec)],
+                ),
                 Input.view<Message>({
                   id: `chapter-${chapter.id}-title`,
                   value: chapter.title,
@@ -152,7 +181,7 @@ const chaptersSection = (h: Html, model: Model) =>
                           ...input,
                           h.OnBlur(BlurredChapterField()),
                           h.Class(
-                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
+                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
                           ),
                         ]),
                         h.span([...description, h.Class("sr-only")], ["Chapter title"]),
@@ -195,7 +224,7 @@ export const editVideoView = (h: Html, model: Model) => {
   const video = Option.isSome(model.editVideo) ? model.editVideo.value : null;
 
   return h.div(
-    [h.Class("mx-auto max-w-2xl")],
+    [h.Class("mx-auto max-w-4xl")],
     [
       Button.view<Message>({
         onClick: ClickedBack(),
@@ -430,6 +459,7 @@ export const editVideoView = (h: Html, model: Model) => {
                 ),
               ]
             : []),
+          ...(video?.hlsKey ? [reviewPlayer(h, video)] : []),
           ...(video?.hlsKey
             ? [
                 h.div(

@@ -23,6 +23,7 @@ import {
   CopyLinkCmd,
   CreateVideoCmd,
   DeleteVideoCmd,
+  FocusChapterTitle,
   GenerateChapterId,
   LoadVideoDetail,
   LoadVideos,
@@ -392,7 +393,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         }
         return withCmds(model, GenerateChapterId({ videoId: model.editVideo.value.id }));
       },
-      GeneratedChapterId: ({ chapterId, videoId }) => {
+      GeneratedChapterId: ({ chapterId, videoId, startSec }) => {
         if (Option.isNone(model.editVideo) || model.editVideo.value.id !== videoId) {
           return noCmd(model);
         }
@@ -400,13 +401,16 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           id: chapterId,
           videoId,
           title: "",
-          startSec: 0,
+          startSec,
           sortOrder: model.editChapters.length,
         };
-        return withEvo(model, {
-          editChapters: () => [...model.editChapters, newChapter],
-        });
+        return withEvo(
+          model,
+          { editChapters: () => [...model.editChapters, newChapter] },
+          FocusChapterTitle({ chapterId }),
+        );
       },
+      FocusedChapterTitle: () => noCmd(model),
       ClickedRemoveChapter: (msg: { id: string }) => {
         const next = model.editChapters.filter((c) => c.id !== msg.id);
         return saveChapters(model, next);

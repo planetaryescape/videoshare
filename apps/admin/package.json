@@ -17,6 +17,7 @@
     "@videoshare/shared": "workspace:*",
     "effect": ">=4.0.0-beta.101 || >=4.0.0",
     "foldkit": "^0.132.0",
+    "hls.js": "^1.6.15",
     "mediabunny": "^1.51.0",
     "tailwindcss": "^4"
   },

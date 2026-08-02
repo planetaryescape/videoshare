@@ -15,6 +15,7 @@ import { view } from "./view";
 const video: Video = {
   id: "video-1",
   slug: "fixture-video",
+  kind: "video",
   title: "Fixture Video",
   description: "Fixture description",
   posterKey: null,
@@ -56,6 +57,8 @@ describe("admin scenes", () => {
         editDescription: video.description ?? "",
       }),
       Scene.expect(Scene.role("heading", { name: video.title, level: 1 })).toExist(),
+      Scene.expect(Scene.role("heading", { name: "Review playback", level: 2 })).toExist(),
+      Scene.expect(Scene.role("button", { name: "Create chapter" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Publish" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Copy link" })).toExist(),
     );

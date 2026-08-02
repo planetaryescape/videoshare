@@ -52,7 +52,9 @@ export const ClickedAddChapter = m("ClickedAddChapter");
 export const GeneratedChapterId = m("GeneratedChapterId", {
   chapterId: S.String,
   videoId: S.String,
+  startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
 });
+export const FocusedChapterTitle = m("FocusedChapterTitle", { chapterId: S.String });
 export const ClickedRemoveChapter = m("ClickedRemoveChapter", { id: S.String });
 export const UpdatedChapterTitle = m("UpdatedChapterTitle", { id: S.String, title: S.String });
 export const UpdatedChapterStart = m("UpdatedChapterStart", {
@@ -104,6 +106,7 @@ export const Message = S.Union([
   FailedLoadVideoDetail,
   ClickedAddChapter,
   GeneratedChapterId,
+  FocusedChapterTitle,
   ClickedRemoveChapter,
   UpdatedChapterTitle,
   UpdatedChapterStart,
