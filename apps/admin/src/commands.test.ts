@@ -1,24 +1,31 @@
 import { Effect } from "effect";
 import { expect, test } from "vitest";
+import { CHAPTER_PLAYER_ID, currentChapterStartSec } from "./chapterPlayback";
 import { GenerateChapterId, LoadVideos } from "./commands";
 
-test("captures the current playback second for a chapter", async () => {
-  const player = document.createElement("div");
-  player.id = "chapter-player";
+test("reads the current review playback second", () => {
+  const player = document.createElement("video");
+  player.id = CHAPTER_PLAYER_ID;
   Object.defineProperty(player, "currentTime", { value: 42.9 });
   document.body.append(player);
 
   try {
-    const result = await Effect.runPromise(GenerateChapterId({ videoId: "video-1" }).effect);
-
-    expect(result).toMatchObject({
-      _tag: "GeneratedChapterId",
-      videoId: "video-1",
-      startSec: 42,
-    });
+    expect(currentChapterStartSec()).toBe(42);
   } finally {
     player.remove();
   }
+});
+
+test("retains the chapter timestamp captured at click time", async () => {
+  const result = await Effect.runPromise(
+    GenerateChapterId({ videoId: "video-1", startSec: 42 }).effect,
+  );
+
+  expect(result).toMatchObject({
+    _tag: "GeneratedChapterId",
+    videoId: "video-1",
+    startSec: 42,
+  });
 });
 
 test("maps network rejection to FailedLoadVideos", async () => {

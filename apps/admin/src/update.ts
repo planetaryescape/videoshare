@@ -2,6 +2,7 @@ import { Match as M, Option } from "effect";
 import { Dialog, FileDrop } from "@foldkit/ui";
 import { Command } from "foldkit";
 import { makeConstrainedEvo } from "foldkit/struct";
+import { currentChapterStartSec } from "./chapterPlayback";
 import {
   DeleteVideoConfirmation,
   EditVideo,
@@ -391,7 +392,13 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         if (Option.isNone(model.editVideo)) {
           return noCmd(model);
         }
-        return withCmds(model, GenerateChapterId({ videoId: model.editVideo.value.id }));
+        return withCmds(
+          model,
+          GenerateChapterId({
+            videoId: model.editVideo.value.id,
+            startSec: currentChapterStartSec(),
+          }),
+        );
       },
       GeneratedChapterId: ({ chapterId, videoId, startSec }) => {
         if (Option.isNone(model.editVideo) || model.editVideo.value.id !== videoId) {
@@ -425,11 +432,6 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             )
               ? Option.none()
               : model.chapterValidationError,
-        }),
-      UpdatedChapterStart: (msg: { id: string; startSec: number }) =>
-        withEvo(model, {
-          editChapters: () =>
-            model.editChapters.map((c) => (c.id === msg.id ? { ...c, startSec: msg.startSec } : c)),
         }),
       BlurredChapterField: () => saveChapters(model, model.editChapters),
       SucceededSaveChapters: (msg: { chapters: ReadonlyArray<Chapter> }) =>

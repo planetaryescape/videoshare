@@ -1,6 +1,7 @@
 import { Option } from "effect";
 import { Button, FileDrop, Input, Textarea } from "@foldkit/ui";
 import type { html } from "foldkit/html";
+import { CHAPTER_PLAYER_ID } from "../chapterPlayback";
 import {
   formatDate,
   formatDuration,
@@ -105,7 +106,7 @@ const reviewPlayer = (h: Html, video: Video) =>
         [
           (video.kind === "audio" ? h.audio : h.video)(
             [
-              h.Id("chapter-player"),
+              h.Id(CHAPTER_PLAYER_ID),
               h.Title(video.title),
               h.Src(localMediaUrl(video.hlsKey)),
               h.Controls(true),
@@ -338,7 +339,7 @@ export const editVideoView = (h: Html, model: Model) => {
                   [
                     h.p([h.Class("block text-sm font-medium text-gray-300 mb-1")], ["Poster"]),
                     h.img([
-                      h.Src(`/${video.posterKey}`),
+                      h.Src(localMediaUrl(video.posterKey)),
                       h.Alt(`Poster for ${video.title}`),
                       h.Class("w-full max-w-sm rounded-lg border border-gray-700"),
                     ]),

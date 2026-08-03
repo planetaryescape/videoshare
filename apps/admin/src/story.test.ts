@@ -97,7 +97,7 @@ describe("admin story", () => {
         editVideo: Option.some(video),
       }),
       Story.message(ClickedAddChapter()),
-      Story.Command.expectExact(GenerateChapterId({ videoId: video.id })),
+      Story.Command.expectExact(GenerateChapterId({ videoId: video.id, startSec: 0 })),
       Story.Command.resolve(
         GenerateChapterId,
         GeneratedChapterId({ chapterId: "chapter-1", videoId: video.id, startSec: 42 }),

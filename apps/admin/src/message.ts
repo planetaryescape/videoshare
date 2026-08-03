@@ -57,10 +57,6 @@ export const GeneratedChapterId = m("GeneratedChapterId", {
 export const FocusedChapterTitle = m("FocusedChapterTitle", { chapterId: S.String });
 export const ClickedRemoveChapter = m("ClickedRemoveChapter", { id: S.String });
 export const UpdatedChapterTitle = m("UpdatedChapterTitle", { id: S.String, title: S.String });
-export const UpdatedChapterStart = m("UpdatedChapterStart", {
-  id: S.String,
-  startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
-});
 export const BlurredChapterField = m("BlurredChapterField");
 export const SucceededSaveChapters = m("SucceededSaveChapters", {
   chapters: S.Array(ChapterSchema),
@@ -109,7 +105,6 @@ export const Message = S.Union([
   FocusedChapterTitle,
   ClickedRemoveChapter,
   UpdatedChapterTitle,
-  UpdatedChapterStart,
   BlurredChapterField,
   SucceededSaveChapters,
   FailedSaveChapters,

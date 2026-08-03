@@ -63,18 +63,6 @@ const decodeVideo = decodeResponse(VideoSchema);
 const decodeVideoWrapped = decodeResponse(VideoWrappedResponse);
 const decodeVideoList = decodeResponse(VideoListResponse);
 
-const currentChapterStartSec = () => {
-  const player = document.getElementById("chapter-player");
-  if (!player || !("currentTime" in player)) {
-    return 0;
-  }
-
-  const currentTime: unknown = player.currentTime;
-  return typeof currentTime === "number" && Number.isFinite(currentTime) && currentTime >= 0
-    ? Math.floor(currentTime)
-    : 0;
-};
-
 const tryFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   Effect.tryPromise({
     try: (signal) => fetch(input, { ...init, signal }),
@@ -89,13 +77,13 @@ const tryJson = (response: Response) =>
 
 export const GenerateChapterId = Command.define(
   "GenerateChapterId",
-  { videoId: S.String },
+  { videoId: S.String, startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)) },
   GeneratedChapterId,
-)(({ videoId }) =>
+)(({ videoId, startSec }) =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const chapterId = yield* Effect.orDie(crypto.randomUUIDv4);
-    return GeneratedChapterId({ chapterId, videoId, startSec: currentChapterStartSec() });
+    return GeneratedChapterId({ chapterId, videoId, startSec });
   }).pipe(Effect.provide(BrowserCrypto.layer)),
 );
 
