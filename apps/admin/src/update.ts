@@ -54,11 +54,47 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
 
 export const init = (): Update => [initialModel(), [LoadVideos()]];
 
+const sameChapters = (left: ReadonlyArray<Chapter>, right: ReadonlyArray<Chapter>): boolean =>
+  left.length === right.length &&
+  left.every((chapter, index) => {
+    const other = right[index];
+    return (
+      other !== undefined &&
+      chapter.id === other.id &&
+      chapter.videoId === other.videoId &&
+      chapter.title === other.title &&
+      chapter.startSec === other.startSec &&
+      chapter.sortOrder === other.sortOrder
+    );
+  });
+
+const validationErrorWithDrafts = (
+  model: Model,
+  chapters: ReadonlyArray<Chapter>,
+  drafts: Readonly<Record<string, string>> = model.chapterStartDrafts,
+): Option.Option<string> => {
+  const durationSec = Option.isSome(model.editVideo) ? model.editVideo.value.durationSec : 0;
+  if (Object.values(drafts).some((draft) => Option.isNone(parseTimestamp(draft)))) {
+    return Option.some("Timestamp must look like 0:45, 1:02:30, or a number of seconds");
+  }
+  const candidates = chapters.map((chapter) => {
+    const draft = drafts[chapter.id];
+    if (draft === undefined) {
+      return chapter;
+    }
+    const parsed = parseTimestamp(draft);
+    return Option.isSome(parsed)
+      ? { ...chapter, startSec: clampToDuration(parsed.value, durationSec) }
+      : chapter;
+  });
+  return chaptersValidationError(candidates);
+};
+
 const startChapterSave = (model: Model): Update => {
   if (Option.isNone(model.editVideo)) {
     return noCmd(model);
   }
-  const validationError = chaptersValidationError(model.editChapters);
+  const validationError = validationErrorWithDrafts(model, model.editChapters);
   if (Option.isSome(validationError)) {
     return withEvo(model, {
       chapterSaveInFlight: () => false,
@@ -71,6 +107,7 @@ const startChapterSave = (model: Model): Update => {
     {
       chapterSaveInFlight: () => true,
       chapterSaveQueued: () => false,
+      chapterSaveSnapshot: () => model.editChapters,
       chapterValidationError: () => Option.none(),
     },
     SaveChaptersCmd({ id: model.editVideo.value.id, chapters: model.editChapters }),
@@ -80,10 +117,10 @@ const startChapterSave = (model: Model): Update => {
 const saveChapters = (model: Model, chapters: ReadonlyArray<Chapter>): Update => {
   const sorted = sortChapters(chapters);
   const nextModel = evoModel(model, { editChapters: () => sorted });
-  const validationError = chaptersValidationError(sorted);
+  const validationError = validationErrorWithDrafts(model, sorted);
   if (model.chapterSaveInFlight) {
     return withEvo(nextModel, {
-      chapterSaveQueued: () => true,
+      chapterSaveQueued: () => !sameChapters(sorted, model.chapterSaveSnapshot),
       chapterValidationError: () => validationError,
     });
   }
@@ -107,7 +144,11 @@ const commitChapterStart = (model: Model, id: string, startSec: number): Update 
     return noCmd(model);
   }
   if (chapter.startSec === startSec) {
-    return withEvo(model, { chapterStartDrafts: () => withoutDraft(model.chapterStartDrafts, id) });
+    const drafts = withoutDraft(model.chapterStartDrafts, id);
+    return withEvo(model, {
+      chapterStartDrafts: () => drafts,
+      chapterValidationError: () => validationErrorWithDrafts(model, model.editChapters, drafts),
+    });
   }
   const chapters = model.editChapters.map((candidate) =>
     candidate.id === id ? { ...candidate, startSec } : candidate,
@@ -154,6 +195,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
                 chapterValidationError: () => Option.none(),
                 chapterSaveInFlight: () => false,
                 chapterSaveQueued: () => false,
+                chapterSaveSnapshot: () => [],
                 copiedLink: () => false,
                 errorMessage: () => Option.none(),
               },
@@ -173,6 +215,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           chapterValidationError: () => Option.none(),
           chapterSaveInFlight: () => false,
           chapterSaveQueued: () => false,
+          chapterSaveSnapshot: () => [],
           selectedFile: () => Option.none(),
           selectedPoster: () => Option.none(),
           copiedLink: () => false,
@@ -447,6 +490,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           chapterValidationError: () => Option.none(),
           chapterSaveInFlight: () => false,
           chapterSaveQueued: () => false,
+          chapterSaveSnapshot: () => [],
         }),
       FailedLoadVideoDetail: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
@@ -496,7 +540,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         );
         return withEvo(model, {
           editChapters: () => chapters,
-          chapterValidationError: () => chaptersValidationError(chapters),
+          chapterSaveQueued: () =>
+            model.chapterSaveInFlight
+              ? !sameChapters(chapters, model.chapterSaveSnapshot)
+              : model.chapterSaveQueued,
+          chapterValidationError: () => validationErrorWithDrafts(model, chapters),
         });
       },
       UpdatedChapterStart: (msg: { id: string; value: string }) =>
@@ -538,6 +586,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           : withEvo(model, {
               editChapters: () => sortChapters(msg.chapters),
               chapterSaveInFlight: () => false,
+              chapterSaveSnapshot: () => [],
               chapterValidationError: () => Option.none(),
             }),
       FailedSaveChapters: (msg: { error: string }) =>
@@ -545,6 +594,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           ? startChapterSave(model)
           : withEvo(model, {
               chapterSaveInFlight: () => false,
+              chapterSaveSnapshot: () => [],
               errorMessage: () => Option.some(msg.error),
             }),
       ClickedCopyLink: (msg: { url: string }) => withCmds(model, CopyLinkCmd({ url: msg.url })),

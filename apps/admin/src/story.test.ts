@@ -13,6 +13,7 @@ import {
   ClickedAddChapter,
   CommittedChapterStart,
   UpdatedChapterStart,
+  UpdatedChapterTitle,
   ClickedBack,
   ClickedConfirmPendingAction,
   ClickedDeleteVideo,
@@ -237,6 +238,76 @@ describe("admin story", () => {
         }),
       ),
     );
+  });
+
+  test("preserves title edits made while chapters are saving", () => {
+    const chapter = { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 };
+    const base = {
+      ...initialModel(),
+      screen: EditVideo({ videoId: video.id }),
+      editVideo: Option.some(video),
+      editChapters: [chapter],
+    };
+    const [saving] = update(base, BlurredChapterField());
+    const [edited] = update(saving, UpdatedChapterTitle({ id: "a", title: "Opening" }));
+    const [afterResponse, commands] = update(
+      edited,
+      SucceededSaveChapters({ chapters: [chapter] }),
+    );
+
+    expect(edited.chapterSaveQueued).toBe(true);
+    expect(afterResponse.editChapters[0]?.title).toBe("Opening");
+    expect(commands.map((command) => command.name)).toEqual([SaveChaptersCmd.name]);
+  });
+
+  test("does not queue an unchanged chapter save", () => {
+    const chapter = { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 };
+    const base = {
+      ...initialModel(),
+      screen: EditVideo({ videoId: video.id }),
+      editVideo: Option.some(video),
+      editChapters: [chapter],
+    };
+    const [saving] = update(base, BlurredChapterField());
+    const [afterBlur, commands] = update(saving, BlurredChapterField());
+
+    expect(afterBlur.chapterSaveQueued).toBe(false);
+    expect(commands).toEqual([]);
+  });
+
+  test("keeps draft validation visible across title edits", () => {
+    const base = {
+      ...initialModel(),
+      screen: EditVideo({ videoId: video.id }),
+      editVideo: Option.some({ ...video, durationSec: 300 }),
+      editChapters: [
+        { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
+        { id: "b", videoId: video.id, title: "Middle", startSec: 60, sortOrder: 1 },
+      ],
+    };
+    const [drafted] = update(base, UpdatedChapterStart({ id: "b", value: "0:00" }));
+    const [invalid] = update(drafted, CommittedChapterStart({ id: "b" }));
+    const [titled] = update(invalid, UpdatedChapterTitle({ id: "a", title: "Opening" }));
+
+    expect(titled.chapterStartDrafts.b).toBe("0:00");
+    expect(titled.chapterValidationError).toEqual(
+      Option.some("Two chapters share a timestamp. Change one before saving."),
+    );
+  });
+
+  test("clears stale timestamp validation when a draft returns to the saved value", () => {
+    const base = {
+      ...initialModel(),
+      screen: EditVideo({ videoId: video.id }),
+      editVideo: Option.some({ ...video, durationSec: 300 }),
+      editChapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 30, sortOrder: 0 }],
+      chapterStartDrafts: { a: "0:30" },
+      chapterValidationError: Option.some("Invalid timestamp"),
+    };
+    const [committed] = update(base, CommittedChapterStart({ id: "a" }));
+
+    expect(committed.chapterStartDrafts.a).toBeUndefined();
+    expect(committed.chapterValidationError).toEqual(Option.none());
   });
 
   test("surfaces invalid chapter drafts", () => {
