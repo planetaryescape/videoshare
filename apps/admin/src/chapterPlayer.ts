@@ -46,9 +46,13 @@ export const mountChapterPlayer = () => {
 
     const hls = new Hls();
     let networkRetries = 0;
+    let mediaRetries = 0;
     hls.on(Events.MANIFEST_PARSED, () => {
       networkRetries = 0;
       showPlaybackError("");
+    });
+    hls.on(Events.FRAG_BUFFERED, () => {
+      mediaRetries = 0;
     });
     hls.on(Events.ERROR, (_, data) => {
       if (!data.fatal) {
@@ -70,7 +74,8 @@ export const mountChapterPlayer = () => {
           return;
         }
       }
-      if (data.type === ErrorTypes.MEDIA_ERROR) {
+      if (data.type === ErrorTypes.MEDIA_ERROR && mediaRetries < 2) {
+        mediaRetries += 1;
         hls.recoverMediaError();
         return;
       }
