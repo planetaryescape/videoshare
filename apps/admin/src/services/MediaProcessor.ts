@@ -14,6 +14,7 @@ import {
 } from "mediabunny";
 import type { ConversionAudioOptions, VideoSample } from "mediabunny";
 import type { Kind } from "@videoshare/shared/Asset";
+import { InvalidImageError, UnsupportedMediaError } from "../errors/MediaErrors.ts";
 import {
   InvalidConversionError,
   NoAssetTrackError,
@@ -178,51 +179,143 @@ const writePosterImage = (
     yield* storage.writeFile(`${assetId}/poster.jpg`, jpeg);
   });
 
-export interface TranscodeResult {
-  readonly durationSec: number;
-  readonly kind: Kind;
-}
+type ImageFilename = "original.jpg" | "original.png" | "original.webp";
 
-export interface TranscoderService {
-  readonly transcode: (
+export type ProcessedMedia =
+  | {
+      readonly kind: "image";
+      readonly durationSec: 0;
+      readonly filename: ImageFilename;
+      readonly width: number;
+      readonly height: number;
+    }
+  | {
+      readonly kind: "video" | "audio";
+      readonly durationSec: number;
+      readonly filename: "master.m3u8";
+      readonly width: null;
+      readonly height: null;
+    };
+
+const imageFormat = (bytes: Uint8Array): "jpg" | "png" | "webp" | null => {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+    return "jpg";
+  if (
+    bytes.length >= 8 &&
+    bytes
+      .slice(0, 8)
+      .every((value, index) => value === [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a][index])
+  )
+    return "png";
+  if (
+    bytes.length >= 12 &&
+    new TextDecoder().decode(bytes.slice(0, 4)) === "RIFF" &&
+    new TextDecoder().decode(bytes.slice(8, 12)) === "WEBP"
+  )
+    return "webp";
+  return null;
+};
+
+const imageFilename = (format: "jpg" | "png" | "webp"): ImageFilename => {
+  switch (format) {
+    case "jpg":
+      return "original.jpg";
+    case "png":
+      return "original.png";
+    case "webp":
+      return "original.webp";
+  }
+};
+
+const rejectedImageFormat = (bytes: Uint8Array): string | null => {
+  if (bytes.length >= 6 && new TextDecoder().decode(bytes.slice(0, 6)) === "GIF87a") return "GIF";
+  if (bytes.length >= 6 && new TextDecoder().decode(bytes.slice(0, 6)) === "GIF89a") return "GIF";
+  const text = new TextDecoder().decode(bytes.slice(0, 512)).trimStart().toLowerCase();
+  return text.startsWith("<svg") || (text.startsWith("<?xml") && text.includes("<svg"))
+    ? "SVG"
+    : null;
+};
+
+export interface MediaProcessorService {
+  /** Detects supported content and stores it locally; remote publication is owned by Publisher. */
+  readonly process: (
     assetId: string,
     file: File,
   ) => Effect.Effect<
-    TranscodeResult,
-    NoAssetTrackError | PosterDecodeError | TranscodeError | InvalidConversionError | StorageError,
-    Storage
+    ProcessedMedia,
+    | UnsupportedMediaError
+    | InvalidImageError
+    | NoAssetTrackError
+    | PosterDecodeError
+    | TranscodeError
+    | InvalidConversionError
+    | StorageError
   >;
   readonly writePoster: (
     assetId: string,
     file: File,
-  ) => Effect.Effect<void, PosterDecodeError | StorageError, Storage>;
+  ) => Effect.Effect<void, PosterDecodeError | StorageError>;
 }
 
-export class Transcoder extends Context.Service<Transcoder, TranscoderService>()(
-  "admin/Transcoder",
+export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcessorService>()(
+  "admin/MediaProcessor",
 ) {
-  static readonly layer: Layer.Layer<Transcoder, never, ProgressBus | Storage> = Layer.effect(
-    Transcoder,
+  static readonly layer: Layer.Layer<MediaProcessor, never, ProgressBus | Storage> = Layer.effect(
+    MediaProcessor,
     Effect.gen(function* () {
       const progress = yield* ProgressBus;
       const storage = yield* Storage;
       const publishContext = yield* Effect.context<ProgressBus>();
 
-      const transcode = (
-        assetId: string,
-        file: File,
-      ): Effect.Effect<
-        TranscodeResult,
-        | NoAssetTrackError
-        | PosterDecodeError
-        | TranscodeError
-        | InvalidConversionError
-        | StorageError,
-        Storage
-      > =>
+      const process = (assetId: string, file: File) =>
         Effect.gen(function* () {
-          yield* storage.resetAssetDir(assetId);
+          const header = new Uint8Array(
+            yield* Effect.tryPromise({
+              try: () => file.slice(0, 512).arrayBuffer(),
+              catch: () => new UnsupportedMediaError({ filename: file.name }),
+            }),
+          );
+          if (rejectedImageFormat(header)) {
+            return yield* new UnsupportedMediaError({ filename: file.name });
+          }
+          const format = imageFormat(header);
+          if (format) {
+            const bytes = new Uint8Array(
+              yield* Effect.tryPromise({
+                try: () => file.arrayBuffer(),
+                catch: () => new InvalidImageError({ filename: file.name }),
+              }),
+            );
+            const dimensions = yield* Effect.tryPromise({
+              try: async () => {
+                const image = new Bun.Image(bytes);
+                await image.metadata();
+                if (
+                  !Number.isInteger(image.width) ||
+                  !Number.isInteger(image.height) ||
+                  image.width < 1 ||
+                  image.height < 1
+                ) {
+                  throw new Error("image has invalid dimensions");
+                }
+                return { width: image.width, height: image.height };
+              },
+              catch: () => new InvalidImageError({ filename: file.name }),
+            });
+            yield* storage.resetAssetDir(assetId);
+            const filename = imageFilename(format);
+            yield* storage.writeFile(`${assetId}/${filename}`, bytes);
+            yield* progress.publish({ assetId, stage: "done", pct: 100 });
+            const image: ProcessedMedia = {
+              kind: "image",
+              durationSec: 0,
+              filename,
+              ...dimensions,
+            };
+            return image;
+          }
 
+          yield* storage.resetAssetDir(assetId);
           const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
           let conversion: Conversion | null = null;
 
@@ -327,7 +420,14 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
             }
 
             yield* progress.publish({ assetId, stage: "done", pct: 100 });
-            return { durationSec: Number.isFinite(duration) ? duration : 0, kind };
+            const timed: ProcessedMedia = {
+              durationSec: Number.isFinite(duration) ? duration : 0,
+              kind,
+              filename: "master.m3u8",
+              width: null,
+              height: null,
+            };
+            return timed;
           });
 
           return yield* work.pipe(
@@ -340,7 +440,12 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
           );
         });
 
-      return Transcoder.of({ transcode, writePoster: writePosterImage });
+      return MediaProcessor.of({
+        process: (assetId, file) =>
+          process(assetId, file).pipe(Effect.provideService(Storage, storage)),
+        writePoster: (assetId, file) =>
+          writePosterImage(assetId, file).pipe(Effect.provideService(Storage, storage)),
+      });
     }),
   );
 }

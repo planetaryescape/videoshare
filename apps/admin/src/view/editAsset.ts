@@ -93,44 +93,59 @@ const reviewPlayer = (h: Html, video: Asset) =>
       h.div(
         [h.Class("border-b border-gray-800 px-4 py-3")],
         [
-          h.h2([h.Class("text-sm font-medium text-gray-200")], ["Review playback"]),
+          h.h2(
+            [h.Class("text-sm font-medium text-gray-200")],
+            [video.kind === "image" ? "Review image" : "Review playback"],
+          ),
           h.p(
             [h.Class("mt-1 text-sm text-gray-400")],
-            ["Run your final playthrough here and tag chapters as you watch."],
+            [
+              video.kind === "image"
+                ? "Review the image before publishing."
+                : "Run your final playthrough here and tag chapters as you watch.",
+            ],
           ),
         ],
       ),
       h.div(
         [h.Class(video.kind === "audio" ? "p-4" : "bg-black")],
-        [
-          (video.kind === "audio" ? h.audio : h.video)(
-            [
-              h.Id(CHAPTER_PLAYER_ID),
-              h.Title(video.title),
-              h.Src(localMediaUrl(video.mediaKey)),
-              h.DataAttribute("hls-source", localMediaUrl(video.mediaKey)),
-              h.Controls(true),
-              h.Preload("metadata"),
-              h.Playsinline(true),
-              h.Crossorigin("anonymous"),
-              ...(video.kind === "video" && video.posterKey
-                ? [h.Poster(localMediaUrl(video.posterKey))]
-                : []),
-              h.Class(
-                video.kind === "audio" ? "block w-full" : "block aspect-video w-full bg-black",
+        video.kind === "image"
+          ? [
+              h.img([
+                h.Src(localMediaUrl(video.mediaKey)),
+                h.Alt(video.title),
+                h.Class("block max-h-[70vh] w-full object-contain"),
+              ]),
+            ]
+          : [
+              (video.kind === "audio" ? h.audio : h.video)(
+                [
+                  h.Id(CHAPTER_PLAYER_ID),
+                  h.Title(video.title),
+                  h.Src(localMediaUrl(video.mediaKey)),
+                  h.DataAttribute("hls-source", localMediaUrl(video.mediaKey)),
+                  h.Controls(true),
+                  h.Preload("metadata"),
+                  h.Playsinline(true),
+                  h.Crossorigin("anonymous"),
+                  ...(video.kind === "video" && video.posterKey
+                    ? [h.Poster(localMediaUrl(video.posterKey))]
+                    : []),
+                  h.Class(
+                    video.kind === "audio" ? "block w-full" : "block aspect-video w-full bg-black",
+                  ),
+                ],
+                [],
+              ),
+              h.p(
+                [
+                  h.Id(CHAPTER_PLAYER_ERROR_ID),
+                  h.AriaLive("assertive"),
+                  h.Class("px-4 py-2 text-sm text-red-300 empty:hidden"),
+                ],
+                [],
               ),
             ],
-            [],
-          ),
-          h.p(
-            [
-              h.Id(CHAPTER_PLAYER_ERROR_ID),
-              h.AriaLive("assertive"),
-              h.Class("px-4 py-2 text-sm text-red-300 empty:hidden"),
-            ],
-            [],
-          ),
-        ],
       ),
     ],
   );
@@ -364,14 +379,29 @@ export const editAssetView = (h: Html, model: Model) => {
                   [
                     h.p(
                       [h.Class("block text-sm font-medium text-gray-300 mb-3")],
-                      ["Upload video or audio mix"],
+                      ["Upload video, audio, or image"],
                     ),
                     h.submodel({
                       slotId: model.videoFileDrop.id,
                       model: model.videoFileDrop,
                       view: FileDrop.view,
                       viewInputs: {
-                        accept: [".mp4", "video/mp4", ".mp3", ".m4a", ".aac", ".flac", "audio/*"],
+                        accept: [
+                          ".mp4",
+                          "video/mp4",
+                          ".mp3",
+                          ".m4a",
+                          ".aac",
+                          ".flac",
+                          "audio/*",
+                          ".jpg",
+                          ".jpeg",
+                          ".png",
+                          ".webp",
+                          "image/jpeg",
+                          "image/png",
+                          "image/webp",
+                        ],
                         isDisabled: model.isUploading,
                         toView: ({ root, input }) =>
                           h.label(
@@ -462,7 +492,15 @@ export const editAssetView = (h: Html, model: Model) => {
                               "mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:not-data-[disabled]:bg-blue-500 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
                             ),
                           ],
-                          [model.isUploading ? "Uploading & Transcoding..." : "Upload & Transcode"],
+                          [
+                            model.isUploading &&
+                            Option.isSome(model.selectedFile) &&
+                            model.selectedFile.value.type.startsWith("image/")
+                              ? "Uploading..."
+                              : model.isUploading
+                                ? "Uploading & Transcoding..."
+                                : "Upload media",
+                          ],
                         ),
                     }),
                     ...(model.isUploading ? [uploadProgress(h, model)] : []),
@@ -551,7 +589,7 @@ export const editAssetView = (h: Html, model: Model) => {
                 ),
               ]
             : []),
-          ...(video ? [chaptersSection(h, model)] : []),
+          ...(video && video.kind !== "image" ? [chaptersSection(h, model)] : []),
           ...(video
             ? [
                 h.div(
@@ -562,13 +600,31 @@ export const editAssetView = (h: Html, model: Model) => {
                       ["Slug: ", h.span([h.Class("font-mono text-gray-400")], [video.slug])],
                     ),
                     h.div([], ["ID: ", h.span([h.Class("font-mono text-gray-400")], [video.id])]),
-                    h.div(
-                      [],
-                      [
-                        "Duration: ",
-                        h.span([h.Class("text-gray-400")], [formatDuration(video.durationSec)]),
-                      ],
-                    ),
+                    ...(video.kind === "image"
+                      ? [
+                          h.div(
+                            [],
+                            [
+                              "Dimensions: ",
+                              h.span(
+                                [h.Class("text-gray-400")],
+                                [`${video.width ?? "?"} × ${video.height ?? "?"}`],
+                              ),
+                            ],
+                          ),
+                        ]
+                      : [
+                          h.div(
+                            [],
+                            [
+                              "Duration: ",
+                              h.span(
+                                [h.Class("text-gray-400")],
+                                [formatDuration(video.durationSec)],
+                              ),
+                            ],
+                          ),
+                        ]),
                     h.div(
                       [],
                       [

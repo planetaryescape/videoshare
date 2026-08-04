@@ -1,15 +1,10 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { migrate } from "@videoshare/shared/Migrations";
 import { Effect, Layer, ManagedRuntime } from "effect";
-import { HttpRouter, HttpServer } from "effect/unstable/http";
-import { BunFileSystem } from "@effect/platform-bun";
+import { HttpRouter } from "effect/unstable/http";
 import { registerMediabunnyServer } from "@mediabunny/server";
 import { AdminApiLive, handlersLayer } from "./src/routes/AdminApiLive.ts";
-import { ProgressBus } from "./src/services/ProgressBus.ts";
-import { Transcoder } from "./src/services/Transcoder.ts";
-import { Storage } from "./src/services/Storage.ts";
-import { ProdSync } from "./src/prod.ts";
-import { AssetRepository } from "@videoshare/shared/AssetRepository";
+import { AppLayer } from "./src/services/AppLayer.ts";
 import { makeProgressHandler, type ProgressSocketData } from "./src/ws/progress.ts";
 import { corsMiddleware, mediaRouter } from "./src/routes/media.ts";
 
@@ -20,30 +15,10 @@ registerMediabunnyServer();
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)));
 
-// `Storage.layer` needs `FileSystem | Path`. `HttpServer.layerServices`
-// provides `Path` and a no-op `FileSystem`; merge with the real
-// `BunFileSystem.layer` so the platform services carry the Bun
-// filesystem (right-most `FileSystem` wins in `Context.mergeAll`).
-const platformLayer = Layer.merge(HttpServer.layerServices, BunFileSystem.layer);
+const appLayer = AppLayer;
 
-const providedStorage = Storage.layer.pipe(Layer.provide(platformLayer));
-
-const appLayer = Layer.mergeAll(
-  sqlLayer,
-  platformLayer,
-  ProgressBus.layer,
-  providedStorage,
-  ProdSync.layer,
-  AssetRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
-  Transcoder.layer.pipe(Layer.provide(ProgressBus.layer), Layer.provide(providedStorage)),
-);
-
-// Build `appLayer` once via a `ManagedRuntime` so its resources (in
-// particular the `SqliteClient` connection) stay alive for the lifetime
-// of the server. Reuse `appContext` for the WebSocket progress handler
-// so transcode progress events published via the `ProgressBus` reach
-// subscribed sockets (the `ProgressBus` instance is shared with the
-// HTTP `Transcoder`).
+// Build `appLayer` once via a `ManagedRuntime` so its resources stay alive for
+// the server lifetime. Reuse its context for the WebSocket progress handler.
 const appRuntime = ManagedRuntime.make(appLayer);
 const appContext = await appRuntime.context();
 const appContextLayer = Layer.succeedContext(appContext);

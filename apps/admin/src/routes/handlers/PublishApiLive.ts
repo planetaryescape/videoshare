@@ -31,7 +31,7 @@ export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handler
             publishedAt: Date.now(),
           });
 
-          const hasMedia = yield* prod.mediaExists(publishedAsset.id);
+          const hasMedia = yield* prod.mediaExists(publishedAsset.mediaKey);
           if (!hasMedia) {
             yield* prod.uploadMedia(publishedAsset.id, storage.videoDir(publishedAsset.id));
           }

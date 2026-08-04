@@ -72,6 +72,8 @@ const contentType = (key: string): string => {
   if (key.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
   if (key.endsWith(".ts")) return "video/mp2t";
   if (key.endsWith(".jpg") || key.endsWith(".jpeg")) return "image/jpeg";
+  if (key.endsWith(".png")) return "image/png";
+  if (key.endsWith(".webp")) return "image/webp";
   if (key.endsWith(".vtt")) return "text/vtt";
   return "application/octet-stream";
 };
@@ -119,8 +121,8 @@ const uploadDir = (localDir: string, keyPrefix: string) =>
 
 const upsertAsset = (video: Asset) =>
   d1Query(
-    `INSERT INTO assets (id, slug, kind, title, description, poster_key, media_key, duration_sec, password_hash, created_at, published_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO assets (id, slug, kind, title, description, poster_key, media_key, duration_sec, width, height, password_hash, created_at, published_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        slug = excluded.slug,
        kind = excluded.kind,
@@ -129,6 +131,8 @@ const upsertAsset = (video: Asset) =>
        poster_key = excluded.poster_key,
        media_key = excluded.media_key,
        duration_sec = excluded.duration_sec,
+       width = excluded.width,
+       height = excluded.height,
        password_hash = excluded.password_hash,
        published_at = excluded.published_at,
        updated_at = excluded.updated_at`,
@@ -141,6 +145,8 @@ const upsertAsset = (video: Asset) =>
       video.posterKey,
       video.mediaKey,
       video.durationSec,
+      video.width,
+      video.height,
       video.passwordHash,
       video.createdAt,
       video.publishedAt,
@@ -212,7 +218,7 @@ export interface ProdSyncService {
     assetId: string,
     localMediaDir: string,
   ) => Effect.Effect<void, ProdSyncError>;
-  readonly mediaExists: (assetId: string) => Effect.Effect<boolean, ProdSyncError>;
+  readonly mediaExists: (mediaKey: string) => Effect.Effect<boolean, ProdSyncError>;
   readonly syncMetadata: (
     video: Asset,
     chapters: ReadonlyArray<Chapter>,
@@ -232,9 +238,9 @@ export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admi
     ProdSync,
     ProdSync.of({
       uploadMedia: (assetId, localMediaDir) => uploadDir(localMediaDir, `media/${assetId}`),
-      mediaExists: (assetId) =>
+      mediaExists: (mediaKey) =>
         Effect.tryPromise({
-          try: () => r2().exists(`media/${assetId}/master.m3u8`),
+          try: () => r2().exists(mediaKey),
           catch: (cause) => new ProdSyncError({ operation: "mediaExists", cause }),
         }).pipe(wrapProdError("mediaExists")),
       syncMetadata: (video, chapters) =>
@@ -265,10 +271,10 @@ export const uploadMedia = (assetId: string, localMediaDir: string) =>
     return yield* sync.uploadMedia(assetId, localMediaDir);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const mediaExists = (assetId: string) =>
+export const mediaExists = (mediaKey: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.mediaExists(assetId);
+    return yield* sync.mediaExists(mediaKey);
   }).pipe(Effect.provide(ProdSync.layer));
 
 export const syncMetadata = (video: Asset, chapters: ReadonlyArray<Chapter>) =>

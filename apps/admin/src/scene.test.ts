@@ -21,9 +21,23 @@ const video: Asset = {
   posterKey: null,
   mediaKey: "assets/video-1/master.m3u8",
   durationSec: 125,
+  width: null,
+  height: null,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
   updatedAt: 1_750_000_001_000,
+};
+
+const image: Asset = {
+  ...video,
+  id: "image-1",
+  slug: "fixture-image",
+  kind: "image",
+  title: "Fixture Image",
+  mediaKey: "media/image-1/original.png",
+  durationSec: 0,
+  width: 640,
+  height: 480,
 };
 
 const chapter: Chapter = {
@@ -61,6 +75,37 @@ describe("admin scenes", () => {
       Scene.expect(Scene.role("button", { name: "Add at playhead" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Publish" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Copy link" })).toExist(),
+    );
+  });
+
+  test("renders image-specific review and upload copy", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: { _tag: "EditAsset", assetId: image.id },
+        assets: [image],
+        editAsset: Option.some(image),
+        editTitle: image.title,
+        editDescription: image.description ?? "",
+      }),
+      Scene.expect(Scene.role("heading", { name: "Review image", level: 2 })).toExist(),
+      Scene.expect(Scene.text("Review the image before publishing.")).toExist(),
+      Scene.expect(Scene.role("button", { name: "Add at playhead" })).not.toExist(),
+    );
+
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: EditAsset({ assetId: image.id }),
+        editAsset: Option.some({ ...image, mediaKey: "" }),
+        editTitle: image.title,
+        editDescription: image.description ?? "",
+        isUploading: true,
+        selectedFile: Option.some(new File(["image"], "photo.png", { type: "image/png" })),
+      }),
+      Scene.expect(Scene.role("button", { name: "Uploading..." })).toExist(),
     );
   });
 

@@ -4,20 +4,14 @@ import { Effect } from "effect";
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
 import { Asset, AssetId } from "@videoshare/shared/Asset";
 import { AssetNotFoundError } from "@videoshare/shared/AssetErrors";
-import { ProgressBus } from "../../services/ProgressBus.ts";
-import { Transcoder } from "../../services/Transcoder.ts";
-import { Storage } from "../../services/Storage.ts";
-import { ProdSync } from "../../prod.ts";
+import { MediaProcessor } from "../../services/MediaProcessor.ts";
 import { UploadValidationError } from "../../errors/UploadErrors.ts";
 import { AdminApi } from "../AdminApi.ts";
 
 export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers) =>
   Effect.gen(function* () {
     const repo = yield* AssetRepository;
-    const transcoder = yield* Transcoder;
-    const progress = yield* ProgressBus;
-    const prod = yield* ProdSync;
-    const storage = yield* Storage;
+    const processor = yield* MediaProcessor;
 
     return handlers.handleRaw("upload", ({ request }) =>
       Effect.gen(function* () {
@@ -50,38 +44,37 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
           return yield* new AssetNotFoundError({ id: assetId });
         }
 
-        const { durationSec, kind } = yield* transcoder.transcode(assetId, file);
+        const processed = yield* processor.process(assetId, file);
 
-        if (poster) {
-          yield* transcoder.writePoster(assetId, poster).pipe(
-            Effect.catchTag(
-              "PosterDecodeError",
-              (err) =>
-                new UploadValidationError({
-                  reason: `Invalid cover image: ${err.message}`,
-                }),
-            ),
-          );
+        if (poster && processed.kind !== "image") {
+          yield* processor
+            .writePoster(assetId, poster)
+            .pipe(
+              Effect.catchTag(
+                "PosterDecodeError",
+                (err) =>
+                  new UploadValidationError({ reason: `Invalid cover image: ${err.message}` }),
+              ),
+            );
         }
 
-        yield* progress.publish({ assetId, stage: "uploading-media", pct: 100 });
-        yield* prod.uploadMedia(assetId, storage.videoDir(assetId));
-
         const posterKey =
-          poster !== null
-            ? `media/${assetId}/poster.jpg`
-            : kind === "video"
+          processed.kind === "image"
+            ? null
+            : poster !== null || processed.kind === "video"
               ? `media/${assetId}/poster.jpg`
               : found.value.posterKey;
         const updated = new Asset({
           ...found.value,
-          kind,
-          mediaKey: `media/${assetId}/master.m3u8`,
+          kind: processed.kind,
+          mediaKey: `media/${assetId}/${processed.filename}`,
           posterKey,
-          durationSec: isNaN(durationSec) ? 0 : durationSec,
+          durationSec: processed.durationSec,
+          width: processed.width,
+          height: processed.height,
           updatedAt: Date.now(),
         });
-        return yield* repo.update(updated);
+        return yield* repo.replaceMedia(updated);
       }),
     );
   }),

@@ -3,7 +3,7 @@ import { HttpServer } from "effect/unstable/http";
 import { BunFileSystem } from "@effect/platform-bun";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
-import { Transcoder } from "./Transcoder.ts";
+import { MediaProcessor } from "./MediaProcessor.ts";
 import { ProgressBus } from "./ProgressBus.ts";
 import { Storage } from "./Storage.ts";
 import { ProdSync } from "../prod.ts";
@@ -11,13 +11,15 @@ import { ProdSync } from "../prod.ts";
 const dbFilename = process.env["VIDEOSHARE_DB"] ?? `${import.meta.dir}/videoshare-admin.db`;
 
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
-
 const platformLayer = Layer.merge(HttpServer.layerServices, BunFileSystem.layer);
+const storageLive = Storage.layer.pipe(Layer.provide(platformLayer));
+const mediaProcessorLive = Layer.provideMerge(
+  MediaProcessor.layer,
+  Layer.mergeAll(ProgressBus.layer, storageLive),
+);
 
 export const AppLayer = Layer.mergeAll(
-  Transcoder.layer.pipe(Layer.provide(Storage.layer), Layer.provide(ProgressBus.layer)),
-  ProgressBus.layer,
-  Storage.layer.pipe(Layer.provide(platformLayer)),
+  mediaProcessorLive,
   ProdSync.layer,
   AssetRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
 ).pipe(Layer.provideMerge(platformLayer), Layer.provide(sqlLayer));

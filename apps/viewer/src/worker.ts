@@ -5,6 +5,8 @@ import { Effect, Layer, Option } from "effect";
 import playerCss from "../generated/player.css?raw";
 import playerScript from "../generated/player.js?raw";
 import { appleTouchIconBase64, favicon16Base64, favicon32Base64 } from "../generated/favicons";
+import { escapeHtml } from "./escapeHtml.ts";
+import { renderStage } from "./stage.ts";
 
 interface R2ObjectBody {
   readonly body: ReadableStream | null;
@@ -64,14 +66,6 @@ const loadAssetMedia = (env: ViewerEnv, slug: string) =>
       return yield* catalog.findAssetMedia(slug);
     }),
   );
-
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 
 const toHex = (bytes: ArrayBuffer) =>
   Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
@@ -242,12 +236,16 @@ const absoluteUrl = (origin: string, value: string | null) => {
   return `${origin}${value.startsWith("/") ? value : `/${value}`}`;
 };
 
-const ogTags = (origin: string, slug: string, asset: Asset) => {
+/** Renders safe Open Graph and Twitter metadata for a published asset page. */
+export const renderOpenGraphTags = (origin: string, slug: string, asset: Asset) => {
   const pageUrl = `${origin}${mediaPrefix(slug).replace(/\/$/, "")}`;
-  const imageUrl = absoluteUrl(origin, resolveMediaUrl(slug, asset.posterKey));
+  const imageUrl = absoluteUrl(
+    origin,
+    resolveMediaUrl(slug, asset.posterKey ?? (asset.kind === "image" ? asset.mediaKey : null)),
+  );
   const description = asset.description ?? "";
   const tags = [
-    `<meta property="og:type" content="${asset.kind === "audio" ? "music.song" : "video.other"}">`,
+    `<meta property="og:type" content="${asset.kind === "audio" ? "music.song" : asset.kind === "image" ? "website" : "video.other"}">`,
     `<meta property="og:title" content="${escapeHtml(asset.title)}">`,
     `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
     `<meta property="og:site_name" content="VideoShare">`,
@@ -273,10 +271,11 @@ const viewerPage = (
   chapters: ReadonlyArray<Chapter>,
 ) => {
   const isAudio = asset.kind === "audio";
-  const chaptersTrack = chaptersTrackFor(chapters);
+  const isImage = asset.kind === "image";
+  const chaptersTrack = isImage ? null : chaptersTrackFor(chapters);
   const posterUrl = resolveMediaUrl(slug, asset.posterKey);
   const manifestUrl = resolveMediaUrl(slug, asset.mediaKey);
-  const chapterItems = chapters
+  const chapterItems = (isImage ? [] : chapters)
     .map(
       (chapter) => `<li>
         <button type="button" data-chapter-start="${chapter.startSec}" aria-label="Seek to ${escapeHtml(chapter.title)} at ${chapter.startSec} seconds">
@@ -294,7 +293,7 @@ const viewerPage = (
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(asset.title)}</title>
     ${faviconLinks}
-    ${ogTags(origin, slug, asset)}
+    ${renderOpenGraphTags(origin, slug, asset)}
     <link rel="stylesheet" href="/_assets/player.css?v=${assetVersion}">
     <style>
       :root { color-scheme: dark; }
@@ -303,7 +302,9 @@ const viewerPage = (
       h1 { margin: 24px 0 8px; font-size: clamp(2rem, 4vw, 3rem); }
       p { margin: 0; color: #b8c0d0; line-height: 1.6; }
       .player-shell { overflow: hidden; border-radius: 24px; background: #000; box-shadow: 0 24px 80px rgba(0,0,0,0.45); }
-      media-player { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+      media-player, .image-stage { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+      .image-stage { display: grid; place-items: center; }
+      .image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
       media-player[view-type="audio"],
       media-player[data-view-type="audio"] { aspect-ratio: auto; background: transparent; }
       .player-shell.is-audio { background: transparent; box-shadow: none; border-radius: 0; }
@@ -318,25 +319,12 @@ const viewerPage = (
       .chapter-time { color: #b8c0d0; }
       .slug { margin-top: 20px; font-size: 0.85rem; color: #8e98ab; }
     </style>
-    <script type="module" src="/_assets/player.js?v=${assetVersion}"></script>
+    ${isImage ? "" : `<script type="module" src="/_assets/player.js?v=${assetVersion}"></script>`}
   </head>
   <body>
     <main>
       <div class="player-shell${isAudio ? " is-audio" : ""}">
-        <media-player
-          title="${escapeHtml(asset.title)}"
-          src="${escapeHtml(manifestUrl ?? asset.mediaKey)}"
-          view-type="${isAudio ? "audio" : "video"}"
-          stream-type="on-demand"
-          playsinline
-          crossorigin
-          ${posterUrl ? `poster="${escapeHtml(posterUrl)}"` : ""}
-        >
-          <media-outlet>
-            ${chaptersTrack ? `<track kind="chapters" src="${chaptersTrack}" default>` : ""}
-          </media-outlet>
-          <media-community-skin></media-community-skin>
-        </media-player>
+        ${renderStage(asset, manifestUrl ?? asset.mediaKey, posterUrl, chaptersTrack)}
       </div>
       <div class="meta">
         <div>

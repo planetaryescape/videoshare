@@ -1,12 +1,34 @@
 import { Array, Context, Effect, Layer, Option, Schema } from "effect";
 import { SqlClient } from "effect/unstable/sql";
 import { Chapter, ChapterId, Kind, Slug, Asset, AssetId } from "./Asset.ts";
-import { PersistenceError, SlugAlreadyExistsError } from "./AssetErrors.ts";
+import {
+  ImageChaptersNotAllowedError,
+  InvalidMediaShapeError,
+  PersistenceError,
+  SlugAlreadyExistsError,
+} from "./AssetErrors.ts";
+
+type ExpectedAssetRepositoryError =
+  | PersistenceError
+  | SlugAlreadyExistsError
+  | ImageChaptersNotAllowedError
+  | InvalidMediaShapeError;
+
+const isExpectedAssetRepositoryError = (cause: unknown): cause is ExpectedAssetRepositoryError =>
+  typeof cause === "object" &&
+  cause !== null &&
+  "_tag" in cause &&
+  (cause._tag === "PersistenceError" ||
+    cause._tag === "SlugAlreadyExistsError" ||
+    cause._tag === "ImageChaptersNotAllowedError" ||
+    cause._tag === "InvalidMediaShapeError");
 
 const wrapSqlError =
   (operation: string) =>
-  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, PersistenceError, R> =>
-    Effect.mapError(effect, (cause) => new PersistenceError({ operation, cause }));
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.mapError(effect, (cause) =>
+      isExpectedAssetRepositoryError(cause) ? cause : new PersistenceError({ operation, cause }),
+    );
 
 interface AssetRow {
   readonly id: string;
@@ -17,6 +39,8 @@ interface AssetRow {
   readonly poster_key: string | null;
   readonly media_key: string;
   readonly duration_sec: number;
+  readonly width: number | null;
+  readonly height: number | null;
   readonly password_hash: string | null;
   readonly created_at: number;
   readonly published_at: number | null;
@@ -43,6 +67,8 @@ const toAsset = (row: AssetRow): Effect.Effect<Asset, PersistenceError> =>
         posterKey: row.poster_key,
         mediaKey: row.media_key,
         durationSec: row.duration_sec,
+        width: row.width,
+        height: row.height,
         passwordHash: row.password_hash,
         createdAt: row.created_at,
         publishedAt: row.published_at,
@@ -70,14 +96,19 @@ export class AssetRepository extends Context.Service<
     findById(id: AssetId): Effect.Effect<Option.Option<Asset>, PersistenceError>;
     findBySlug(slug: string): Effect.Effect<Option.Option<Asset>, PersistenceError>;
     list(): Effect.Effect<ReadonlyArray<Asset>, PersistenceError>;
-    create(asset: Asset): Effect.Effect<Asset, PersistenceError | SlugAlreadyExistsError>;
+    create(
+      asset: Asset,
+    ): Effect.Effect<Asset, PersistenceError | SlugAlreadyExistsError | InvalidMediaShapeError>;
+    /** Updates metadata and publication state only; media transitions use replaceMedia. */
     update(asset: Asset): Effect.Effect<Asset, PersistenceError>;
+    /** Replaces an asset's media and clears timed-only chapters as one catalog operation. */
+    replaceMedia(asset: Asset): Effect.Effect<Asset, PersistenceError | InvalidMediaShapeError>;
     delete(id: AssetId): Effect.Effect<void, PersistenceError>;
     listChapters(assetId: AssetId): Effect.Effect<ReadonlyArray<Chapter>, PersistenceError>;
     replaceChapters(
       assetId: AssetId,
       chapters: ReadonlyArray<Chapter>,
-    ): Effect.Effect<void, PersistenceError>;
+    ): Effect.Effect<void, PersistenceError | ImageChaptersNotAllowedError>;
   }
 >()("videoshare/AssetRepository") {
   static readonly layerNoDeps: Layer.Layer<AssetRepository, never, SqlClient.SqlClient> =
@@ -105,7 +136,34 @@ export class AssetRepository extends Context.Service<
           return yield* Effect.all(rows.map(toAsset));
         }, wrapSqlError("list"));
 
+        const mediaShapeError = (asset: Asset): InvalidMediaShapeError | undefined => {
+          if (
+            asset.kind === "image" &&
+            (asset.durationSec !== 0 ||
+              asset.width === null ||
+              asset.width <= 0 ||
+              asset.height === null ||
+              asset.height <= 0)
+          ) {
+            return new InvalidMediaShapeError({
+              assetId: asset.id,
+              kind: asset.kind,
+              reason: "imageRequiresZeroDurationAndPositiveDimensions",
+            });
+          }
+          if (asset.kind !== "image" && (asset.width !== null || asset.height !== null)) {
+            return new InvalidMediaShapeError({
+              assetId: asset.id,
+              kind: asset.kind,
+              reason: "timedAssetsRequireNullDimensions",
+            });
+          }
+          return undefined;
+        };
+
         const create = Effect.fn("AssetRepository.create")(function* (asset: Asset) {
+          const invalidShape = mediaShapeError(asset);
+          if (invalidShape) return yield* invalidShape;
           const existing = yield* sql<{
             readonly c: number;
           }>`SELECT COUNT(*) AS c FROM assets WHERE slug = ${asset.slug}`;
@@ -113,29 +171,55 @@ export class AssetRepository extends Context.Service<
             return yield* new SlugAlreadyExistsError({ slug: asset.slug });
           }
           yield* sql`
-            INSERT INTO assets (id, slug, kind, title, description, poster_key, media_key, duration_sec, password_hash, created_at, published_at, updated_at)
-            VALUES (${asset.id}, ${asset.slug}, ${asset.kind}, ${asset.title}, ${asset.description}, ${asset.posterKey}, ${asset.mediaKey}, ${asset.durationSec}, ${asset.passwordHash}, ${asset.createdAt}, ${asset.publishedAt}, ${asset.updatedAt})
+            INSERT INTO assets (id, slug, kind, title, description, poster_key, media_key, duration_sec, width, height, password_hash, created_at, published_at, updated_at)
+            VALUES (${asset.id}, ${asset.slug}, ${asset.kind}, ${asset.title}, ${asset.description}, ${asset.posterKey}, ${asset.mediaKey}, ${asset.durationSec}, ${asset.width}, ${asset.height}, ${asset.passwordHash}, ${asset.createdAt}, ${asset.publishedAt}, ${asset.updatedAt})
           `;
           return asset;
         }, wrapSqlError("create"));
 
-        const update = Effect.fn("AssetRepository.update")(function* (asset: Asset) {
-          yield* sql`
+        const updateMetadata = (asset: Asset) =>
+          sql`
             UPDATE assets SET
               slug = ${asset.slug},
-              kind = ${asset.kind},
               title = ${asset.title},
               description = ${asset.description},
               poster_key = ${asset.posterKey},
-              media_key = ${asset.mediaKey},
-              duration_sec = ${asset.durationSec},
               password_hash = ${asset.passwordHash},
               published_at = ${asset.publishedAt},
               updated_at = ${asset.updatedAt}
             WHERE id = ${asset.id}
           `;
+
+        const updateMedia = (asset: Asset) =>
+          sql`
+            UPDATE assets SET
+              kind = ${asset.kind},
+              media_key = ${asset.mediaKey},
+              duration_sec = ${asset.durationSec},
+              width = ${asset.width},
+              height = ${asset.height}
+            WHERE id = ${asset.id}
+          `;
+
+        const update = Effect.fn("AssetRepository.update")(function* (asset: Asset) {
+          yield* updateMetadata(asset);
           return asset;
         }, wrapSqlError("update"));
+
+        const replaceMedia = Effect.fn("AssetRepository.replaceMedia")(function* (asset: Asset) {
+          const invalidShape = mediaShapeError(asset);
+          if (invalidShape) return yield* invalidShape;
+          yield* sql.withTransaction(
+            Effect.gen(function* () {
+              yield* updateMetadata(asset);
+              yield* updateMedia(asset);
+              if (asset.kind === "image") {
+                yield* sql`DELETE FROM chapters WHERE asset_id = ${asset.id}`;
+              }
+            }),
+          );
+          return asset;
+        }, wrapSqlError("replaceMedia"));
 
         const del = Effect.fn("AssetRepository.delete")(function* (id: AssetId) {
           yield* sql`DELETE FROM chapters WHERE asset_id = ${id}`;
@@ -154,13 +238,28 @@ export class AssetRepository extends Context.Service<
           assetId: AssetId,
           chapters: ReadonlyArray<Chapter>,
         ) {
-          yield* sql`DELETE FROM chapters WHERE asset_id = ${assetId}`;
-          for (const ch of chapters) {
-            yield* sql`
-              INSERT INTO chapters (id, asset_id, title, start_sec, sort_order)
-              VALUES (${ch.id}, ${assetId}, ${ch.title}, ${ch.startSec}, ${ch.sortOrder})
-            `;
-          }
+          yield* sql.withTransaction(
+            Effect.gen(function* () {
+              if (chapters.length > 0) {
+                const assets = yield* sql<{
+                  readonly kind: string;
+                }>`SELECT kind FROM assets WHERE id = ${assetId}`;
+                if (assets[0]?.kind === "image") {
+                  return yield* new ImageChaptersNotAllowedError({
+                    assetId,
+                    chapterCount: chapters.length,
+                  });
+                }
+              }
+              yield* sql`DELETE FROM chapters WHERE asset_id = ${assetId}`;
+              for (const ch of chapters) {
+                yield* sql`
+                  INSERT INTO chapters (id, asset_id, title, start_sec, sort_order)
+                  VALUES (${ch.id}, ${assetId}, ${ch.title}, ${ch.startSec}, ${ch.sortOrder})
+                `;
+              }
+            }),
+          );
         }, wrapSqlError("replaceChapters"));
 
         return AssetRepository.of({
@@ -169,6 +268,7 @@ export class AssetRepository extends Context.Service<
           list,
           create,
           update,
+          replaceMedia,
           delete: del,
           listChapters,
           replaceChapters,

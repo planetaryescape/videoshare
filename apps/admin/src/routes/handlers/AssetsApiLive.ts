@@ -38,6 +38,8 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
             posterKey: null,
             mediaKey: "",
             durationSec: 0,
+            width: null,
+            height: null,
             passwordHash: null,
             createdAt: Date.now(),
             publishedAt: null,

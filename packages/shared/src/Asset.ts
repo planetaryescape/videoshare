@@ -12,7 +12,7 @@ export const Slug = Schema.String.check(
 ).pipe(Schema.brand("Slug"));
 export type Slug = typeof Slug.Type;
 
-export const Kind = Schema.Literals(["video", "audio"]);
+export const Kind = Schema.Literals(["video", "audio", "image"]);
 export type Kind = typeof Kind.Type;
 
 export class Chapter extends Schema.Class<Chapter>("Chapter")({
@@ -32,6 +32,8 @@ export class Asset extends Schema.Class<Asset>("Asset")({
   posterKey: Schema.NullOr(Schema.String),
   mediaKey: Schema.String,
   durationSec: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+  width: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+  height: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   passwordHash: Schema.NullOr(Schema.String),
   createdAt: Schema.Number,
   publishedAt: Schema.NullOr(Schema.Number),

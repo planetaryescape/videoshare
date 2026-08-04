@@ -47,6 +47,8 @@ const video: Asset = {
   posterKey: null,
   mediaKey: "",
   durationSec: 0,
+  width: null,
+  height: null,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
   updatedAt: null,

@@ -7,6 +7,8 @@ import {
   ProdSyncError,
   SlugAlreadyExistsError,
   AssetNotFoundError,
+  ImageChaptersNotAllowedError,
+  InvalidMediaShapeError,
 } from "@videoshare/shared/AssetErrors";
 import { StorageError } from "../../errors/StorageErrors.ts";
 import {
@@ -16,6 +18,7 @@ import {
   TranscodeError,
 } from "../../errors/TranscodeErrors.ts";
 import { NotTranscodedError, UploadValidationError } from "../../errors/UploadErrors.ts";
+import { InvalidImageError, UnsupportedMediaError } from "../../errors/MediaErrors.ts";
 import {
   ChapterInput,
   CreateAssetRequest,
@@ -47,7 +50,7 @@ export class AssetsApi extends HttpApiGroup.make("assets")
     HttpApiEndpoint.post("createAsset", "/", {
       payload: CreateAssetRequest,
       success: Asset201,
-      error: [SlugAlreadyExistsError, PersistenceError],
+      error: [SlugAlreadyExistsError, InvalidMediaShapeError, PersistenceError],
     }),
   )
   .add(
@@ -55,7 +58,7 @@ export class AssetsApi extends HttpApiGroup.make("assets")
       params: IdParam,
       payload: UpdateAssetRequest,
       success: AssetWithChapters,
-      error: [AssetNotFoundError, PersistenceError],
+      error: [AssetNotFoundError, ImageChaptersNotAllowedError, PersistenceError],
     }),
   )
   .add(
@@ -82,6 +85,9 @@ export class UploadApi extends HttpApiGroup.make("upload")
         PosterDecodeError,
         TranscodeError,
         InvalidConversionError,
+        InvalidImageError,
+        UnsupportedMediaError,
+        InvalidMediaShapeError,
         ProdSyncError,
         PersistenceError,
         StorageError,
@@ -119,7 +125,7 @@ export class ChaptersApi extends HttpApiGroup.make("chapters")
       params: Schema.Struct({ assetId: AssetId }),
       payload: Schema.Array(ChapterInput),
       success: Schema.Array(Chapter),
-      error: [AssetNotFoundError, PersistenceError],
+      error: [AssetNotFoundError, ImageChaptersNotAllowedError, PersistenceError],
     }),
   )
   .prefix("/assets") {}

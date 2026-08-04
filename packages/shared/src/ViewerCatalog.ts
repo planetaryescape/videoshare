@@ -12,6 +12,8 @@ interface AssetRow {
   readonly poster_key: string | null;
   readonly media_key: string;
   readonly duration_sec: number;
+  readonly width: number | null;
+  readonly height: number | null;
   readonly password_hash: string | null;
   readonly created_at: number;
   readonly published_at: number | null;
@@ -48,6 +50,8 @@ const toAsset = (row: AssetRow): Effect.Effect<Asset, PersistenceError> =>
         posterKey: row.poster_key,
         mediaKey: row.media_key,
         durationSec: row.duration_sec,
+        width: row.width,
+        height: row.height,
         passwordHash: row.password_hash,
         createdAt: row.created_at,
         publishedAt: row.published_at,
@@ -85,7 +89,7 @@ export class ViewerCatalog extends Context.Service<
 
         const findAssetMedia = Effect.fn("ViewerCatalog.findAssetMedia")(function* (slug: string) {
           const rows = yield* sql<AssetRow>`
-          SELECT id, slug, kind, title, description, poster_key, media_key, duration_sec,
+          SELECT id, slug, kind, title, description, poster_key, media_key, duration_sec, width, height,
                  password_hash, created_at, published_at, updated_at
           FROM assets
           WHERE slug = ${slug} AND published_at IS NOT NULL

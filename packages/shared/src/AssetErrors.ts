@@ -40,6 +40,33 @@ export class SlugAlreadyExistsError extends Schema.TaggedErrorClass<SlugAlreadyE
   }
 }
 
+export class ImageChaptersNotAllowedError extends Schema.TaggedErrorClass<ImageChaptersNotAllowedError>()(
+  "ImageChaptersNotAllowedError",
+  { assetId: Schema.String, chapterCount: Schema.Int.check(Schema.isGreaterThan(0)) },
+  { httpApiStatus: 422 },
+) {
+  override get message(): string {
+    return `Image assets cannot have chapters: ${this.assetId}`;
+  }
+}
+
+export class InvalidMediaShapeError extends Schema.TaggedErrorClass<InvalidMediaShapeError>()(
+  "InvalidMediaShapeError",
+  {
+    assetId: Schema.String,
+    kind: Schema.Literals(["video", "audio", "image"]),
+    reason: Schema.Literals([
+      "imageRequiresZeroDurationAndPositiveDimensions",
+      "timedAssetsRequireNullDimensions",
+    ]),
+  },
+  { httpApiStatus: 422 },
+) {
+  override get message(): string {
+    return `Invalid media shape for ${this.kind} asset: ${this.assetId} (${this.reason})`;
+  }
+}
+
 export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>()(
   "PersistenceError",
   { operation: Schema.String, cause: Schema.Defect() },
@@ -65,6 +92,8 @@ export const errorStatus: Record<string, number> = {
   PasswordRequiredError: 401,
   IncorrectPasswordError: 403,
   SlugAlreadyExistsError: 409,
+  ImageChaptersNotAllowedError: 422,
+  InvalidMediaShapeError: 422,
   PersistenceError: 500,
   ProdSyncError: 502,
 };

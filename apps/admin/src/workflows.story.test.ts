@@ -43,6 +43,8 @@ const video: Asset = {
   posterKey: null,
   mediaKey: "assets/video-1/master.m3u8",
   durationSec: 125,
+  width: null,
+  height: null,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
   updatedAt: 1_750_000_001_000,

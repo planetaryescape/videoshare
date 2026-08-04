@@ -38,7 +38,7 @@ export const migrate = Effect.gen(function* () {
       CREATE TABLE assets (
         id TEXT PRIMARY KEY,
         slug TEXT NOT NULL UNIQUE,
-        kind TEXT NOT NULL DEFAULT 'video',
+        kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image')),
         title TEXT NOT NULL,
         description TEXT,
         poster_key TEXT,
@@ -61,7 +61,7 @@ export const migrate = Effect.gen(function* () {
   if (!finalAssetColumns.has("updated_at"))
     yield* sql`ALTER TABLE assets ADD COLUMN updated_at INTEGER`;
   if (!finalAssetColumns.has("kind")) {
-    yield* sql`ALTER TABLE assets ADD COLUMN kind TEXT NOT NULL DEFAULT 'video'`;
+    yield* sql`ALTER TABLE assets ADD COLUMN kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image'))`;
   }
   if (!finalAssetColumns.has("project_id")) {
     yield* sql`ALTER TABLE assets ADD COLUMN project_id TEXT`;
@@ -76,7 +76,6 @@ export const migrate = Effect.gen(function* () {
     yield* sql`ALTER TABLE assets ADD COLUMN height INTEGER`;
   }
   yield* sql`UPDATE assets SET updated_at = created_at WHERE updated_at IS NULL`;
-  yield* sql`UPDATE assets SET kind = 'video' WHERE kind IS NULL`;
   yield* sql`DROP INDEX IF EXISTS idx_videos_slug`;
   yield* sql`DROP INDEX IF EXISTS idx_assets_slug`;
   yield* sql`CREATE INDEX IF NOT EXISTS idx_assets_project ON assets (project_id, sort_order)`;
