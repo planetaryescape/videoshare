@@ -1,5 +1,5 @@
 import Hls, { ErrorTypes, Events } from "hls.js";
-import { CHAPTER_PLAYER_ID } from "./chapterPlayback";
+import { CHAPTER_PLAYER_ERROR_ID, CHAPTER_PLAYER_ID } from "./chapterPlayback";
 
 /** Connects the admin review media element to HLS playback for the application lifetime. */
 export const mountChapterPlayer = () => {
@@ -7,6 +7,13 @@ export const mountChapterPlayer = () => {
   let activeSource = "";
   let activeHls: Hls | null = null;
   let retryTimeout: number | undefined;
+
+  const showPlaybackError = (message: string) => {
+    const error = document.getElementById(CHAPTER_PLAYER_ERROR_ID);
+    if (error) {
+      error.textContent = message;
+    }
+  };
 
   const destroyActiveHls = () => {
     if (retryTimeout !== undefined) {
@@ -27,6 +34,7 @@ export const mountChapterPlayer = () => {
     destroyActiveHls();
     activePlayer = nextPlayer;
     activeSource = nextSource;
+    showPlaybackError("");
 
     if (!nextPlayer || !nextSource || nextPlayer.canPlayType("application/vnd.apple.mpegurl")) {
       return;
@@ -40,6 +48,7 @@ export const mountChapterPlayer = () => {
     let networkRetries = 0;
     hls.on(Events.MANIFEST_PARSED, () => {
       networkRetries = 0;
+      showPlaybackError("");
     });
     hls.on(Events.ERROR, (_, data) => {
       if (!data.fatal) {
@@ -65,6 +74,11 @@ export const mountChapterPlayer = () => {
         hls.recoverMediaError();
         return;
       }
+      showPlaybackError(
+        data.type === ErrorTypes.NETWORK_ERROR
+          ? "Playback stopped after repeated network errors. Check your connection and reload the page."
+          : "Playback stopped because the media could not be loaded. Reload the page to try again.",
+      );
       hls.destroy();
       if (activeHls === hls) {
         activeHls = null;

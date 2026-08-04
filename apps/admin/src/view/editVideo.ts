@@ -1,7 +1,7 @@
 import { Option } from "effect";
 import { Button, FileDrop, Input, Textarea } from "@foldkit/ui";
 import type { html } from "foldkit/html";
-import { CHAPTER_PLAYER_ID } from "../chapterPlayback";
+import { CHAPTER_PLAYER_ERROR_ID, CHAPTER_PLAYER_ID } from "../chapterPlayback";
 import { duplicateStartSecs } from "../chapters";
 import { chapterRow } from "./chapterRow";
 import {
@@ -119,6 +119,14 @@ const reviewPlayer = (h: Html, video: Video) =>
               h.Class(
                 video.kind === "audio" ? "block w-full" : "block aspect-video w-full bg-black",
               ),
+            ],
+            [],
+          ),
+          h.p(
+            [
+              h.Id(CHAPTER_PLAYER_ERROR_ID),
+              h.AriaLive("assertive"),
+              h.Class("px-4 py-2 text-sm text-red-300 empty:hidden"),
             ],
             [],
           ),
