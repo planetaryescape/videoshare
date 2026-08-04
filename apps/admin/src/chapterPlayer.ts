@@ -51,9 +51,6 @@ export const mountChapterPlayer = () => {
       networkRetries = 0;
       showPlaybackError("");
     });
-    hls.on(Events.FRAG_BUFFERED, () => {
-      mediaRetries = 0;
-    });
     hls.on(Events.ERROR, (_, data) => {
       if (!data.fatal) {
         return;
