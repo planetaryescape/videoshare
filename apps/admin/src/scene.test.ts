@@ -64,6 +64,20 @@ describe("admin scenes", () => {
     );
   });
 
+  test("waits for playback before offering chapter capture", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some({ ...video, hlsKey: "" }),
+        editTitle: video.title,
+        editDescription: video.description ?? "",
+      }),
+      Scene.expect(Scene.role("button", { name: "Add at playhead" })).not.toExist(),
+    );
+  });
+
   test("announces upload progress", () => {
     Scene.scene(
       { update, view },

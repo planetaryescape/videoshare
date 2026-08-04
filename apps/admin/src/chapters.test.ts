@@ -1,6 +1,7 @@
 import { Option } from "effect";
 import { describe, expect, test } from "vitest";
 import {
+  chapterRowError,
   chaptersValidationError,
   clampToDuration,
   duplicateStartSecs,
@@ -42,6 +43,7 @@ describe("parseTimestamp", () => {
     expect(parseTimestamp("1:60")).toEqual(Option.none());
     expect(parseTimestamp("1:2:3:4")).toEqual(Option.none());
     expect(parseTimestamp("-5")).toEqual(Option.none());
+    expect(parseTimestamp("9".repeat(400))).toEqual(Option.none());
   });
 });
 
@@ -75,6 +77,12 @@ describe("validation", () => {
   test("reports duplicate start times", () => {
     expect(duplicateStartSecs([chapter("a", 4), chapter("b", 4), chapter("c", 9)])).toEqual(
       new Set([4]),
+    );
+  });
+
+  test("reports every invalid condition on a row", () => {
+    expect(chapterRowError(chapter("a", 4, ""), new Set([4]))).toEqual(
+      Option.some("Needs a title. Another chapter already starts at 0:04"),
     );
   });
 

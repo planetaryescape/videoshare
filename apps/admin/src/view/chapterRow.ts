@@ -36,7 +36,6 @@ const startField = (h: Html, chapter: Chapter, draft: string | undefined, isInva
           h.label([...label, h.Class("sr-only")], ["Start time"]),
           h.input([
             ...input,
-            h.InputMode("numeric"),
             h.OnBlur(CommittedChapterStart({ id: chapter.id })),
             h.OnKeyDownPreventDefault((key) =>
               key === "Enter"

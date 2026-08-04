@@ -103,7 +103,7 @@ describe("admin story", () => {
       Story.with({
         ...initialModel(),
         screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(video),
+        editVideo: Option.some({ ...video, hlsKey: "videos/video-1/master.m3u8" }),
       }),
       Story.message(ClickedAddChapter()),
       Story.Command.expectExact(GenerateChapterId({ videoId: video.id, startSec: 0 })),
@@ -209,7 +209,7 @@ describe("admin story", () => {
       Story.Command.expectNone(),
       Story.model((model) => {
         expect(model.editChapters[0]?.startSec).toBe(30);
-        expect(model.chapterStartDrafts.a).toBeUndefined();
+        expect(model.chapterStartDrafts.a).toBe("nope");
         expect(model.chapterValidationError).toEqual(
           Option.some("Timestamp must look like 0:45, 1:02:30, or a number of seconds"),
         );

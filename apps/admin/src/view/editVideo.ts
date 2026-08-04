@@ -130,6 +130,7 @@ const reviewPlayer = (h: Html, video: Video) =>
 const chaptersSection = (h: Html, model: Model) => {
   const duplicates = duplicateStartSecs(model.editChapters);
   const count = model.editChapters.length;
+  const canAddChapters = Option.isSome(model.editVideo) && model.editVideo.value.hlsKey !== "";
 
   return h.section(
     [h.Class("rounded-xl border border-gray-800 bg-gray-900/50")],
@@ -157,29 +158,33 @@ const chaptersSection = (h: Html, model: Model) => {
               ),
             ],
           ),
-          h.button(
-            [
-              h.Type("button"),
-              h.OnClick(ClickedAddChapter()),
-              h.Class(
-                "flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
-              ),
-            ],
-            [
-              h.svg(
-                [
-                  h.Class("h-4 w-4"),
-                  h.ViewBox("0 0 24 24"),
-                  h.Fill("none"),
-                  h.Stroke("currentColor"),
-                  h.StrokeWidth("2"),
-                  h.AriaHidden(true),
-                ],
-                [h.path([h.D("M12 5v14M5 12h14")], [])],
-              ),
-              "Add at playhead",
-            ],
-          ),
+          ...(canAddChapters
+            ? [
+                h.button(
+                  [
+                    h.Type("button"),
+                    h.OnClick(ClickedAddChapter()),
+                    h.Class(
+                      "flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                    ),
+                  ],
+                  [
+                    h.svg(
+                      [
+                        h.Class("h-4 w-4"),
+                        h.ViewBox("0 0 24 24"),
+                        h.Fill("none"),
+                        h.Stroke("currentColor"),
+                        h.StrokeWidth("2"),
+                        h.AriaHidden(true),
+                      ],
+                      [h.path([h.D("M12 5v14M5 12h14")], [])],
+                    ),
+                    "Add at playhead",
+                  ],
+                ),
+              ]
+            : []),
         ],
       ),
       h.div(

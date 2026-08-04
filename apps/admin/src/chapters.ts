@@ -27,7 +27,8 @@ export const parseTimestamp = (raw: string): Option.Option<number> => {
     return Option.none();
   }
 
-  return Option.some(numbers.reduce((total, part) => total * 60 + part, 0));
+  const seconds = numbers.reduce((total, part) => total * 60 + part, 0);
+  return Number.isFinite(seconds) ? Option.some(seconds) : Option.none();
 };
 
 /** A durationSec of 0 means "not transcoded yet", so it must not clamp timestamps to zero. */
@@ -69,13 +70,13 @@ export const chapterRowError = (
   chapter: Chapter,
   duplicates: ReadonlySet<number>,
 ): Option.Option<string> => {
-  if (duplicates.has(chapter.startSec)) {
-    return Option.some(`Another chapter already starts at ${formatTimestamp(chapter.startSec)}`);
-  }
-  if (chapter.title.trim() === "") {
-    return Option.some("Needs a title");
-  }
-  return Option.none();
+  const errors = [
+    ...(chapter.title.trim() === "" ? ["Needs a title"] : []),
+    ...(duplicates.has(chapter.startSec)
+      ? [`Another chapter already starts at ${formatTimestamp(chapter.startSec)}`]
+      : []),
+  ];
+  return errors.length > 0 ? Option.some(errors.join(". ")) : Option.none();
 };
 
 export const chaptersValidationError = (
