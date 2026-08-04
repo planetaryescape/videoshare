@@ -2,6 +2,8 @@ import { Option } from "effect";
 import { Button, FileDrop, Input, Textarea } from "@foldkit/ui";
 import type { html } from "foldkit/html";
 import { CHAPTER_PLAYER_ID } from "../chapterPlayback";
+import { duplicateStartSecs } from "../chapters";
+import { chapterRow } from "./chapterRow";
 import {
   formatDate,
   formatDuration,
@@ -12,20 +14,17 @@ import {
   type Video,
 } from "../model";
 import {
-  BlurredChapterField,
   BlurredEditField,
   ClearedPoster,
   ClickedAddChapter,
   ClickedBack,
   ClickedCopyLink,
   ClickedPublish,
-  ClickedRemoveChapter,
   ClickedUnpublish,
   GotPosterFileDropMessage,
   GotVideoFileDropMessage,
   type Message,
   SubmittedUpload,
-  UpdatedChapterTitle,
   UpdatedDescription,
   UpdatedTitle,
 } from "../message";
@@ -127,99 +126,96 @@ const reviewPlayer = (h: Html, video: Video) =>
     ],
   );
 
-const chaptersSection = (h: Html, model: Model) =>
-  h.div(
-    [h.Class("rounded-lg border border-gray-800 bg-gray-900/50 p-4")],
+const chaptersSection = (h: Html, model: Model) => {
+  const duplicates = duplicateStartSecs(model.editChapters);
+  const count = model.editChapters.length;
+
+  return h.section(
+    [h.Class("rounded-xl border border-gray-800 bg-gray-900/50")],
     [
       h.div(
-        [h.Class("mb-3 flex items-center justify-between")],
         [
-          h.h2([h.Class("text-sm font-medium text-gray-300")], ["Chapters"]),
+          h.Class(
+            "flex flex-wrap items-center justify-between gap-3 border-b border-gray-800 px-4 py-3",
+          ),
+        ],
+        [
+          h.div(
+            [],
+            [
+              h.h2(
+                [h.Class("text-sm font-medium text-gray-200")],
+                [
+                  "Chapters",
+                  ...(count > 0 ? [h.span([h.Class("ml-2 text-gray-500")], [`${count}`])] : []),
+                ],
+              ),
+              h.p(
+                [h.Class("mt-1 text-sm text-gray-400")],
+                ["Chapters stay sorted by start time and save as you go."],
+              ),
+            ],
+          ),
           h.button(
             [
               h.Type("button"),
               h.OnClick(ClickedAddChapter()),
               h.Class(
-                "min-h-11 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                "flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
               ),
             ],
-            ["Create chapter"],
+            [
+              h.svg(
+                [
+                  h.Class("h-4 w-4"),
+                  h.ViewBox("0 0 24 24"),
+                  h.Fill("none"),
+                  h.Stroke("currentColor"),
+                  h.StrokeWidth("2"),
+                  h.AriaHidden(true),
+                ],
+                [h.path([h.D("M12 5v14M5 12h14")], [])],
+              ),
+              "Add at playhead",
+            ],
           ),
         ],
       ),
-      h.p(
-        [h.Class("mb-3 text-sm text-gray-400")],
-        ["Play the media, then create a chapter to capture the current timestamp."],
-      ),
-      ...(model.editChapters.length === 0
-        ? [h.p([h.Class("text-sm text-gray-500")], ["No chapters yet."])]
-        : model.editChapters.map((chapter) =>
-            h.keyed("div")(
-              chapter.id,
-              [h.Class("mb-2 flex items-center gap-2")],
-              [
-                h.time(
+      h.div(
+        [h.Class("p-4")],
+        [
+          ...(count === 0
+            ? [
+                h.p(
                   [
                     h.Class(
-                      "w-16 shrink-0 rounded-md bg-gray-800 px-2 py-2 text-center font-mono text-sm text-blue-300",
+                      "rounded-lg border border-dashed border-gray-700 px-4 py-6 text-center text-sm text-gray-500",
                     ),
-                    h.Title(`${chapter.startSec} seconds`),
                   ],
-                  [formatDuration(chapter.startSec)],
+                  ["No chapters yet. Play the media, then add one at the playhead."],
                 ),
-                Input.view<Message>({
-                  id: `chapter-${chapter.id}-title`,
-                  value: chapter.title,
-                  placeholder: "Chapter title",
-                  isInvalid: chapter.title.trim() === "",
-                  onInput: (value) => UpdatedChapterTitle({ id: chapter.id, title: value }),
-                  toView: ({ input, label, description }) =>
-                    h.div(
-                      [h.Class("flex-1")],
-                      [
-                        h.label([...label, h.Class("sr-only")], ["Chapter title"]),
-                        h.input([
-                          ...input,
-                          h.OnBlur(BlurredChapterField()),
-                          h.Class(
-                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
-                          ),
-                        ]),
-                        h.span([...description, h.Class("sr-only")], ["Chapter title"]),
-                      ],
-                    ),
-                }),
-                Button.view<Message>({
-                  onClick: ClickedRemoveChapter({ id: chapter.id }),
-                  toView: ({ button }) =>
-                    h.button(
-                      [
-                        ...button,
-                        h.AriaLabel(
-                          chapter.title.trim() === ""
-                            ? "Remove untitled chapter"
-                            : `Remove chapter ${chapter.title}`,
-                        ),
-                        h.Class(
-                          "rounded-lg px-2 py-1.5 text-sm text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
-                        ),
-                      ],
-                      ["✕"],
-                    ),
-                }),
-              ],
-            ),
-          )),
-      ...(Option.isSome(model.chapterValidationError)
-        ? [
-            h.p(
-              [h.Role("alert"), h.Class("mt-2 text-sm text-red-300")],
-              [model.chapterValidationError.value],
-            ),
-          ]
-        : []),
+              ]
+            : [
+                h.ul(
+                  [h.Class("chapter-list space-y-2")],
+                  model.editChapters.map((chapter) =>
+                    chapterRow(h, chapter, model.chapterStartDrafts[chapter.id], duplicates),
+                  ),
+                ),
+              ]),
+          ...(Option.isSome(model.chapterValidationError)
+            ? [
+                h.p(
+                  [h.Role("status"), h.Class("mt-3 text-sm text-red-300")],
+                  [model.chapterValidationError.value],
+                ),
+              ]
+            : []),
+        ],
+      ),
     ],
   );
+};
 
 export const editVideoView = (h: Html, model: Model) => {
   const video = Option.isSome(model.editVideo) ? model.editVideo.value : null;

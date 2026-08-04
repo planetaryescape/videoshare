@@ -1,10 +1,18 @@
 import { Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
-import { CreateVideoCmd, FocusChapterTitle, GenerateChapterId, LoadVideos } from "./commands";
+import {
+  CreateVideoCmd,
+  FocusChapterTitle,
+  GenerateChapterId,
+  LoadVideos,
+  SaveChaptersCmd,
+} from "./commands";
 import {
   BlurredChapterField,
   ClickedAddChapter,
+  CommittedChapterStart,
+  UpdatedChapterStart,
   ClickedBack,
   ClickedConfirmPendingAction,
   ClickedDeleteVideo,
@@ -22,6 +30,7 @@ import {
   SucceededCreateVideo,
   SucceededDeleteVideo,
   SucceededLoadVideos,
+  SucceededSaveChapters,
   SucceededUnpublish,
   SucceededUpload,
 } from "./message";
@@ -114,6 +123,118 @@ describe("admin story", () => {
             sortOrder: 0,
           },
         ]),
+      ),
+    );
+  });
+
+  test("re-sorts chapters when a start time is edited", () => {
+    const editedVideo = { ...video, durationSec: 300 };
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some(editedVideo),
+        editChapters: [
+          { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
+          { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 1 },
+        ],
+      }),
+      Story.message(UpdatedChapterStart({ id: "b", value: "0:10" })),
+      Story.model((model) => expect(model.chapterStartDrafts.b).toBe("0:10")),
+      Story.message(UpdatedChapterStart({ id: "a", value: "1:30" })),
+      Story.message(CommittedChapterStart({ id: "a" })),
+      Story.model((model) => {
+        expect(model.editChapters.map((c) => c.id)).toEqual(["b", "a"]);
+        expect(model.editChapters.map((c) => c.startSec)).toEqual([60, 90]);
+        expect(model.editChapters.map((c) => c.sortOrder)).toEqual([0, 1]);
+        expect(model.chapterStartDrafts.a).toBeUndefined();
+      }),
+      Story.Command.expectExact(
+        SaveChaptersCmd({
+          id: video.id,
+          chapters: [
+            { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 0 },
+            { id: "a", videoId: video.id, title: "Intro", startSec: 90, sortOrder: 1 },
+          ],
+        }),
+      ),
+      Story.Command.resolve(
+        SaveChaptersCmd,
+        SucceededSaveChapters({
+          chapters: [
+            { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 0 },
+            { id: "a", videoId: video.id, title: "Intro", startSec: 90, sortOrder: 1 },
+          ],
+        }),
+      ),
+    );
+  });
+
+  test("blocks saving when two chapters share a timestamp", () => {
+    const editedVideo = { ...video, durationSec: 300 };
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some(editedVideo),
+        editChapters: [
+          { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
+          { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 1 },
+        ],
+      }),
+      Story.message(UpdatedChapterStart({ id: "b", value: "0:00" })),
+      Story.message(CommittedChapterStart({ id: "b" })),
+      Story.Command.expectNone(),
+      Story.model((model) =>
+        expect(model.chapterValidationError).toEqual(
+          Option.some("Two chapters share a timestamp. Change one before saving."),
+        ),
+      ),
+    );
+  });
+
+  test("rejects an unparseable start time without touching the chapter", () => {
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some({ ...video, durationSec: 300 }),
+        editChapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 30, sortOrder: 0 }],
+      }),
+      Story.message(UpdatedChapterStart({ id: "a", value: "nope" })),
+      Story.message(CommittedChapterStart({ id: "a" })),
+      Story.Command.expectNone(),
+      Story.model((model) => {
+        expect(model.editChapters[0]?.startSec).toBe(30);
+        expect(model.chapterStartDrafts.a).toBeUndefined();
+        expect(model.chapterValidationError).toEqual(
+          Option.some("Timestamp must look like 0:45, 1:02:30, or a number of seconds"),
+        );
+      }),
+    );
+  });
+
+  test("clamps an edited start time to the media duration", () => {
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some({ ...video, durationSec: 54 }),
+        editChapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 }],
+      }),
+      Story.message(UpdatedChapterStart({ id: "a", value: "9:99" })),
+      Story.message(UpdatedChapterStart({ id: "a", value: "9:00" })),
+      Story.message(CommittedChapterStart({ id: "a" })),
+      Story.model((model) => expect(model.editChapters[0]?.startSec).toBe(54)),
+      Story.Command.resolve(
+        SaveChaptersCmd,
+        SucceededSaveChapters({
+          chapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 54, sortOrder: 0 }],
+        }),
       ),
     );
   });
