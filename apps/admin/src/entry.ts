@@ -1,4 +1,6 @@
 import { Runtime } from "foldkit";
+import { mountChapterPlayer } from "./chapterPlayer";
+import { mountChapterReorder } from "./chapterReorder";
 import { Message, Model, init, subscriptions, update, view } from "./main";
 
 const program = Runtime.makeApplication({
@@ -12,3 +14,5 @@ const program = Runtime.makeApplication({
 });
 
 Runtime.run(program);
+mountChapterPlayer();
+mountChapterReorder();

@@ -37,6 +37,7 @@ import { update } from "./update";
 const video: Video = {
   id: "video-1",
   slug: "fixture-video",
+  kind: "video",
   title: "Fixture Video",
   description: "Fixture description",
   posterKey: null,

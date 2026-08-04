@@ -1,6 +1,6 @@
 import { BrowserCrypto } from "@effect/platform-browser";
 import { Crypto, Effect, Option, Schema as S } from "effect";
-import { Command, File as FoldkitFile } from "foldkit";
+import { Command, Dom, File as FoldkitFile } from "foldkit";
 import { ChapterSchema, errMsg, type Chapter, VideoSchema } from "./model";
 import {
   CopiedLink,
@@ -14,6 +14,7 @@ import {
   FailedSaveVideo,
   FailedUnpublish,
   FailedUpload,
+  FocusedChapterTitle,
   GeneratedChapterId,
   SucceededCreateVideo,
   SucceededDeleteVideo,
@@ -76,14 +77,25 @@ const tryJson = (response: Response) =>
 
 export const GenerateChapterId = Command.define(
   "GenerateChapterId",
-  { videoId: S.String },
+  { videoId: S.String, startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)) },
   GeneratedChapterId,
-)(({ videoId }) =>
+)(({ videoId, startSec }) =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const chapterId = yield* Effect.orDie(crypto.randomUUIDv4);
-    return GeneratedChapterId({ chapterId, videoId });
+    return GeneratedChapterId({ chapterId, videoId, startSec });
   }).pipe(Effect.provide(BrowserCrypto.layer)),
+);
+
+export const FocusChapterTitle = Command.define(
+  "FocusChapterTitle",
+  { chapterId: S.String },
+  FocusedChapterTitle,
+)(({ chapterId }) =>
+  Dom.focus(`#chapter-${chapterId}-title`).pipe(
+    Effect.ignore,
+    Effect.as(FocusedChapterTitle({ chapterId })),
+  ),
 );
 
 export const LoadVideos = Command.define(

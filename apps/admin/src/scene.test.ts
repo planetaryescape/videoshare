@@ -15,6 +15,7 @@ import { view } from "./view";
 const video: Video = {
   id: "video-1",
   slug: "fixture-video",
+  kind: "video",
   title: "Fixture Video",
   description: "Fixture description",
   posterKey: null,
@@ -56,8 +57,24 @@ describe("admin scenes", () => {
         editDescription: video.description ?? "",
       }),
       Scene.expect(Scene.role("heading", { name: video.title, level: 1 })).toExist(),
+      Scene.expect(Scene.role("heading", { name: "Review playback", level: 2 })).toExist(),
+      Scene.expect(Scene.role("button", { name: "Add at playhead" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Publish" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Copy link" })).toExist(),
+    );
+  });
+
+  test("waits for playback before offering chapter capture", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some({ ...video, hlsKey: "" }),
+        editTitle: video.title,
+        editDescription: video.description ?? "",
+      }),
+      Scene.expect(Scene.role("button", { name: "Add at playhead" })).not.toExist(),
     );
   });
 
@@ -115,8 +132,52 @@ describe("admin scenes", () => {
         editChapters: [{ ...chapter, title: "" }],
         chapterValidationError: Option.some("Every chapter needs a title before saving"),
       }),
-      Scene.expect(Scene.role("alert")).toHaveText("Every chapter needs a title before saving"),
+      Scene.expect(Scene.role("alert")).toHaveText("Needs a title"),
+      Scene.expect(Scene.text("Every chapter needs a title before saving")).toExist(),
       Scene.expect(Scene.label("Chapter title")).toExist(),
+    );
+  });
+
+  test("renders editable chapter start times in playback order", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some(video),
+        editTitle: video.title,
+        editDescription: video.description ?? "",
+        editChapters: [
+          { ...chapter, title: "Intro", startSec: 0, sortOrder: 0 },
+          { ...chapter, id: "chapter-2", title: "Shipping", startSec: 65, sortOrder: 1 },
+        ],
+      }),
+      Scene.expect(Scene.label("Start time")).toExist(),
+      Scene.expect(Scene.role("button", { name: "Remove chapter Intro" })).toExist(),
+      Scene.expect(
+        Scene.role("button", { name: "Set start time of Shipping to the playhead" }),
+      ).toExist(),
+    );
+  });
+
+  test("flags chapters that share a timestamp", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: EditVideo({ videoId: video.id }),
+        editVideo: Option.some(video),
+        editTitle: video.title,
+        editDescription: video.description ?? "",
+        editChapters: [
+          { ...chapter, title: "Intro", startSec: 4, sortOrder: 0 },
+          { ...chapter, id: "chapter-2", title: "Shipping", startSec: 4, sortOrder: 1 },
+        ],
+        chapterValidationError: Option.some(
+          "Two chapters share a timestamp. Change one before saving.",
+        ),
+      }),
+      Scene.expect(Scene.role("alert")).toHaveText("Another chapter already starts at 0:04"),
     );
   });
 

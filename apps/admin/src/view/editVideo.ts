@@ -1,6 +1,9 @@
 import { Option } from "effect";
 import { Button, FileDrop, Input, Textarea } from "@foldkit/ui";
 import type { html } from "foldkit/html";
+import { CHAPTER_PLAYER_ERROR_ID, CHAPTER_PLAYER_ID } from "../chapterPlayback";
+import { duplicateStartSecs } from "../chapters";
+import { chapterRow } from "./chapterRow";
 import {
   formatDate,
   formatDuration,
@@ -8,28 +11,28 @@ import {
   isPublished,
   shareUrl,
   type Model,
+  type Video,
 } from "../model";
 import {
-  BlurredChapterField,
   BlurredEditField,
   ClearedPoster,
   ClickedAddChapter,
   ClickedBack,
   ClickedCopyLink,
   ClickedPublish,
-  ClickedRemoveChapter,
   ClickedUnpublish,
   GotPosterFileDropMessage,
   GotVideoFileDropMessage,
   type Message,
   SubmittedUpload,
-  UpdatedChapterStart,
-  UpdatedChapterTitle,
   UpdatedDescription,
   UpdatedTitle,
 } from "../message";
 
 type Html = ReturnType<typeof html<Message>>;
+
+const localMediaUrl = (key: string) =>
+  `/media/${key.startsWith("media/") ? key.slice("media/".length) : key}`;
 
 const stageLabel = (stage: string): string => {
   if (stage === "uploading") return "Uploading file...";
@@ -83,119 +86,156 @@ const uploadProgress = (h: Html, model: Model) => {
   );
 };
 
-const chaptersSection = (h: Html, model: Model) =>
-  h.div(
-    [h.Class("rounded-lg border border-gray-800 bg-gray-900/50 p-4")],
+const reviewPlayer = (h: Html, video: Video) =>
+  h.section(
+    [h.Class("overflow-hidden rounded-xl border border-gray-800 bg-gray-900/50")],
     [
       h.div(
-        [h.Class("mb-3 flex items-center justify-between")],
+        [h.Class("border-b border-gray-800 px-4 py-3")],
         [
-          h.h2([h.Class("text-sm font-medium text-gray-300")], ["Chapters"]),
-          Button.view<Message>({
-            onClick: ClickedAddChapter(),
-            toView: ({ button }) =>
-              h.button(
-                [
-                  ...button,
-                  h.Class(
-                    "rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-600 transition-colors",
-                  ),
-                ],
-                ["+ Add chapter"],
-              ),
-          }),
+          h.h2([h.Class("text-sm font-medium text-gray-200")], ["Review playback"]),
+          h.p(
+            [h.Class("mt-1 text-sm text-gray-400")],
+            ["Run your final playthrough here and tag chapters as you watch."],
+          ),
         ],
       ),
-      ...(model.editChapters.length === 0
-        ? [h.p([h.Class("text-sm text-gray-500")], ["No chapters yet."])]
-        : model.editChapters.map((chapter) =>
-            h.keyed("div")(
-              chapter.id,
-              [h.Class("mb-2 flex items-center gap-2")],
-              [
-                Input.view<Message>({
-                  id: `chapter-${chapter.id}-start`,
-                  value: String(chapter.startSec),
-                  type: "number",
-                  placeholder: "sec",
-                  onInput: (value) =>
-                    UpdatedChapterStart({ id: chapter.id, startSec: Number(value) || 0 }),
-                  toView: ({ input, label, description }) =>
-                    h.div(
-                      [h.Class("w-24")],
-                      [
-                        h.label([...label, h.Class("sr-only")], ["Chapter start time"]),
-                        h.input([
-                          ...input,
-                          h.Min("0"),
-                          h.OnBlur(BlurredChapterField()),
-                          h.Class(
-                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
-                          ),
-                        ]),
-                        h.span([...description, h.Class("sr-only")], ["Start time in seconds"]),
-                      ],
-                    ),
-                }),
-                Input.view<Message>({
-                  id: `chapter-${chapter.id}-title`,
-                  value: chapter.title,
-                  placeholder: "Chapter title",
-                  isInvalid: chapter.title.trim() === "",
-                  onInput: (value) => UpdatedChapterTitle({ id: chapter.id, title: value }),
-                  toView: ({ input, label, description }) =>
-                    h.div(
-                      [h.Class("flex-1")],
-                      [
-                        h.label([...label, h.Class("sr-only")], ["Chapter title"]),
-                        h.input([
-                          ...input,
-                          h.OnBlur(BlurredChapterField()),
-                          h.Class(
-                            "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
-                          ),
-                        ]),
-                        h.span([...description, h.Class("sr-only")], ["Chapter title"]),
-                      ],
-                    ),
-                }),
-                Button.view<Message>({
-                  onClick: ClickedRemoveChapter({ id: chapter.id }),
-                  toView: ({ button }) =>
-                    h.button(
-                      [
-                        ...button,
-                        h.AriaLabel(
-                          chapter.title.trim() === ""
-                            ? "Remove untitled chapter"
-                            : `Remove chapter ${chapter.title}`,
-                        ),
-                        h.Class(
-                          "rounded-lg px-2 py-1.5 text-sm text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
-                        ),
-                      ],
-                      ["✕"],
-                    ),
-                }),
-              ],
-            ),
-          )),
-      ...(Option.isSome(model.chapterValidationError)
-        ? [
-            h.p(
-              [h.Role("alert"), h.Class("mt-2 text-sm text-red-300")],
-              [model.chapterValidationError.value],
-            ),
-          ]
-        : []),
+      h.div(
+        [h.Class(video.kind === "audio" ? "p-4" : "bg-black")],
+        [
+          (video.kind === "audio" ? h.audio : h.video)(
+            [
+              h.Id(CHAPTER_PLAYER_ID),
+              h.Title(video.title),
+              h.Src(localMediaUrl(video.hlsKey)),
+              h.DataAttribute("hls-source", localMediaUrl(video.hlsKey)),
+              h.Controls(true),
+              h.Preload("metadata"),
+              h.Playsinline(true),
+              h.Crossorigin("anonymous"),
+              ...(video.kind === "video" && video.posterKey
+                ? [h.Poster(localMediaUrl(video.posterKey))]
+                : []),
+              h.Class(
+                video.kind === "audio" ? "block w-full" : "block aspect-video w-full bg-black",
+              ),
+            ],
+            [],
+          ),
+          h.p(
+            [
+              h.Id(CHAPTER_PLAYER_ERROR_ID),
+              h.AriaLive("assertive"),
+              h.Class("px-4 py-2 text-sm text-red-300 empty:hidden"),
+            ],
+            [],
+          ),
+        ],
+      ),
     ],
   );
+
+const chaptersSection = (h: Html, model: Model) => {
+  const duplicates = duplicateStartSecs(model.editChapters);
+  const count = model.editChapters.length;
+  const canAddChapters = Option.isSome(model.editVideo) && model.editVideo.value.hlsKey !== "";
+
+  return h.section(
+    [h.Class("rounded-xl border border-gray-800 bg-gray-900/50")],
+    [
+      h.div(
+        [
+          h.Class(
+            "flex flex-wrap items-center justify-between gap-3 border-b border-gray-800 px-4 py-3",
+          ),
+        ],
+        [
+          h.div(
+            [],
+            [
+              h.h2(
+                [h.Class("text-sm font-medium text-gray-200")],
+                [
+                  "Chapters",
+                  ...(count > 0 ? [h.span([h.Class("ml-2 text-gray-500")], [`${count}`])] : []),
+                ],
+              ),
+              h.p(
+                [h.Class("mt-1 text-sm text-gray-400")],
+                ["Chapters stay sorted by start time and save as you go."],
+              ),
+            ],
+          ),
+          ...(canAddChapters
+            ? [
+                h.button(
+                  [
+                    h.Type("button"),
+                    h.OnClick(ClickedAddChapter()),
+                    h.Class(
+                      "flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                    ),
+                  ],
+                  [
+                    h.svg(
+                      [
+                        h.Class("h-4 w-4"),
+                        h.ViewBox("0 0 24 24"),
+                        h.Fill("none"),
+                        h.Stroke("currentColor"),
+                        h.StrokeWidth("2"),
+                        h.AriaHidden(true),
+                      ],
+                      [h.path([h.D("M12 5v14M5 12h14")], [])],
+                    ),
+                    "Add at playhead",
+                  ],
+                ),
+              ]
+            : []),
+        ],
+      ),
+      h.div(
+        [h.Class("p-4")],
+        [
+          ...(count === 0
+            ? [
+                h.p(
+                  [
+                    h.Class(
+                      "rounded-lg border border-dashed border-gray-700 px-4 py-6 text-center text-sm text-gray-500",
+                    ),
+                  ],
+                  ["No chapters yet. Play the media, then add one at the playhead."],
+                ),
+              ]
+            : [
+                h.ul(
+                  [h.Class("chapter-list space-y-2")],
+                  model.editChapters.map((chapter) =>
+                    chapterRow(h, chapter, model.chapterStartDrafts[chapter.id], duplicates),
+                  ),
+                ),
+              ]),
+          ...(Option.isSome(model.chapterValidationError)
+            ? [
+                h.p(
+                  [h.Role("status"), h.Class("mt-3 text-sm text-red-300")],
+                  [model.chapterValidationError.value],
+                ),
+              ]
+            : []),
+        ],
+      ),
+    ],
+  );
+};
 
 export const editVideoView = (h: Html, model: Model) => {
   const video = Option.isSome(model.editVideo) ? model.editVideo.value : null;
 
   return h.div(
-    [h.Class("mx-auto max-w-2xl")],
+    [h.Class("mx-auto max-w-4xl")],
     [
       Button.view<Message>({
         onClick: ClickedBack(),
@@ -309,7 +349,7 @@ export const editVideoView = (h: Html, model: Model) => {
                   [
                     h.p([h.Class("block text-sm font-medium text-gray-300 mb-1")], ["Poster"]),
                     h.img([
-                      h.Src(`/${video.posterKey}`),
+                      h.Src(localMediaUrl(video.posterKey)),
                       h.Alt(`Poster for ${video.title}`),
                       h.Class("w-full max-w-sm rounded-lg border border-gray-700"),
                     ]),
@@ -430,6 +470,7 @@ export const editVideoView = (h: Html, model: Model) => {
                 ),
               ]
             : []),
+          ...(video?.hlsKey ? [reviewPlayer(h, video)] : []),
           ...(video?.hlsKey
             ? [
                 h.div(

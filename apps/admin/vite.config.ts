@@ -5,7 +5,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [tailwindcss(), foldkit({ devToolsMcpPort: 9988 })],
   server: {
-    port: 5173,
+    port: 5176,
     proxy: {
       "/api": "http://localhost:3001",
       "/media": "http://localhost:3001",
