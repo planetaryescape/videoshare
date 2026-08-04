@@ -6,16 +6,25 @@ export const mountChapterPlayer = () => {
   let activePlayer: HTMLMediaElement | null = null;
   let activeSource = "";
   let activeHls: Hls | null = null;
+  let retryTimeout: number | undefined;
+
+  const destroyActiveHls = () => {
+    if (retryTimeout !== undefined) {
+      window.clearTimeout(retryTimeout);
+      retryTimeout = undefined;
+    }
+    activeHls?.destroy();
+    activeHls = null;
+  };
 
   const connect = () => {
     const nextPlayer = document.querySelector<HTMLMediaElement>(`#${CHAPTER_PLAYER_ID}`);
-    const nextSource = nextPlayer?.getAttribute("src") ?? "";
+    const nextSource = nextPlayer?.dataset.hlsSource ?? "";
     if (nextPlayer === activePlayer && nextSource === activeSource) {
       return;
     }
 
-    activeHls?.destroy();
-    activeHls = null;
+    destroyActiveHls();
     activePlayer = nextPlayer;
     activeSource = nextSource;
 
@@ -28,13 +37,29 @@ export const mountChapterPlayer = () => {
     }
 
     const hls = new Hls();
+    let networkRetries = 0;
+    hls.on(Events.MANIFEST_PARSED, () => {
+      networkRetries = 0;
+    });
     hls.on(Events.ERROR, (_, data) => {
       if (!data.fatal) {
         return;
       }
       if (data.type === ErrorTypes.NETWORK_ERROR) {
-        hls.startLoad();
-        return;
+        if (retryTimeout !== undefined) {
+          return;
+        }
+        if (networkRetries < 3) {
+          const delayMs = 1_000 * 2 ** networkRetries;
+          networkRetries += 1;
+          retryTimeout = window.setTimeout(() => {
+            retryTimeout = undefined;
+            if (activeHls === hls) {
+              hls.startLoad();
+            }
+          }, delayMs);
+          return;
+        }
       }
       if (data.type === ErrorTypes.MEDIA_ERROR) {
         hls.recoverMediaError();
@@ -58,7 +83,7 @@ export const mountChapterPlayer = () => {
     "pagehide",
     () => {
       observer.disconnect();
-      activeHls?.destroy();
+      destroyActiveHls();
     },
     { once: true },
   );

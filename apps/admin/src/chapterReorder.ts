@@ -6,14 +6,13 @@ const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: r
 
 const rowKey = (row: HTMLElement): string => row.querySelector("input")?.id ?? "";
 
-/** Row offsets measured against the list itself, so page scrolling cannot skew the deltas. */
+/** offsetTop is unaffected by an in-flight FLIP transform. */
 const measure = (list: HTMLElement): Map<string, number> => {
-  const listTop = list.getBoundingClientRect().top;
   const positions = new Map<string, number>();
   for (const row of list.querySelectorAll<HTMLElement>(ROW_SELECTOR)) {
     const key = rowKey(row);
     if (key !== "") {
-      positions.set(key, row.getBoundingClientRect().top - listTop);
+      positions.set(key, row.offsetTop);
     }
   }
   return positions;
@@ -26,10 +25,11 @@ const measure = (list: HTMLElement): Map<string, number> => {
  * transform, which keeps a re-sort readable instead of an instant jump.
  */
 export const mountChapterReorder = () => {
+  let list: HTMLElement | null = null;
+  let listObserver: MutationObserver | null = null;
   let previous = new Map<string, number>();
 
   const sync = () => {
-    const list = document.querySelector<HTMLElement>(LIST_SELECTOR);
     if (!list) {
       previous = new Map();
       return;
@@ -61,9 +61,31 @@ export const mountChapterReorder = () => {
     previous = current;
   };
 
-  const observer = new MutationObserver(sync);
-  observer.observe(document.body, { childList: true, subtree: true });
-  queueMicrotask(sync);
+  const connectList = () => {
+    const nextList = document.querySelector<HTMLElement>(LIST_SELECTOR);
+    if (nextList === list) {
+      return;
+    }
+    listObserver?.disconnect();
+    list = nextList;
+    previous = new Map();
+    if (list) {
+      listObserver = new MutationObserver(sync);
+      listObserver.observe(list, { childList: true, subtree: true });
+      sync();
+    }
+  };
 
-  window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+  const rootObserver = new MutationObserver(connectList);
+  rootObserver.observe(document.body, { childList: true, subtree: true });
+  queueMicrotask(connectList);
+
+  window.addEventListener("pagehide", (event) => {
+    if (event.persisted) {
+      return;
+    }
+    rootObserver.disconnect();
+    listObserver?.disconnect();
+  });
+  window.addEventListener("pageshow", connectList);
 };

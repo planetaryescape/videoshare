@@ -108,6 +108,7 @@ const reviewPlayer = (h: Html, video: Video) =>
               h.Id(CHAPTER_PLAYER_ID),
               h.Title(video.title),
               h.Src(localMediaUrl(video.hlsKey)),
+              h.DataAttribute("hls-source", localMediaUrl(video.hlsKey)),
               h.Controls(true),
               h.Preload("metadata"),
               h.Playsinline(true),
