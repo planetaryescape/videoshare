@@ -67,6 +67,26 @@ export class InvalidMediaShapeError extends Schema.TaggedErrorClass<InvalidMedia
   }
 }
 
+export class ProjectNotFoundError extends Schema.TaggedErrorClass<ProjectNotFoundError>()(
+  "ProjectNotFoundError",
+  { id: Schema.String },
+  { httpApiStatus: 404 },
+) {
+  override get message(): string {
+    return `Project not found: ${this.id}`;
+  }
+}
+
+export class InvalidProjectMembersError extends Schema.TaggedErrorClass<InvalidProjectMembersError>()(
+  "InvalidProjectMembersError",
+  { reason: Schema.Literals(["duplicateAssetId", "unknownAssetId", "notMemberOfProject"]) },
+  { httpApiStatus: 422 },
+) {
+  override get message(): string {
+    return `Invalid project members: ${this.reason}`;
+  }
+}
+
 export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>()(
   "PersistenceError",
   { operation: Schema.String, cause: Schema.Defect() },
@@ -89,6 +109,8 @@ export class ProdSyncError extends Schema.TaggedErrorClass<ProdSyncError>()(
 
 export const errorStatus: Record<string, number> = {
   AssetNotFoundError: 404,
+  ProjectNotFoundError: 404,
+  InvalidProjectMembersError: 422,
   PasswordRequiredError: 401,
   IncorrectPasswordError: 403,
   SlugAlreadyExistsError: 409,

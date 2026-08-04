@@ -14,11 +14,13 @@ const hasTable = (sql: SqlClient.SqlClient, table: string) =>
     Effect.map((rows) => rows.length > 0),
   );
 
-const columnsFor = (sql: SqlClient.SqlClient, table: "assets" | "chapters") => {
+const columnsFor = (sql: SqlClient.SqlClient, table: "assets" | "chapters" | "projects") => {
   const query =
     table === "assets"
       ? sql<ColumnRow>`PRAGMA table_info(assets)`
-      : sql<ColumnRow>`PRAGMA table_info(chapters)`;
+      : table === "chapters"
+        ? sql<ColumnRow>`PRAGMA table_info(chapters)`
+        : sql<ColumnRow>`PRAGMA table_info(projects)`;
   return query.pipe(Effect.map((rows) => new Set(rows.map((row) => row.name))));
 };
 
@@ -45,9 +47,14 @@ export const migrate = Effect.gen(function* () {
         media_key TEXT NOT NULL,
         duration_sec REAL NOT NULL DEFAULT 0,
         password_hash TEXT,
+        project_id TEXT,
+        sort_order INTEGER,
+        width INTEGER,
+        height INTEGER,
         created_at INTEGER NOT NULL,
         published_at INTEGER,
-        updated_at INTEGER
+        updated_at INTEGER,
+        CHECK ((project_id IS NULL) = (sort_order IS NULL))
       )
     `;
   }
@@ -80,6 +87,35 @@ export const migrate = Effect.gen(function* () {
   yield* sql`DROP INDEX IF EXISTS idx_assets_slug`;
   yield* sql`CREATE INDEX IF NOT EXISTS idx_assets_project ON assets (project_id, sort_order)`;
   yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_project_position ON assets (project_id, sort_order) WHERE project_id IS NOT NULL`;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS assets_membership_insert
+    BEFORE INSERT ON assets
+    WHEN (NEW.project_id IS NULL) != (NEW.sort_order IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'asset project membership fields must both be null or set'); END
+  `;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS assets_membership_update
+    BEFORE UPDATE OF project_id, sort_order ON assets
+    WHEN (NEW.project_id IS NULL) != (NEW.sort_order IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'asset project membership fields must both be null or set'); END
+  `;
+
+  // Projects are deliberately independent from SQLite foreign-key enforcement: deletion explicitly unfiles members.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      description TEXT,
+      password_hash TEXT,
+      created_at INTEGER NOT NULL,
+      published_at INTEGER,
+      updated_at INTEGER
+    )
+  `;
+  const projectColumns = yield* columnsFor(sql, "projects");
+  if (!projectColumns.has("published_at"))
+    yield* sql`ALTER TABLE projects ADD COLUMN published_at INTEGER`;
 
   const chaptersExist = yield* hasTable(sql, "chapters");
   if (!chaptersExist) {

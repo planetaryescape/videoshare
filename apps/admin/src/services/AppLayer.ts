@@ -3,6 +3,7 @@ import { HttpServer } from "effect/unstable/http";
 import { BunFileSystem } from "@effect/platform-bun";
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
+import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
 import { MediaProcessor } from "./MediaProcessor.ts";
 import { ProgressBus } from "./ProgressBus.ts";
 import { Storage } from "./Storage.ts";
@@ -22,4 +23,5 @@ export const AppLayer = Layer.mergeAll(
   mediaProcessorLive,
   ProdSync.layer,
   AssetRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
+  ProjectRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
 ).pipe(Layer.provideMerge(platformLayer), Layer.provide(sqlLayer));

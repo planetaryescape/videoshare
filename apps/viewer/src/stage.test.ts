@@ -15,6 +15,8 @@ const asset = (kind: "video" | "audio" | "image") =>
     width: kind === "image" ? 640 : null,
     height: kind === "image" ? 480 : null,
     passwordHash: "secret",
+    projectId: null,
+    sortOrder: null,
     createdAt: 1,
     publishedAt: 2,
     updatedAt: 3,

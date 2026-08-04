@@ -27,6 +27,8 @@ import {
   SubmittedUpload,
   UpdatedDescription,
   UpdatedTitle,
+  ClickedAssignAssetToProject,
+  ClickedRetryLoadProjects,
 } from "../message";
 
 type Html = ReturnType<typeof html<Message>>;
@@ -357,6 +359,69 @@ export const editAssetView = (h: Html, model: Model) => {
               }),
             ],
           ),
+          ...(video
+            ? [
+                h.div(
+                  [],
+                  [
+                    h.label(
+                      [
+                        h.For("asset-project"),
+                        h.Class("block text-sm font-medium text-gray-300 mb-1"),
+                      ],
+                      ["Project"],
+                    ),
+                    model.projectsLoadState._tag === "ProjectsLoaded"
+                      ? h.select(
+                          [
+                            h.Id("asset-project"),
+                            h.Value(video.projectId ?? ""),
+                            h.OnChange((projectId) =>
+                              ClickedAssignAssetToProject({ assetId: video.id, projectId }),
+                            ),
+                            h.Disabled(
+                              model.projectMembershipOperation._tag === "ProjectMembershipSaving",
+                            ),
+                            h.Class("w-full rounded-lg bg-gray-800 p-2 text-white"),
+                          ],
+                          [
+                            h.option([h.Value("")], ["Unfiled"]),
+                            ...model.projects.map((project) =>
+                              h.option([h.Value(project.id)], [project.title]),
+                            ),
+                          ],
+                        )
+                      : model.projectsLoadState._tag === "ProjectsFailed"
+                        ? h.div(
+                            [h.Class("flex items-center gap-3")],
+                            [
+                              h.p(
+                                [h.Role("alert"), h.Class("text-sm text-red-300")],
+                                ["Could not load projects."],
+                              ),
+                              h.button(
+                                [
+                                  h.Type("button"),
+                                  h.OnClick(ClickedRetryLoadProjects()),
+                                  h.Class("text-sm font-medium text-blue-300 hover:text-blue-200"),
+                                ],
+                                ["Retry"],
+                              ),
+                            ],
+                          )
+                        : h.p([h.Class("text-sm text-gray-500")], ["Loading projects…"]),
+                    ...(video.projectId
+                      ? [
+                          h.p(
+                            [h.Class("mt-1 text-xs text-amber-300")],
+                            ["Moving this asset changes its current project membership."],
+                          ),
+                        ]
+                      : []),
+                  ],
+                ),
+              ]
+            : []),
           ...(video?.posterKey
             ? [
                 h.div(

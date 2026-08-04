@@ -5,6 +5,7 @@ import { AssetsApiLive } from "./handlers/AssetsApiLive.ts";
 import { UploadApiLive } from "./handlers/UploadApiLive.ts";
 import { PublishApiLive } from "./handlers/PublishApiLive.ts";
 import { ChaptersApiLive } from "./handlers/ChaptersApiLive.ts";
+import { ProjectsApiLive } from "./handlers/ProjectsApiLive.ts";
 import { AppLayer } from "../services/AppLayer.ts";
 
 export const handlersLayer = Layer.mergeAll(
@@ -12,6 +13,7 @@ export const handlersLayer = Layer.mergeAll(
   UploadApiLive,
   PublishApiLive,
   ChaptersApiLive,
+  ProjectsApiLive,
 );
 
 export const AdminApiLive = HttpApiBuilder.layer(AdminApi, {

@@ -2,23 +2,37 @@ import { Schema as S, Option } from "effect";
 import { File as FoldkitFile } from "foldkit";
 import { ts } from "foldkit/schema";
 import { Dialog, FileDrop } from "@foldkit/ui";
+import {
+  BrowserProjectAsset,
+  ProjectDetail as ProjectDetailContract,
+} from "./projects/contracts.ts";
 
-export const AssetSchema = S.Struct({
+export const AssetSchema = BrowserProjectAsset;
+export type Asset = typeof BrowserProjectAsset.Type;
+
+export const ProjectSchema = S.Struct({
   id: S.String,
   slug: S.String,
-  kind: S.Literals(["video", "audio", "image"]),
   title: S.String,
   description: S.NullOr(S.String),
-  posterKey: S.NullOr(S.String),
-  mediaKey: S.String,
-  durationSec: S.Finite,
-  width: S.NullOr(S.Int.check(S.isGreaterThan(0))),
-  height: S.NullOr(S.Int.check(S.isGreaterThan(0))),
+  memberCount: S.optional(S.Int.check(S.isGreaterThanOrEqualTo(0))),
   createdAt: S.Finite,
   publishedAt: S.NullOr(S.Finite),
   updatedAt: S.NullOr(S.Finite),
 });
-export type Asset = typeof AssetSchema.Type;
+export type Project = typeof ProjectSchema.Type;
+export const ProjectDetailSchema = ProjectDetailContract;
+export type ProjectDetail = ProjectDetailContract;
+export const ProjectsLoading = ts("ProjectsLoading");
+export const ProjectsLoaded = ts("ProjectsLoaded");
+export const ProjectsFailed = ts("ProjectsFailed");
+export const ProjectsLoadState = S.Union([ProjectsLoading, ProjectsLoaded, ProjectsFailed]);
+export type ProjectsLoadState = typeof ProjectsLoadState.Type;
+
+export const ProjectMembershipIdle = ts("ProjectMembershipIdle");
+export const ProjectMembershipSaving = ts("ProjectMembershipSaving");
+export const ProjectMembershipOperation = S.Union([ProjectMembershipIdle, ProjectMembershipSaving]);
+export type ProjectMembershipOperation = typeof ProjectMembershipOperation.Type;
 
 export const ChapterSchema = S.Struct({
   id: S.String,
@@ -33,7 +47,9 @@ export const ListAssets = ts("ListAssets");
 export const EditAsset = ts("EditAsset", {
   assetId: S.String.check(S.isMinLength(1)),
 });
-export const Screen = S.Union([ListAssets, EditAsset]);
+export const ProjectList = ts("ProjectList");
+export const ProjectEdit = ts("ProjectEdit", { projectId: S.String.check(S.isMinLength(1)) });
+export const Screen = S.Union([ListAssets, EditAsset, ProjectList, ProjectEdit]);
 export const DeleteAssetConfirmation = ts("DeleteAssetConfirmation", { assetId: S.String });
 export const UnpublishAssetConfirmation = ts("UnpublishAssetConfirmation", { assetId: S.String });
 export const PendingConfirmation = S.Union([DeleteAssetConfirmation, UnpublishAssetConfirmation]);
@@ -42,6 +58,14 @@ export type PendingConfirmation = typeof PendingConfirmation.Type;
 export const Model = S.Struct({
   screen: Screen,
   assets: S.Array(AssetSchema),
+  projects: S.Array(ProjectSchema),
+  projectsLoadState: ProjectsLoadState,
+  editProject: S.Option(ProjectDetailSchema),
+  projectTitle: S.String,
+  projectDescription: S.String,
+  /** None means untouched; Some("") clears; Some(value) replaces at the HTTP boundary. */
+  projectPassword: S.Option(S.String),
+  projectMembershipOperation: ProjectMembershipOperation,
   editTitle: S.String,
   editDescription: S.String,
   editAsset: S.Option(AssetSchema),
@@ -71,6 +95,13 @@ export type Model = typeof Model.Type;
 export const initialModel = (): Model => ({
   screen: ListAssets(),
   assets: [],
+  projects: [],
+  projectsLoadState: ProjectsLoading(),
+  editProject: Option.none(),
+  projectTitle: "",
+  projectDescription: "",
+  projectPassword: Option.none(),
+  projectMembershipOperation: ProjectMembershipIdle(),
   editTitle: "",
   editDescription: "",
   editAsset: Option.none(),

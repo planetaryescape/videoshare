@@ -3,6 +3,9 @@ import { Schema } from "effect";
 export const AssetId = Schema.String.pipe(Schema.brand("AssetId"));
 export type AssetId = typeof AssetId.Type;
 
+export const ProjectId = Schema.String.pipe(Schema.brand("ProjectId"));
+export type ProjectId = typeof ProjectId.Type;
+
 export const ChapterId = Schema.String.pipe(Schema.brand("ChapterId"));
 export type ChapterId = typeof ChapterId.Type;
 
@@ -23,7 +26,7 @@ export class Chapter extends Schema.Class<Chapter>("Chapter")({
   sortOrder: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 }) {}
 
-export class Asset extends Schema.Class<Asset>("Asset")({
+const AssetFields = Schema.Struct({
   id: AssetId,
   slug: Slug,
   kind: Kind,
@@ -35,7 +38,17 @@ export class Asset extends Schema.Class<Asset>("Asset")({
   width: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   height: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
   passwordHash: Schema.NullOr(Schema.String),
+  projectId: Schema.NullOr(ProjectId),
+  sortOrder: Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   createdAt: Schema.Number,
   publishedAt: Schema.NullOr(Schema.Number),
   updatedAt: Schema.NullOr(Schema.Number),
-}) {}
+}).check(
+  Schema.makeFilter((asset) =>
+    (asset.projectId === null) === (asset.sortOrder === null)
+      ? undefined
+      : "Asset projectId and sortOrder must either both be set or both be null",
+  ),
+);
+
+export class Asset extends Schema.Class<Asset>("Asset")(AssetFields) {}

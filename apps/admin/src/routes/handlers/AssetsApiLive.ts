@@ -41,6 +41,8 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
             width: null,
             height: null,
             passwordHash: null,
+            projectId: null,
+            sortOrder: null,
             createdAt: Date.now(),
             publishedAt: null,
             updatedAt: null,

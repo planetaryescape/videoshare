@@ -14,6 +14,8 @@ const imageAsset = new Asset({
   width: 640,
   height: 480,
   passwordHash: null,
+  projectId: null,
+  sortOrder: null,
   createdAt: 1,
   publishedAt: 2,
   updatedAt: 3,

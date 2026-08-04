@@ -13,6 +13,7 @@ import {
   ClickedEditAsset,
   type Message,
   SubmittedCreateAsset,
+  ClickedProjects,
 } from "../message";
 
 type Html = ReturnType<typeof html<Message>>;
@@ -116,6 +117,10 @@ export const listAssetsView = (h: Html, model: Model) =>
         [h.Class("flex items-center justify-between mb-8")],
         [
           h.h1([h.Class("text-2xl font-bold text-white")], ["Assets"]),
+          h.button(
+            [h.Type("button"), h.OnClick(ClickedProjects()), h.Class("text-sm text-blue-300")],
+            ["Projects"],
+          ),
           Button.view<Message>({
             onClick: SubmittedCreateAsset(),
             toView: ({ button }) =>

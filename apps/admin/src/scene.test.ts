@@ -5,6 +5,8 @@ import { describe, test } from "vitest";
 import {
   DeleteAssetConfirmation,
   EditAsset,
+  ProjectList,
+  ProjectsFailed,
   initialModel,
   type Chapter,
   type Asset,
@@ -23,6 +25,8 @@ const video: Asset = {
   durationSec: 125,
   width: null,
   height: null,
+  projectId: null,
+  sortOrder: null,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
   updatedAt: 1_750_000_001_000,
@@ -56,6 +60,47 @@ describe("admin scenes", () => {
       Scene.expect(Scene.role("heading", { name: "Assets", level: 1 })).toExist(),
       Scene.expect(Scene.text("No assets yet")).toExist(),
       Scene.expect(Scene.role("button", { name: "New Asset" })).toExist(),
+    );
+  });
+
+  test("renders project navigation and project list", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectList(),
+        projectsLoadState: { _tag: "ProjectsLoaded" },
+        projects: [
+          {
+            id: "project-1",
+            slug: "project",
+            title: "Client project",
+            description: null,
+            memberCount: 1,
+            createdAt: 1,
+            publishedAt: null,
+            updatedAt: null,
+          },
+        ],
+      }),
+      Scene.expect(Scene.role("heading", { name: "Projects", level: 1 })).toExist(),
+      Scene.expect(Scene.role("button", { name: "New Project" })).toExist(),
+      Scene.expect(Scene.role("button", { name: "Client project" })).toExist(),
+    );
+  });
+
+  test("shows a project load error and retry instead of an unfiled-only selector", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some({ ...video, projectId: "project-1", sortOrder: 0 }),
+        projectsLoadState: ProjectsFailed(),
+      }),
+      Scene.expect(Scene.text("Could not load projects.")).toExist(),
+      Scene.expect(Scene.role("button", { name: "Retry" })).toExist(),
+      Scene.expect(Scene.role("combobox")).not.toExist(),
     );
   });
 

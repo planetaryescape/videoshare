@@ -7,6 +7,13 @@ import { chaptersValidationError, clampToDuration, parseTimestamp, sortChapters 
 import {
   DeleteAssetConfirmation,
   EditAsset,
+  ProjectEdit,
+  ProjectList,
+  ProjectsFailed,
+  ProjectsLoaded,
+  ProjectsLoading,
+  ProjectMembershipIdle,
+  ProjectMembershipSaving,
   initialModel,
   ListAssets,
   UnpublishAssetConfirmation,
@@ -34,6 +41,11 @@ import {
   SaveAssetCmd,
   UnpublishAssetCmd,
   UploadAssetCmd,
+  LoadProjects,
+  LoadProject,
+  SaveProject,
+  MoveProjectMember,
+  DeleteProject,
 } from "./commands";
 
 type Cmd = Command.Command<Message>;
@@ -52,7 +64,12 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
   cmds,
 ];
 
-export const init = (): Update => [initialModel(), [LoadAssets()]];
+const membershipSave = (model: Model, command: Cmd): Update =>
+  model.projectMembershipOperation._tag === "ProjectMembershipSaving"
+    ? noCmd(model)
+    : withEvo(model, { projectMembershipOperation: () => ProjectMembershipSaving() }, command);
+
+export const init = (): Update => [initialModel(), [LoadAssets(), LoadProjects()]];
 
 const sameChapters = (left: ReadonlyArray<Chapter>, right: ReadonlyArray<Chapter>): boolean =>
   left.length === right.length &&
@@ -180,6 +197,205 @@ export const update: (model: Model, message: Message) => Update = (model, messag
   M.value(message).pipe(
     M.withReturnType<Update>(),
     M.tagsExhaustive({
+      ClickedProjects: () =>
+        withEvo(
+          model,
+          {
+            screen: () => ProjectList(),
+            projectsLoadState: () => ProjectsLoading(),
+            errorMessage: () => Option.none(),
+          },
+          LoadProjects(),
+        ),
+      ClickedAssets: () =>
+        withEvo(
+          model,
+          {
+            screen: () => ListAssets(),
+            projectsLoadState: () => ProjectsLoading(),
+            errorMessage: () => Option.none(),
+          },
+          LoadAssets(),
+          LoadProjects(),
+        ),
+      SubmittedCreateProject: () =>
+        withEvo(model, {
+          screen: () => ProjectEdit({ projectId: "new" }),
+          editProject: () => Option.none(),
+          projectTitle: () => "Untitled project",
+          projectDescription: () => "",
+          projectPassword: () => Option.none(),
+        }),
+      ClickedEditProject: ({ id }) =>
+        withEvo(
+          model,
+          {
+            screen: () => ProjectEdit({ projectId: id }),
+            editProject: () => Option.none(),
+            projectTitle: () => "",
+            projectDescription: () => "",
+            projectPassword: () => Option.none(),
+            errorMessage: () => Option.none(),
+          },
+          LoadProject({ id }),
+          LoadAssets(),
+        ),
+      UpdatedProjectTitle: ({ title }) => withEvo(model, { projectTitle: () => title }),
+      UpdatedProjectDescription: ({ description }) =>
+        withEvo(model, { projectDescription: () => description }),
+      UpdatedProjectPassword: ({ password }) =>
+        withEvo(model, { projectPassword: () => Option.some(password) }),
+      BlurredProjectField: () => {
+        if (model.projectTitle.trim() === "") return noCmd(model);
+        const existing =
+          model.screen._tag === "ProjectEdit" && model.screen.projectId !== "new"
+            ? model.editProject
+            : Option.none();
+        if (
+          Option.isSome(existing) &&
+          model.projectTitle === existing.value.project.title &&
+          model.projectDescription === (existing.value.project.description ?? "") &&
+          Option.isNone(model.projectPassword)
+        ) {
+          return noCmd(model);
+        }
+        return withCmds(
+          model,
+          SaveProject({
+            id: Option.isSome(existing) ? existing.value.project.id : undefined,
+            title: model.projectTitle,
+            description: model.projectDescription,
+            password: model.projectPassword,
+          }),
+        );
+      },
+      ClickedRetryLoadProjects: () =>
+        withEvo(
+          model,
+          { projectsLoadState: () => ProjectsLoading(), errorMessage: () => Option.none() },
+          LoadProjects(),
+        ),
+      SucceededLoadProjects: ({ projects }) =>
+        withEvo(model, { projects: () => projects, projectsLoadState: () => ProjectsLoaded() }),
+      FailedLoadProjects: ({ error }) =>
+        withEvo(model, {
+          projectsLoadState: () => ProjectsFailed(),
+          errorMessage: () => Option.some(error),
+        }),
+      SucceededLoadProject: ({ detail }) =>
+        model.screen._tag !== "ProjectEdit" || model.screen.projectId !== detail.project.id
+          ? noCmd(model)
+          : withEvo(model, {
+              editProject: () => Option.some(detail),
+              projectTitle: () => detail.project.title,
+              projectDescription: () => detail.project.description ?? "",
+              projectPassword: () => Option.none(),
+            }),
+      FailedLoadProject: ({ id, error }) =>
+        model.screen._tag !== "ProjectEdit" || model.screen.projectId !== id
+          ? noCmd(model)
+          : withEvo(model, { errorMessage: () => Option.some(error) }),
+      SucceededSaveProject: ({ detail }) =>
+        withEvo(
+          model,
+          {
+            editProject: () => Option.some(detail),
+            projects: () => [
+              { ...detail.project, memberCount: detail.assets.length },
+              ...model.projects.filter((project) => project.id !== detail.project.id),
+            ],
+            screen: () =>
+              model.screen._tag === "EditAsset"
+                ? model.screen
+                : ProjectEdit({ projectId: detail.project.id }),
+            projectPassword: () => Option.none(),
+            projectMembershipOperation: () => ProjectMembershipIdle(),
+            assets: () =>
+              model.assets.map((asset) => {
+                const returned = detail.assets.find((member) => member.id === asset.id);
+                return (
+                  returned ??
+                  (asset.projectId === detail.project.id
+                    ? { ...asset, projectId: null, sortOrder: null }
+                    : asset)
+                );
+              }),
+            editAsset: () =>
+              Option.map(model.editAsset, (asset) => {
+                const returned = detail.assets.find((member) => member.id === asset.id);
+                return (
+                  returned ??
+                  (asset.projectId === detail.project.id
+                    ? { ...asset, projectId: null, sortOrder: null }
+                    : asset)
+                );
+              }),
+          },
+          LoadProjects(),
+          LoadAssets(),
+        ),
+      FailedSaveProject: ({ error }) =>
+        withEvo(model, {
+          projectMembershipOperation: () => ProjectMembershipIdle(),
+          errorMessage: () => Option.some(error),
+        }),
+      ClickedDeleteProject: ({ id }) => membershipSave(model, DeleteProject({ id })),
+      SucceededDeleteProject: ({ id }) =>
+        withEvo(model, {
+          projects: () => model.projects.filter((project) => project.id !== id),
+          projectMembershipOperation: () => ProjectMembershipIdle(),
+          screen: () => ProjectList(),
+          assets: () =>
+            model.assets.map((asset) =>
+              asset.projectId === id ? { ...asset, projectId: null, sortOrder: null } : asset,
+            ),
+        }),
+      FailedDeleteProject: ({ error }) =>
+        withEvo(model, {
+          projectMembershipOperation: () => ProjectMembershipIdle(),
+          errorMessage: () => Option.some(error),
+        }),
+      ClickedMoveProjectMember: ({ assetId, direction }) => {
+        if (Option.isNone(model.editProject)) return noCmd(model);
+        const members = model.editProject.value.assets;
+        const index = members.findIndex((asset) => asset.id === assetId);
+        if (index < 0) return noCmd(model);
+        return membershipSave(
+          model,
+          MoveProjectMember({
+            projectId: model.editProject.value.project.id,
+            assetId,
+            position: direction === "up" ? index - 1 : index + 1,
+            unfile: false,
+          }),
+        );
+      },
+      ClickedUnfileProjectMember: ({ assetId }) =>
+        Option.isNone(model.editProject)
+          ? noCmd(model)
+          : membershipSave(
+              model,
+              MoveProjectMember({
+                projectId: model.editProject.value.project.id,
+                assetId,
+                unfile: true,
+              }),
+            ),
+      ClickedAssignAssetToProject: ({ assetId, projectId }) =>
+        projectId === ""
+          ? (() => {
+              if (Option.isNone(model.editAsset) || model.editAsset.value.id !== assetId) {
+                return noCmd(model);
+              }
+              const source = model.editAsset.value.projectId;
+              return source === null
+                ? noCmd(model)
+                : membershipSave(
+                    model,
+                    MoveProjectMember({ projectId: source, assetId, unfile: true }),
+                  );
+            })()
+          : membershipSave(model, MoveProjectMember({ projectId, assetId, unfile: false })),
       ClickedEditAsset: (msg: { id: string }) =>
         model.isUploading
           ? noCmd(model)
@@ -198,8 +414,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
                 chapterSaveSnapshot: () => [],
                 copiedLink: () => false,
                 errorMessage: () => Option.none(),
+                projectsLoadState: () => ProjectsLoading(),
               },
               LoadAssetDetail({ id: msg.id }),
+              LoadProjects(),
             ),
       ClickedBack: () => {
         if (model.isUploading) {

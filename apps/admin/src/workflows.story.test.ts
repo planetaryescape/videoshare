@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import {
   CopyLinkCmd,
   LoadAssetDetail,
+  LoadProjects,
   PublishAssetCmd,
   SaveChaptersCmd,
   SaveAssetCmd,
@@ -24,6 +25,7 @@ import {
   FailedUpload,
   SubmittedUpload,
   SucceededLoadAssetDetail,
+  SucceededLoadProjects,
   SucceededPublish,
   SucceededSaveChapters,
   SucceededSaveAsset,
@@ -45,6 +47,8 @@ const video: Asset = {
   durationSec: 125,
   width: null,
   height: null,
+  projectId: null,
+  sortOrder: null,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
   updatedAt: 1_750_000_001_000,
@@ -93,8 +97,10 @@ test("loads video detail and surfaces load failure", () => {
       LoadAssetDetail,
       SucceededLoadAssetDetail({ video, chapters: [chapter] }),
     ),
+    Story.Command.resolve(LoadProjects, SucceededLoadProjects({ projects: [] })),
     Story.message(ClickedEditAsset({ id: "video-2" })),
     Story.Command.resolve(LoadAssetDetail, FailedLoadAssetDetail({ error: "Detail unavailable" })),
+    Story.Command.resolve(LoadProjects, SucceededLoadProjects({ projects: [] })),
     Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Detail unavailable"))),
   );
 });

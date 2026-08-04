@@ -1,10 +1,39 @@
 import { Schema as S } from "effect";
 import { Dialog, FileDrop } from "@foldkit/ui";
 import { m } from "foldkit/message";
-import { ChapterSchema, AssetSchema } from "./model";
+import { ChapterSchema, AssetSchema, ProjectDetailSchema, ProjectSchema } from "./model";
 
 export const ClickedEditAsset = m("ClickedEditAsset", { id: S.String });
 export const ClickedBack = m("ClickedBack");
+export const ClickedProjects = m("ClickedProjects");
+export const ClickedAssets = m("ClickedAssets");
+export const SubmittedCreateProject = m("SubmittedCreateProject");
+export const ClickedEditProject = m("ClickedEditProject", { id: S.String });
+export const UpdatedProjectTitle = m("UpdatedProjectTitle", { title: S.String });
+export const UpdatedProjectDescription = m("UpdatedProjectDescription", { description: S.String });
+export const UpdatedProjectPassword = m("UpdatedProjectPassword", { password: S.String });
+export const BlurredProjectField = m("BlurredProjectField");
+export const ClickedDeleteProject = m("ClickedDeleteProject", { id: S.String });
+export const ClickedMoveProjectMember = m("ClickedMoveProjectMember", {
+  assetId: S.String,
+  direction: S.Literals(["up", "down"]),
+});
+export const ClickedUnfileProjectMember = m("ClickedUnfileProjectMember", { assetId: S.String });
+export const ClickedAssignAssetToProject = m("ClickedAssignAssetToProject", {
+  assetId: S.String,
+  projectId: S.String,
+});
+export const ClickedRetryLoadProjects = m("ClickedRetryLoadProjects");
+export const SucceededLoadProjects = m("SucceededLoadProjects", {
+  projects: S.Array(ProjectSchema),
+});
+export const FailedLoadProjects = m("FailedLoadProjects", { error: S.String });
+export const SucceededLoadProject = m("SucceededLoadProject", { detail: ProjectDetailSchema });
+export const FailedLoadProject = m("FailedLoadProject", { id: S.String, error: S.String });
+export const SucceededSaveProject = m("SucceededSaveProject", { detail: ProjectDetailSchema });
+export const FailedSaveProject = m("FailedSaveProject", { error: S.String });
+export const SucceededDeleteProject = m("SucceededDeleteProject", { id: S.String });
+export const FailedDeleteProject = m("FailedDeleteProject", { error: S.String });
 export const UpdatedTitle = m("UpdatedTitle", { title: S.String });
 export const UpdatedDescription = m("UpdatedDescription", { description: S.String });
 export const BlurredEditField = m("BlurredEditField");
@@ -72,6 +101,27 @@ export const FailedCopyLink = m("FailedCopyLink", { error: S.String });
 export const Message = S.Union([
   ClickedEditAsset,
   ClickedBack,
+  ClickedProjects,
+  ClickedAssets,
+  SubmittedCreateProject,
+  ClickedEditProject,
+  UpdatedProjectTitle,
+  UpdatedProjectDescription,
+  UpdatedProjectPassword,
+  BlurredProjectField,
+  ClickedDeleteProject,
+  ClickedMoveProjectMember,
+  ClickedUnfileProjectMember,
+  ClickedAssignAssetToProject,
+  ClickedRetryLoadProjects,
+  SucceededLoadProjects,
+  FailedLoadProjects,
+  SucceededLoadProject,
+  FailedLoadProject,
+  SucceededSaveProject,
+  FailedSaveProject,
+  SucceededDeleteProject,
+  FailedDeleteProject,
   UpdatedTitle,
   UpdatedDescription,
   BlurredEditField,

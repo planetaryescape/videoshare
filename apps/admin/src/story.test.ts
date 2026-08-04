@@ -6,6 +6,7 @@ import {
   FocusChapterTitle,
   GenerateChapterId,
   LoadAssets,
+  LoadProjects,
   SaveChaptersCmd,
 } from "./commands";
 import {
@@ -49,6 +50,8 @@ const video: Asset = {
   durationSec: 0,
   width: null,
   height: null,
+  projectId: null,
+  sortOrder: null,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
   updatedAt: null,
@@ -59,8 +62,7 @@ describe("admin story", () => {
     const [model, commands] = init();
 
     expect(model).toEqual(initialModel());
-    expect(commands).toHaveLength(1);
-    expect(commands[0]?.name).toBe(LoadAssets.name);
+    expect(commands.map((command) => command.name)).toEqual([LoadAssets.name, LoadProjects.name]);
   });
 
   test("stores loaded assets and load failures", () => {

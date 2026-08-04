@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { Effect, Layer, Option, Result } from "effect";
 import { SqlClient } from "effect/unstable/sql";
-import { Asset, AssetId, Chapter, ChapterId, Slug } from "./Asset.ts";
+import { Asset, AssetId, Chapter, ChapterId, ProjectId, Slug } from "./Asset.ts";
 import { AssetRepository } from "./AssetRepository.ts";
 import { ImageChaptersNotAllowedError, InvalidMediaShapeError } from "./AssetErrors.ts";
 import { migrate } from "./Migrations.ts";
@@ -35,6 +35,8 @@ const imageAsset = (
     width: overrides.width ?? 640,
     height: overrides.height ?? 480,
     passwordHash: null,
+    projectId: null,
+    sortOrder: null,
     createdAt: 1,
     publishedAt: 2,
     updatedAt: 3,
@@ -55,6 +57,12 @@ describe("local asset migration", () => {
           }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assets'`,
           columns: yield* sql<{ readonly name: string }>`PRAGMA table_info(assets)`,
           chapters: yield* sql<{ readonly name: string }>`PRAGMA table_info(chapters)`,
+          projects: yield* sql<{ readonly name: string }>`PRAGMA table_info(projects)`,
+          projectIndexes: yield* sql<{ readonly name: string }>`PRAGMA index_list(projects)`,
+          invalidMembership: yield* Effect.result(sql`
+            INSERT INTO assets (id, slug, kind, title, media_key, project_id, created_at)
+            VALUES ('invalid-membership', 'invalid_membership', 'video', 'Invalid', 'media/invalid/master.m3u8', 'project-1', 1)
+          `),
         };
       }),
     );
@@ -64,6 +72,11 @@ describe("local asset migration", () => {
       expect.arrayContaining(["media_key", "project_id", "sort_order", "width", "height"]),
     );
     expect(result.chapters.map((column) => column.name)).toContain("asset_id");
+    expect(result.projects.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["slug", "password_hash", "published_at"]),
+    );
+    expect(result.projectIndexes.map((index) => index.name)).not.toContain("idx_projects_slug");
+    expect(Result.isFailure(result.invalidMembership)).toBe(true);
   });
 
   test("removes the redundant local slug index without relaxing slug uniqueness", async () => {
@@ -147,6 +160,25 @@ describe("local asset migration", () => {
   });
 });
 
+test("adds published_at to an existing local projects table idempotently", async () => {
+  const result = await runSql(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        CREATE TABLE projects (
+          id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          description TEXT, password_hash TEXT, created_at INTEGER NOT NULL, updated_at INTEGER
+        )
+      `;
+      yield* migrate;
+      yield* migrate;
+      return yield* sql<{ readonly name: string }>`PRAGMA table_info(projects)`;
+    }),
+  );
+
+  expect(result.map((column) => column.name)).toContain("published_at");
+});
+
 describe("D1 SQL path", () => {
   test("applies ordered migrations and the seed to a fresh catalog", async () => {
     const database = new Database(":memory:");
@@ -157,6 +189,8 @@ describe("D1 SQL path", () => {
         "0003_add_kind.sql",
         "0004_assets.sql",
         "0005_add_image_kind.sql",
+        "0006_projects.sql",
+        "0007_asset_membership_invariant.sql",
       ]) {
         database.exec(await migrationSql(filename));
       }
@@ -179,6 +213,12 @@ describe("D1 SQL path", () => {
           "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_assets_slug'",
         )
         .all();
+      const projectColumns = database
+        .query<{ readonly name: string }, []>("PRAGMA table_info(projects)")
+        .all();
+      const projectIndexes = database
+        .query<{ readonly name: string }, []>("PRAGMA index_list(projects)")
+        .all();
 
       expect(() =>
         database.exec(`
@@ -192,6 +232,10 @@ describe("D1 SQL path", () => {
       expect(columns.map((column) => column.name)).toEqual(
         expect.arrayContaining(["project_id", "sort_order", "width", "height"]),
       );
+      expect(projectColumns.map((column) => column.name)).toEqual(
+        expect.arrayContaining(["slug", "password_hash", "published_at"]),
+      );
+      expect(projectIndexes.map((index) => index.name)).not.toContain("idx_projects_slug");
       database.exec(`
         INSERT INTO assets (id, slug, kind, title, media_key, created_at)
         VALUES ('image-1', 'image_1', 'image', 'Image', 'media/image-1/original.png', 1)
@@ -221,6 +265,8 @@ describe("D1 SQL path", () => {
       // Pre-0005 catalogs may retain this index despite slug's UNIQUE constraint.
       database.exec("CREATE INDEX idx_assets_slug ON assets (slug)");
       database.exec(await migrationSql("0005_add_image_kind.sql"));
+      database.exec(await migrationSql("0006_projects.sql"));
+      database.exec(await migrationSql("0007_asset_membership_invariant.sql"));
 
       const asset = database
         .query<
@@ -238,11 +284,26 @@ describe("D1 SQL path", () => {
           "SELECT id, asset_id FROM chapters WHERE id = 'demo-chapter-0001'",
         )
         .get();
+      const demoRows = database
+        .query<{ readonly count: number }, []>(
+          "SELECT COUNT(*) AS count FROM assets WHERE id = 'demo-video-0001'",
+        )
+        .get();
       const redundantIndex = database
         .query<{ readonly name: string }, []>(
           "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_assets_slug'",
         )
         .all();
+      const projectColumns = database
+        .query<{ readonly name: string }, []>("PRAGMA table_info(projects)")
+        .all();
+      const projectIndexes = database
+        .query<{ readonly name: string }, []>("PRAGMA index_list(projects)")
+        .all();
+      database.exec(`
+        INSERT INTO projects (id, slug, title, created_at)
+        VALUES ('project-1', 'project_1', 'Project', 3)
+      `);
 
       expect(asset).toEqual({
         id: "demo-video-0001",
@@ -258,6 +319,11 @@ describe("D1 SQL path", () => {
           VALUES ('duplicate-demo-video', 'demo_7yQn3rLp9Ks4Vm2x', 'video', 'Duplicate', 'videos/duplicate/master.m3u8', 1)
         `),
       ).toThrow();
+      expect(demoRows).toEqual({ count: 1 });
+      expect(projectColumns.map((column) => column.name)).toEqual(
+        expect.arrayContaining(["slug", "password_hash", "published_at"]),
+      );
+      expect(projectIndexes.map((index) => index.name)).not.toContain("idx_projects_slug");
       database.exec(`
         INSERT INTO assets (id, slug, kind, title, media_key, created_at) VALUES
           ('audio-1', 'audio_1', 'audio', 'Audio', 'media/audio-1/master.m3u8', 2),
@@ -511,10 +577,14 @@ describe("asset persistence and viewer catalog", () => {
         const repository = yield* AssetRepository;
         const catalog = yield* ViewerCatalog;
         yield* migrate;
-        const image = imageAsset({
-          mediaKey: "media/image-1/original.webp",
-          width: 1200,
-          height: 800,
+        const image = new Asset({
+          ...imageAsset({
+            mediaKey: "media/image-1/original.webp",
+            width: 1200,
+            height: 800,
+          }),
+          projectId: ProjectId.make("project-1"),
+          sortOrder: 0,
         });
         yield* repository.create(image);
         return yield* catalog.findAssetMedia(String(image.slug));
@@ -526,6 +596,8 @@ describe("asset persistence and viewer catalog", () => {
       mediaKey: "media/image-1/original.webp",
       width: 1200,
       height: 800,
+      projectId: "project-1",
+      sortOrder: 0,
     });
   });
 

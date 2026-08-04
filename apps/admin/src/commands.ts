@@ -1,7 +1,14 @@
 import { BrowserCrypto } from "@effect/platform-browser";
 import { Crypto, Effect, Option, Schema as S } from "effect";
 import { Command, Dom, File as FoldkitFile } from "foldkit";
-import { ChapterSchema, errMsg, type Chapter, AssetSchema } from "./model";
+import {
+  ChapterSchema,
+  errMsg,
+  type Chapter,
+  AssetSchema,
+  ProjectDetailSchema,
+  ProjectSchema,
+} from "./model";
 import {
   CopiedLink,
   FailedCopyLink,
@@ -25,9 +32,17 @@ import {
   SucceededSaveAsset,
   SucceededUnpublish,
   SucceededUpload,
+  SucceededLoadProjects,
+  FailedLoadProjects,
+  SucceededLoadProject,
+  FailedLoadProject,
+  SucceededSaveProject,
+  FailedSaveProject,
+  SucceededDeleteProject,
+  FailedDeleteProject,
 } from "./message";
 
-const SERVER_ORIGIN = `http://${location.hostname}:3001`;
+const SERVER_ORIGIN = `http://${typeof location === "undefined" ? "localhost" : location.hostname}:3001`;
 
 class HttpError extends S.TaggedErrorClass<HttpError>()("HttpError", {
   status: S.Finite,
@@ -62,6 +77,8 @@ const decodeChapters = decodeResponse(ChaptersResponse);
 const decodeAsset = decodeResponse(AssetSchema);
 const decodeAssetWrapped = decodeResponse(AssetWrappedResponse);
 const decodeAssetList = decodeResponse(AssetListResponse);
+const decodeProjectList = decodeResponse(S.Array(ProjectSchema));
+const decodeProjectDetail = decodeResponse(ProjectDetailSchema);
 
 const tryFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   Effect.tryPromise({
@@ -112,6 +129,95 @@ export const LoadAssets = Command.define(
     const data = yield* decodeAssetList(raw);
     return SucceededLoadAssets({ assets: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadAssets({ error: errMsg(error) })))),
+);
+
+export const LoadProjects = Command.define(
+  "LoadProjects",
+  SucceededLoadProjects,
+  FailedLoadProjects,
+)(
+  Effect.gen(function* () {
+    const response = yield* tryFetch("/api/projects");
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededLoadProjects({ projects: yield* decodeProjectList(yield* tryJson(response)) });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadProjects({ error: errMsg(error) })))),
+);
+export const LoadProject = Command.define(
+  "LoadProject",
+  { id: S.String },
+  SucceededLoadProject,
+  FailedLoadProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}`);
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededLoadProject({ detail: yield* decodeProjectDetail(yield* tryJson(response)) });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadProject({ id, error: errMsg(error) })))),
+);
+export const SaveProject = Command.define(
+  "SaveProject",
+  {
+    id: S.optional(S.String),
+    title: S.String,
+    description: S.String,
+    password: S.Option(S.String),
+  },
+  SucceededSaveProject,
+  FailedSaveProject,
+)((input) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(input.id ? `/api/projects/${input.id}` : "/api/projects", {
+      method: input.id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: input.title,
+        description: input.description,
+        ...(Option.isSome(input.password) ? { password: input.password.value } : {}),
+      }),
+    });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededSaveProject({ detail: yield* decodeProjectDetail(yield* tryJson(response)) });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveProject({ error: errMsg(error) })))),
+);
+export const MoveProjectMember = Command.define(
+  "MoveProjectMember",
+  { projectId: S.String, assetId: S.String, position: S.optional(S.Int), unfile: S.Boolean },
+  SucceededSaveProject,
+  FailedSaveProject,
+)((input) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(
+      input.unfile
+        ? `/api/projects/${input.projectId}/members/${input.assetId}`
+        : `/api/projects/${input.projectId}/members`,
+      {
+        method: input.unfile ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        ...(input.unfile
+          ? {}
+          : { body: JSON.stringify({ assetId: input.assetId, position: input.position }) }),
+      },
+    );
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededSaveProject({ detail: yield* decodeProjectDetail(yield* tryJson(response)) });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveProject({ error: errMsg(error) })))),
+);
+export const DeleteProject = Command.define(
+  "DeleteProject",
+  { id: S.String },
+  SucceededDeleteProject,
+  FailedDeleteProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}`, { method: "DELETE" });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededDeleteProject({ id });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedDeleteProject({ error: errMsg(error) })))),
 );
 
 export const CreateAssetCmd = Command.define(

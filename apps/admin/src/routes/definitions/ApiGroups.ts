@@ -9,6 +9,8 @@ import {
   AssetNotFoundError,
   ImageChaptersNotAllowedError,
   InvalidMediaShapeError,
+  ProjectNotFoundError,
+  InvalidProjectMembersError,
 } from "@videoshare/shared/AssetErrors";
 import { StorageError } from "../../errors/StorageErrors.ts";
 import {
@@ -26,6 +28,12 @@ import {
   UpdateAssetRequest,
   AssetListResponse,
   AssetWithChapters,
+  ProjectListResponse,
+  ProjectDetail,
+  CreateProjectRequest,
+  UpdateProjectRequest,
+  ReplaceProjectMembersRequest,
+  MoveProjectMemberRequest,
 } from "../../schemas/Requests.ts";
 
 const IdParam = Schema.Struct({ id: Schema.String });
@@ -69,6 +77,67 @@ export class AssetsApi extends HttpApiGroup.make("assets")
     }),
   )
   .prefix("/assets") {}
+
+export class ProjectsApi extends HttpApiGroup.make("projects")
+  .add(
+    HttpApiEndpoint.get("listProjects", "/", {
+      success: ProjectListResponse,
+      error: PersistenceError,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getProject", "/:id", {
+      params: IdParam,
+      success: ProjectDetail,
+      error: [ProjectNotFoundError, PersistenceError],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createProject", "/", {
+      payload: CreateProjectRequest,
+      success: ProjectDetail.pipe(HttpApiSchema.status(201)),
+      error: [SlugAlreadyExistsError, PersistenceError],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("updateProject", "/:id", {
+      params: IdParam,
+      payload: UpdateProjectRequest,
+      success: ProjectDetail,
+      error: [ProjectNotFoundError, SlugAlreadyExistsError, PersistenceError],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("replaceMembers", "/:id/members", {
+      params: IdParam,
+      payload: ReplaceProjectMembersRequest,
+      success: ProjectDetail,
+      error: [ProjectNotFoundError, InvalidProjectMembersError, PersistenceError],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("moveMember", "/:id/members", {
+      params: IdParam,
+      payload: MoveProjectMemberRequest,
+      success: ProjectDetail,
+      error: [ProjectNotFoundError, InvalidProjectMembersError, PersistenceError],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("unfileMember", "/:id/members/:assetId", {
+      params: Schema.Struct({ id: Schema.String, assetId: AssetId }),
+      success: ProjectDetail,
+      error: [ProjectNotFoundError, InvalidProjectMembersError, PersistenceError],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteProject", "/:id", {
+      params: IdParam,
+      success: DeleteResponse,
+      error: [ProjectNotFoundError, PersistenceError],
+    }),
+  )
+  .prefix("/projects") {}
 
 export class UploadApi extends HttpApiGroup.make("upload")
   .add(

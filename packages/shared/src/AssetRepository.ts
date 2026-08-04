@@ -1,6 +1,8 @@
-import { Array, Context, Effect, Layer, Option, Schema } from "effect";
+import { Array, Context, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/unstable/sql";
-import { Chapter, ChapterId, Kind, Slug, Asset, AssetId } from "./Asset.ts";
+import { Chapter, ChapterId, AssetId } from "./Asset.ts";
+import type { Asset } from "./Asset.ts";
+import { assetFromRow, type AssetRow } from "./AssetRow.ts";
 import {
   ImageChaptersNotAllowedError,
   InvalidMediaShapeError,
@@ -30,23 +32,6 @@ const wrapSqlError =
       isExpectedAssetRepositoryError(cause) ? cause : new PersistenceError({ operation, cause }),
     );
 
-interface AssetRow {
-  readonly id: string;
-  readonly slug: string;
-  readonly kind: string;
-  readonly title: string;
-  readonly description: string | null;
-  readonly poster_key: string | null;
-  readonly media_key: string;
-  readonly duration_sec: number;
-  readonly width: number | null;
-  readonly height: number | null;
-  readonly password_hash: string | null;
-  readonly created_at: number;
-  readonly published_at: number | null;
-  readonly updated_at: number | null;
-}
-
 interface ChapterRow {
   readonly id: string;
   readonly asset_id: string;
@@ -57,23 +42,7 @@ interface ChapterRow {
 
 const toAsset = (row: AssetRow): Effect.Effect<Asset, PersistenceError> =>
   Effect.try({
-    try: () =>
-      new Asset({
-        id: AssetId.make(row.id),
-        slug: Slug.make(row.slug),
-        kind: Schema.decodeUnknownSync(Kind)(row.kind),
-        title: row.title,
-        description: row.description,
-        posterKey: row.poster_key,
-        mediaKey: row.media_key,
-        durationSec: row.duration_sec,
-        width: row.width,
-        height: row.height,
-        passwordHash: row.password_hash,
-        createdAt: row.created_at,
-        publishedAt: row.published_at,
-        updatedAt: row.updated_at,
-      }),
+    try: () => assetFromRow(row),
     catch: (cause) => new PersistenceError({ operation: "decodeAsset", cause }),
   });
 
@@ -171,8 +140,8 @@ export class AssetRepository extends Context.Service<
             return yield* new SlugAlreadyExistsError({ slug: asset.slug });
           }
           yield* sql`
-            INSERT INTO assets (id, slug, kind, title, description, poster_key, media_key, duration_sec, width, height, password_hash, created_at, published_at, updated_at)
-            VALUES (${asset.id}, ${asset.slug}, ${asset.kind}, ${asset.title}, ${asset.description}, ${asset.posterKey}, ${asset.mediaKey}, ${asset.durationSec}, ${asset.width}, ${asset.height}, ${asset.passwordHash}, ${asset.createdAt}, ${asset.publishedAt}, ${asset.updatedAt})
+            INSERT INTO assets (id, slug, kind, title, description, poster_key, media_key, duration_sec, width, height, password_hash, project_id, sort_order, created_at, published_at, updated_at)
+            VALUES (${asset.id}, ${asset.slug}, ${asset.kind}, ${asset.title}, ${asset.description}, ${asset.posterKey}, ${asset.mediaKey}, ${asset.durationSec}, ${asset.width}, ${asset.height}, ${asset.passwordHash}, ${asset.projectId}, ${asset.sortOrder}, ${asset.createdAt}, ${asset.publishedAt}, ${asset.updatedAt})
           `;
           return asset;
         }, wrapSqlError("create"));
@@ -222,8 +191,23 @@ export class AssetRepository extends Context.Service<
         }, wrapSqlError("replaceMedia"));
 
         const del = Effect.fn("AssetRepository.delete")(function* (id: AssetId) {
-          yield* sql`DELETE FROM chapters WHERE asset_id = ${id}`;
-          yield* sql`DELETE FROM assets WHERE id = ${id}`;
+          yield* sql.withTransaction(
+            Effect.gen(function* () {
+              yield* sql`DELETE FROM chapters WHERE asset_id = ${id}`;
+              const deleted = yield* sql<{ readonly project_id: string | null }>`
+                DELETE FROM assets WHERE id = ${id} RETURNING project_id
+              `;
+              const projectId = deleted[0]?.project_id;
+              if (projectId === undefined || projectId === null) return;
+              // Nonnegative positions map uniquely to negative values, leaving compacted positions free.
+              yield* sql`UPDATE assets SET sort_order = -sort_order - 1 WHERE project_id = ${projectId}`;
+              const members = yield* sql<{ readonly id: string }>`
+                SELECT id FROM assets WHERE project_id = ${projectId} ORDER BY sort_order DESC
+              `;
+              for (const [index, member] of members.entries())
+                yield* sql`UPDATE assets SET sort_order = ${index} WHERE id = ${member.id}`;
+            }),
+          );
         }, wrapSqlError("delete"));
 
         const listChapters = Effect.fn("AssetRepository.listChapters")(function* (
