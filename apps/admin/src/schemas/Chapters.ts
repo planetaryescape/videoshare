@@ -1,16 +1,16 @@
-import { Chapter, ChapterId } from "@videoshare/shared/Video";
-import type { VideoId } from "@videoshare/shared/Video";
+import { Chapter, ChapterId } from "@videoshare/shared/Asset";
+import type { AssetId } from "@videoshare/shared/Asset";
 import type { ChapterInput } from "../schemas/Requests.ts";
 
 export const chaptersFromInput = (
-  videoId: VideoId,
+  assetId: AssetId,
   input: ReadonlyArray<ChapterInput>,
 ): ReadonlyArray<Chapter> =>
   input.map(
     (ch, index) =>
       new Chapter({
         id: ChapterId.make(ch.id ?? crypto.randomUUID()),
-        videoId,
+        assetId,
         title: ch.title,
         startSec: ch.startSec,
         sortOrder: index,

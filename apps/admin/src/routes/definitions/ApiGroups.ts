@@ -1,84 +1,84 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/unstable/httpapi";
 import { Multipart } from "effect/unstable/http";
-import { Chapter, Video, VideoId } from "@videoshare/shared/Video";
+import { Chapter, Asset, AssetId } from "@videoshare/shared/Asset";
 import {
   PersistenceError,
   ProdSyncError,
   SlugAlreadyExistsError,
-  VideoNotFoundError,
-} from "@videoshare/shared/VideoErrors";
+  AssetNotFoundError,
+} from "@videoshare/shared/AssetErrors";
 import { StorageError } from "../../errors/StorageErrors.ts";
 import {
   InvalidConversionError,
-  NoVideoTrackError,
+  NoAssetTrackError,
   PosterDecodeError,
   TranscodeError,
 } from "../../errors/TranscodeErrors.ts";
 import { NotTranscodedError, UploadValidationError } from "../../errors/UploadErrors.ts";
 import {
   ChapterInput,
-  CreateVideoRequest,
+  CreateAssetRequest,
   DeleteResponse,
-  UpdateVideoRequest,
-  VideoListResponse,
-  VideoWithChapters,
+  UpdateAssetRequest,
+  AssetListResponse,
+  AssetWithChapters,
 } from "../../schemas/Requests.ts";
 
 const IdParam = Schema.Struct({ id: Schema.String });
 
-const Video201 = Video.pipe(HttpApiSchema.status(201));
+const Asset201 = Asset.pipe(HttpApiSchema.status(201));
 
-export class VideosApi extends HttpApiGroup.make("videos")
+export class AssetsApi extends HttpApiGroup.make("assets")
   .add(
-    HttpApiEndpoint.get("listVideos", "/", {
-      success: VideoListResponse,
+    HttpApiEndpoint.get("listAssets", "/", {
+      success: AssetListResponse,
       error: PersistenceError,
     }),
   )
   .add(
-    HttpApiEndpoint.get("getVideo", "/:id", {
+    HttpApiEndpoint.get("getAsset", "/:id", {
       params: IdParam,
-      success: VideoWithChapters,
-      error: [VideoNotFoundError, PersistenceError],
+      success: AssetWithChapters,
+      error: [AssetNotFoundError, PersistenceError],
     }),
   )
   .add(
-    HttpApiEndpoint.post("createVideo", "/", {
-      payload: CreateVideoRequest,
-      success: Video201,
+    HttpApiEndpoint.post("createAsset", "/", {
+      payload: CreateAssetRequest,
+      success: Asset201,
       error: [SlugAlreadyExistsError, PersistenceError],
     }),
   )
   .add(
-    HttpApiEndpoint.put("updateVideo", "/:id", {
+    HttpApiEndpoint.put("updateAsset", "/:id", {
       params: IdParam,
-      payload: UpdateVideoRequest,
-      success: VideoWithChapters,
-      error: [VideoNotFoundError, PersistenceError],
+      payload: UpdateAssetRequest,
+      success: AssetWithChapters,
+      error: [AssetNotFoundError, PersistenceError],
     }),
   )
   .add(
-    HttpApiEndpoint.delete("deleteVideo", "/:id", {
+    HttpApiEndpoint.delete("deleteAsset", "/:id", {
       params: IdParam,
       success: DeleteResponse,
-      error: [VideoNotFoundError, PersistenceError, StorageError, ProdSyncError],
+      error: [AssetNotFoundError, PersistenceError, StorageError, ProdSyncError],
     }),
   )
-  .prefix("/videos") {}
+  .prefix("/assets") {}
 
 export class UploadApi extends HttpApiGroup.make("upload")
   .add(
     HttpApiEndpoint.post("upload", "/", {
       payload: Schema.Struct({
-        videoId: Schema.String,
+        assetId: Schema.String,
         file: Multipart.SingleFileSchema,
       }).pipe(HttpApiSchema.asMultipart()),
-      success: Video,
+      success: Asset,
       error: [
         UploadValidationError,
-        VideoNotFoundError,
-        NoVideoTrackError,
+        AssetNotFoundError,
+        NoAssetTrackError,
         PosterDecodeError,
         TranscodeError,
         InvalidConversionError,
@@ -94,9 +94,9 @@ export class PublishApi extends HttpApiGroup.make("publish")
   .add(
     HttpApiEndpoint.post("publish", "/:id", {
       params: IdParam,
-      success: Video,
+      success: Asset,
       error: [
-        VideoNotFoundError,
+        AssetNotFoundError,
         NotTranscodedError,
         ProdSyncError,
         PersistenceError,
@@ -107,19 +107,19 @@ export class PublishApi extends HttpApiGroup.make("publish")
   .add(
     HttpApiEndpoint.post("unpublish", "/:id/unpublish", {
       params: IdParam,
-      success: Video,
-      error: [VideoNotFoundError, ProdSyncError, PersistenceError],
+      success: Asset,
+      error: [AssetNotFoundError, ProdSyncError, PersistenceError],
     }),
   )
   .prefix("/publish") {}
 
 export class ChaptersApi extends HttpApiGroup.make("chapters")
   .add(
-    HttpApiEndpoint.put("replaceChapters", "/videos/:videoId", {
-      params: Schema.Struct({ videoId: VideoId }),
+    HttpApiEndpoint.put("replaceChapters", "/:assetId", {
+      params: Schema.Struct({ assetId: AssetId }),
       payload: Schema.Array(ChapterInput),
       success: Schema.Array(Chapter),
-      error: [VideoNotFoundError, PersistenceError],
+      error: [AssetNotFoundError, PersistenceError],
     }),
   )
-  .prefix("/videos") {}
+  .prefix("/assets") {}

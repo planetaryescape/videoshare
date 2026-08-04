@@ -1,22 +1,22 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { Effect, Option } from "effect";
-import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import { VideoId } from "@videoshare/shared/Video";
-import { VideoNotFoundError } from "@videoshare/shared/VideoErrors";
+import { AssetRepository } from "@videoshare/shared/AssetRepository";
+import { AssetId } from "@videoshare/shared/Asset";
+import { AssetNotFoundError } from "@videoshare/shared/AssetErrors";
 import { chaptersFromInput } from "../../schemas/Chapters.ts";
 import { AdminApi } from "../AdminApi.ts";
 
 export const ChaptersApiLive = HttpApiBuilder.group(AdminApi, "chapters", (handlers) =>
   Effect.gen(function* () {
-    const repo = yield* VideoRepository;
+    const repo = yield* AssetRepository;
 
     return handlers.handle("replaceChapters", ({ params, payload }) =>
       Effect.gen(function* () {
-        const found = yield* repo.findById(VideoId.make(params.videoId));
+        const found = yield* repo.findById(AssetId.make(params.assetId));
         if (Option.isNone(found)) {
-          return yield* new VideoNotFoundError({ id: params.videoId });
+          return yield* new AssetNotFoundError({ id: params.assetId });
         }
-        const chapters = chaptersFromInput(VideoId.make(params.videoId), payload);
+        const chapters = chaptersFromInput(AssetId.make(params.assetId), payload);
         yield* repo.replaceChapters(found.value.id, chapters);
         return chapters;
       }),

@@ -5,35 +5,35 @@ import { makeConstrainedEvo } from "foldkit/struct";
 import { currentChapterStartSec } from "./chapterPlayback";
 import { chaptersValidationError, clampToDuration, parseTimestamp, sortChapters } from "./chapters";
 import {
-  DeleteVideoConfirmation,
-  EditVideo,
+  DeleteAssetConfirmation,
+  EditAsset,
   initialModel,
-  ListVideos,
-  UnpublishVideoConfirmation,
+  ListAssets,
+  UnpublishAssetConfirmation,
   type Chapter,
   type Model,
   type PendingConfirmation,
-  type Video,
+  type Asset,
 } from "./model";
 import {
   GotConfirmationDialogMessage,
   GotPosterFileDropMessage,
-  GotVideoFileDropMessage,
+  GotAssetFileDropMessage,
   type Message,
 } from "./message";
 import {
   CopyLinkCmd,
-  CreateVideoCmd,
-  DeleteVideoCmd,
+  CreateAssetCmd,
+  DeleteAssetCmd,
   FocusChapterTitle,
   GenerateChapterId,
-  LoadVideoDetail,
-  LoadVideos,
-  PublishVideoCmd,
+  LoadAssetDetail,
+  LoadAssets,
+  PublishAssetCmd,
   SaveChaptersCmd,
-  SaveVideoCmd,
-  UnpublishVideoCmd,
-  UploadVideoCmd,
+  SaveAssetCmd,
+  UnpublishAssetCmd,
+  UploadAssetCmd,
 } from "./commands";
 
 type Cmd = Command.Command<Message>;
@@ -52,7 +52,7 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
   cmds,
 ];
 
-export const init = (): Update => [initialModel(), [LoadVideos()]];
+export const init = (): Update => [initialModel(), [LoadAssets()]];
 
 const sameChapters = (left: ReadonlyArray<Chapter>, right: ReadonlyArray<Chapter>): boolean =>
   left.length === right.length &&
@@ -61,7 +61,7 @@ const sameChapters = (left: ReadonlyArray<Chapter>, right: ReadonlyArray<Chapter
     return (
       other !== undefined &&
       chapter.id === other.id &&
-      chapter.videoId === other.videoId &&
+      chapter.assetId === other.assetId &&
       chapter.title === other.title &&
       chapter.startSec === other.startSec &&
       chapter.sortOrder === other.sortOrder
@@ -73,7 +73,7 @@ const validationErrorWithDrafts = (
   chapters: ReadonlyArray<Chapter>,
   drafts: Readonly<Record<string, string>> = model.chapterStartDrafts,
 ): Option.Option<string> => {
-  const durationSec = Option.isSome(model.editVideo) ? model.editVideo.value.durationSec : 0;
+  const durationSec = Option.isSome(model.editAsset) ? model.editAsset.value.durationSec : 0;
   if (Object.values(drafts).some((draft) => Option.isNone(parseTimestamp(draft)))) {
     return Option.some("Timestamp must look like 0:45, 1:02:30, or a number of seconds");
   }
@@ -91,7 +91,7 @@ const validationErrorWithDrafts = (
 };
 
 const startChapterSave = (model: Model): Update => {
-  if (Option.isNone(model.editVideo)) {
+  if (Option.isNone(model.editAsset)) {
     return noCmd(model);
   }
   const validationError = validationErrorWithDrafts(model, model.editChapters);
@@ -110,7 +110,7 @@ const startChapterSave = (model: Model): Update => {
       chapterSaveSnapshot: () => model.editChapters,
       chapterValidationError: () => Option.none(),
     },
-    SaveChaptersCmd({ id: model.editVideo.value.id, chapters: model.editChapters }),
+    SaveChaptersCmd({ id: model.editAsset.value.id, chapters: model.editChapters }),
   );
 };
 
@@ -180,16 +180,16 @@ export const update: (model: Model, message: Message) => Update = (model, messag
   M.value(message).pipe(
     M.withReturnType<Update>(),
     M.tagsExhaustive({
-      ClickedEditVideo: (msg: { id: string }) =>
+      ClickedEditAsset: (msg: { id: string }) =>
         model.isUploading
           ? noCmd(model)
           : withEvo(
               model,
               {
-                screen: () => EditVideo({ videoId: msg.id }),
+                screen: () => EditAsset({ assetId: msg.id }),
                 editTitle: () => "",
                 editDescription: () => "",
-                editVideo: () => Option.none(),
+                editAsset: () => Option.none(),
                 editChapters: () => [],
                 chapterStartDrafts: () => ({}),
                 chapterValidationError: () => Option.none(),
@@ -199,17 +199,17 @@ export const update: (model: Model, message: Message) => Update = (model, messag
                 copiedLink: () => false,
                 errorMessage: () => Option.none(),
               },
-              LoadVideoDetail({ id: msg.id }),
+              LoadAssetDetail({ id: msg.id }),
             ),
       ClickedBack: () => {
         if (model.isUploading) {
           return noCmd(model);
         }
         return withEvo(model, {
-          screen: () => ListVideos(),
+          screen: () => ListAssets(),
           editTitle: () => "",
           editDescription: () => "",
-          editVideo: () => Option.none(),
+          editAsset: () => Option.none(),
           editChapters: () => [],
           chapterStartDrafts: () => ({}),
           chapterValidationError: () => Option.none(),
@@ -226,10 +226,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       UpdatedDescription: (msg: { description: string }) =>
         withEvo(model, { editDescription: () => msg.description }),
       BlurredEditField: () => {
-        if (Option.isNone(model.editVideo)) {
+        if (Option.isNone(model.editAsset)) {
           return noCmd(model);
         }
-        const video = model.editVideo.value;
+        const video = model.editAsset.value;
         const unchanged =
           model.editTitle === video.title && model.editDescription === (video.description ?? "");
         if (unchanged || model.editTitle.trim() === "") {
@@ -237,36 +237,36 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         }
         return withCmds(
           model,
-          SaveVideoCmd({
+          SaveAssetCmd({
             id: video.id,
             title: model.editTitle,
             description: model.editDescription,
           }),
         );
       },
-      SucceededSaveVideo: (msg: { video: Video }) =>
+      SucceededSaveAsset: (msg: { video: Asset }) =>
         withEvo(model, {
-          editVideo: () => Option.some(msg.video),
-          videos: () => model.videos.map((v) => (v.id === msg.video.id ? msg.video : v)),
+          editAsset: () => Option.some(msg.video),
+          assets: () => model.assets.map((v) => (v.id === msg.video.id ? msg.video : v)),
         }),
-      FailedSaveVideo: (msg: { error: string }) =>
+      FailedSaveAsset: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SubmittedCreateVideo: () =>
-        withEvo(model, { errorMessage: () => Option.none() }, CreateVideoCmd()),
-      SucceededCreateVideo: (msg: { video: Video }) =>
+      SubmittedCreateAsset: () =>
+        withEvo(model, { errorMessage: () => Option.none() }, CreateAssetCmd()),
+      SucceededCreateAsset: (msg: { video: Asset }) =>
         withEvo(model, {
-          videos: () => [msg.video, ...model.videos],
-          screen: () => EditVideo({ videoId: msg.video.id }),
+          assets: () => [msg.video, ...model.assets],
+          screen: () => EditAsset({ assetId: msg.video.id }),
           editTitle: () => msg.video.title,
           editDescription: () => msg.video.description ?? "",
-          editVideo: () => Option.some(msg.video),
+          editAsset: () => Option.some(msg.video),
         }),
-      FailedCreateVideo: (msg: { error: string }) =>
+      FailedCreateAsset: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SucceededLoadVideos: (msg) => withEvo(model, { videos: () => msg.videos }),
-      FailedLoadVideos: (msg: { error: string }) =>
+      SucceededLoadAssets: (msg) => withEvo(model, { assets: () => msg.assets }),
+      FailedLoadAssets: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      GotVideoFileDropMessage: ({ message }) => {
+      GotAssetFileDropMessage: ({ message }) => {
         const [videoFileDrop, commands, maybeOutMessage] = FileDrop.update(
           model.videoFileDrop,
           message,
@@ -292,7 +292,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             selectedFile: () => selectedFile,
             errorMessage: () => errorMessage,
           },
-          ...Command.mapMessages(commands, (message) => GotVideoFileDropMessage({ message })),
+          ...Command.mapMessages(commands, (message) => GotAssetFileDropMessage({ message })),
         );
       },
       GotPosterFileDropMessage: ({ message }) => {
@@ -331,24 +331,24 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             errorMessage: () => Option.some("Please select a file first"),
           });
         }
-        if (model.screen._tag !== "EditVideo") {
+        if (model.screen._tag !== "EditAsset") {
           return withEvo(model, {
             errorMessage: () =>
-              Option.some("Save the video before uploading to create a stable identifier"),
+              Option.some("Save the asset before uploading to create a stable identifier"),
           });
         }
-        const videoId = model.screen.videoId;
+        const assetId = model.screen.assetId;
         return withEvo(
           model,
           {
             isUploading: () => true,
-            uploadingVideoId: () => Option.some(videoId),
+            uploadingAssetId: () => Option.some(assetId),
             uploadStage: () => "uploading",
             uploadPct: () => 0,
             errorMessage: () => Option.none(),
           },
-          UploadVideoCmd({
-            videoId,
+          UploadAssetCmd({
+            assetId,
             file: model.selectedFile.value,
             poster: model.selectedPoster,
           }),
@@ -359,13 +359,15 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           uploadStage: () => msg.stage,
           uploadPct: () => msg.pct,
         }),
-      SucceededUpload: (msg: { video: Video }) => {
+      SucceededUpload: (msg: { video: Asset }) => {
         return withEvo(model, {
           isUploading: () => false,
-          uploadingVideoId: () => Option.none(),
+          uploadingAssetId: () => Option.none(),
           uploadStage: () => "done",
           uploadPct: () => 100,
-          editVideo: () => Option.some(msg.video),
+          editAsset: () => Option.some(msg.video),
+          assets: () =>
+            model.assets.map((asset) => (asset.id === msg.video.id ? msg.video : asset)),
           selectedFile: () => Option.none(),
           selectedPoster: () => Option.none(),
         });
@@ -373,7 +375,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       FailedUpload: (msg: { error: string }) => {
         return withEvo(model, {
           isUploading: () => false,
-          uploadingVideoId: () => Option.none(),
+          uploadingAssetId: () => Option.none(),
           uploadStage: () => "",
           uploadPct: () => 0,
           errorMessage: () => Option.some(msg.error),
@@ -388,13 +390,13 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             isPublishing: () => true,
             errorMessage: () => Option.none(),
           },
-          PublishVideoCmd({ id: msg.id }),
+          PublishAssetCmd({ id: msg.id }),
         ),
-      SucceededPublish: (msg: { video: Video }) =>
+      SucceededPublish: (msg: { video: Asset }) =>
         withEvo(model, {
           isPublishing: () => false,
-          editVideo: () => Option.some(msg.video),
-          videos: () => model.videos.map((v) => (v.id === msg.video.id ? msg.video : v)),
+          editAsset: () => Option.some(msg.video),
+          assets: () => model.assets.map((v) => (v.id === msg.video.id ? msg.video : v)),
         }),
       FailedPublish: (msg: { error: string }) =>
         withEvo(model, {
@@ -402,7 +404,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           errorMessage: () => Option.some(msg.error),
         }),
       ClickedUnpublish: ({ id }) =>
-        openConfirmation(model, UnpublishVideoConfirmation({ videoId: id })),
+        openConfirmation(model, UnpublishAssetConfirmation({ assetId: id })),
       GotConfirmationDialogMessage: ({ message }) => {
         const [confirmationDialog, commands, maybeOutMessage] = Dialog.update(
           model.confirmationDialog,
@@ -429,7 +431,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         const commands = Command.mapMessages(dialogCommands, (message) =>
           GotConfirmationDialogMessage({ message }),
         );
-        if (pendingConfirmation._tag === "DeleteVideoConfirmation") {
+        if (pendingConfirmation._tag === "DeleteAssetConfirmation") {
           return withEvo(
             model,
             {
@@ -437,7 +439,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               pendingConfirmation: () => Option.none(),
             },
             ...commands,
-            DeleteVideoCmd({ id: pendingConfirmation.videoId }),
+            DeleteAssetCmd({ id: pendingConfirmation.assetId }),
           );
         }
         return withEvo(
@@ -449,40 +451,40 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             errorMessage: () => Option.none(),
           },
           ...commands,
-          UnpublishVideoCmd({ id: pendingConfirmation.videoId }),
+          UnpublishAssetCmd({ id: pendingConfirmation.assetId }),
         );
       },
-      SucceededUnpublish: (msg: { video: Video }) =>
+      SucceededUnpublish: (msg: { video: Asset }) =>
         withEvo(model, {
           isUnpublishing: () => false,
-          editVideo: () => Option.some(msg.video),
-          videos: () => model.videos.map((v) => (v.id === msg.video.id ? msg.video : v)),
+          editAsset: () => Option.some(msg.video),
+          assets: () => model.assets.map((v) => (v.id === msg.video.id ? msg.video : v)),
         }),
       FailedUnpublish: (msg: { error: string }) =>
         withEvo(model, {
           isUnpublishing: () => false,
           errorMessage: () => Option.some(msg.error),
         }),
-      ClickedDeleteVideo: ({ id }) =>
-        openConfirmation(model, DeleteVideoConfirmation({ videoId: id })),
-      SucceededDeleteVideo: (msg: { id: string }) => {
-        const removed = model.videos.find((v) => v.id === msg.id);
+      ClickedDeleteAsset: ({ id }) =>
+        openConfirmation(model, DeleteAssetConfirmation({ assetId: id })),
+      SucceededDeleteAsset: (msg: { id: string }) => {
+        const removed = model.assets.find((v) => v.id === msg.id);
         const nextScreen =
-          model.screen._tag === "EditVideo" && model.screen.videoId === msg.id
-            ? ListVideos()
+          model.screen._tag === "EditAsset" && model.screen.assetId === msg.id
+            ? ListAssets()
             : model.screen;
-        const videos = removed ? model.videos.filter((v) => v.id !== msg.id) : model.videos;
+        const assets = removed ? model.assets.filter((v) => v.id !== msg.id) : model.assets;
         const next =
           removed || nextScreen !== model.screen
-            ? withEvo(model, { videos: () => videos, screen: () => nextScreen })
+            ? withEvo(model, { assets: () => assets, screen: () => nextScreen })
             : noCmd(model);
         return next;
       },
-      FailedDeleteVideo: (msg: { error: string }) =>
+      FailedDeleteAsset: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SucceededLoadVideoDetail: (msg: { video: Video; chapters: ReadonlyArray<Chapter> }) =>
+      SucceededLoadAssetDetail: (msg: { video: Asset; chapters: ReadonlyArray<Chapter> }) =>
         withEvo(model, {
-          editVideo: () => Option.some(msg.video),
+          editAsset: () => Option.some(msg.video),
           editTitle: () => msg.video.title,
           editDescription: () => msg.video.description ?? "",
           editChapters: () => sortChapters(msg.chapters),
@@ -492,29 +494,29 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           chapterSaveQueued: () => false,
           chapterSaveSnapshot: () => [],
         }),
-      FailedLoadVideoDetail: (msg: { error: string }) =>
+      FailedLoadAssetDetail: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
       ClickedAddChapter: () => {
-        if (Option.isNone(model.editVideo) || model.editVideo.value.hlsKey === "") {
+        if (Option.isNone(model.editAsset) || model.editAsset.value.mediaKey === "") {
           return noCmd(model);
         }
         return withCmds(
           model,
           GenerateChapterId({
-            videoId: model.editVideo.value.id,
+            assetId: model.editAsset.value.id,
             startSec: currentChapterStartSec(),
           }),
         );
       },
-      GeneratedChapterId: ({ chapterId, videoId, startSec }) => {
-        if (Option.isNone(model.editVideo) || model.editVideo.value.id !== videoId) {
+      GeneratedChapterId: ({ chapterId, assetId, startSec }) => {
+        if (Option.isNone(model.editAsset) || model.editAsset.value.id !== assetId) {
           return noCmd(model);
         }
         const newChapter: Chapter = {
           id: chapterId,
-          videoId,
+          assetId,
           title: "",
-          startSec: clampToDuration(startSec, model.editVideo.value.durationSec),
+          startSec: clampToDuration(startSec, model.editAsset.value.durationSec),
           sortOrder: model.editChapters.length,
         };
         return withEvo(
@@ -553,7 +555,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         }),
       CommittedChapterStart: (msg: { id: string }) => {
         const draft = model.chapterStartDrafts[msg.id];
-        if (draft === undefined || Option.isNone(model.editVideo)) {
+        if (draft === undefined || Option.isNone(model.editAsset)) {
           return noCmd(model);
         }
         const parsed = parseTimestamp(draft);
@@ -566,17 +568,17 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         return commitChapterStart(
           model,
           msg.id,
-          clampToDuration(parsed.value, model.editVideo.value.durationSec),
+          clampToDuration(parsed.value, model.editAsset.value.durationSec),
         );
       },
       ClickedSetChapterToPlayhead: (msg: { id: string }) => {
-        if (Option.isNone(model.editVideo)) {
+        if (Option.isNone(model.editAsset)) {
           return noCmd(model);
         }
         return commitChapterStart(
           model,
           msg.id,
-          clampToDuration(currentChapterStartSec(), model.editVideo.value.durationSec),
+          clampToDuration(currentChapterStartSec(), model.editAsset.value.durationSec),
         );
       },
       BlurredChapterField: () => saveChapters(model, model.editChapters),

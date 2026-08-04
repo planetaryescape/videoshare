@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Chapter, Slug, Video, VideoId } from "@videoshare/shared/Video";
+import { Chapter, Slug, Asset, AssetId } from "@videoshare/shared/Asset";
 
 export const ChapterInput = Schema.Struct({
   id: Schema.optional(Schema.String),
@@ -10,31 +10,31 @@ export type ChapterInput = typeof ChapterInput.Type;
 
 const NonBlankTitle = Schema.String.check(Schema.isMinLength(1));
 
-export const CreateVideoRequest = Schema.Struct({
+export const CreateAssetRequest = Schema.Struct({
   title: NonBlankTitle,
   description: Schema.optional(Schema.String),
 });
-export type CreateVideoRequest = typeof CreateVideoRequest.Type;
+export type CreateAssetRequest = typeof CreateAssetRequest.Type;
 
-export const UpdateVideoRequest = Schema.Struct({
+export const UpdateAssetRequest = Schema.Struct({
   title: Schema.optional(NonBlankTitle),
   description: Schema.optional(Schema.String),
   chapters: Schema.optional(Schema.Array(ChapterInput)),
 });
-export type UpdateVideoRequest = typeof UpdateVideoRequest.Type;
+export type UpdateAssetRequest = typeof UpdateAssetRequest.Type;
 
-export const VideoIdParam = Schema.Struct({
+export const AssetIdParam = Schema.Struct({
   id: Schema.String,
 });
 
-export const VideoWithChapters = Schema.Struct({
-  video: Video,
+export const AssetWithChapters = Schema.Struct({
+  video: Asset,
   chapters: Schema.Array(Chapter),
 });
-export type VideoWithChapters = typeof VideoWithChapters.Type;
+export type AssetWithChapters = typeof AssetWithChapters.Type;
 
-export const VideoListResponse = Schema.Array(Video);
-export type VideoListResponse = typeof VideoListResponse.Type;
+export const AssetListResponse = Schema.Array(Asset);
+export type AssetListResponse = typeof AssetListResponse.Type;
 
 export const DeleteResponse = Schema.Struct({
   success: Schema.Boolean,
@@ -45,6 +45,6 @@ export const SlugParam = Schema.Struct({
   slug: Slug,
 });
 
-export const VideoIdPath = Schema.Struct({
-  id: VideoId,
+export const AssetIdPath = Schema.Struct({
+  id: AssetId,
 });

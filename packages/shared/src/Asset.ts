@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
-export const VideoId = Schema.String.pipe(Schema.brand("VideoId"));
-export type VideoId = typeof VideoId.Type;
+export const AssetId = Schema.String.pipe(Schema.brand("AssetId"));
+export type AssetId = typeof AssetId.Type;
 
 export const ChapterId = Schema.String.pipe(Schema.brand("ChapterId"));
 export type ChapterId = typeof ChapterId.Type;
@@ -17,20 +17,20 @@ export type Kind = typeof Kind.Type;
 
 export class Chapter extends Schema.Class<Chapter>("Chapter")({
   id: ChapterId,
-  videoId: VideoId,
+  assetId: AssetId,
   title: Schema.String.check(Schema.isNonEmpty()),
   startSec: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
   sortOrder: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 }) {}
 
-export class Video extends Schema.Class<Video>("Video")({
-  id: VideoId,
+export class Asset extends Schema.Class<Asset>("Asset")({
+  id: AssetId,
   slug: Slug,
   kind: Kind,
   title: Schema.String.check(Schema.isNonEmpty()),
   description: Schema.NullOr(Schema.String),
   posterKey: Schema.NullOr(Schema.String),
-  hlsKey: Schema.String,
+  mediaKey: Schema.String,
   durationSec: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
   passwordHash: Schema.NullOr(Schema.String),
   createdAt: Schema.Number,

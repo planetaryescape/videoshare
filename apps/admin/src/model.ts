@@ -3,46 +3,46 @@ import { File as FoldkitFile } from "foldkit";
 import { ts } from "foldkit/schema";
 import { Dialog, FileDrop } from "@foldkit/ui";
 
-export const VideoSchema = S.Struct({
+export const AssetSchema = S.Struct({
   id: S.String,
   slug: S.String,
   kind: S.Literals(["video", "audio"]),
   title: S.String,
   description: S.NullOr(S.String),
   posterKey: S.NullOr(S.String),
-  hlsKey: S.String,
+  mediaKey: S.String,
   durationSec: S.Finite,
   createdAt: S.Finite,
   publishedAt: S.NullOr(S.Finite),
   updatedAt: S.NullOr(S.Finite),
 });
-export type Video = typeof VideoSchema.Type;
+export type Asset = typeof AssetSchema.Type;
 
 export const ChapterSchema = S.Struct({
   id: S.String,
-  videoId: S.String,
+  assetId: S.String,
   title: S.String,
   startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
   sortOrder: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 });
 export type Chapter = typeof ChapterSchema.Type;
 
-export const ListVideos = ts("ListVideos");
-export const EditVideo = ts("EditVideo", {
-  videoId: S.String.check(S.isMinLength(1)),
+export const ListAssets = ts("ListAssets");
+export const EditAsset = ts("EditAsset", {
+  assetId: S.String.check(S.isMinLength(1)),
 });
-export const Screen = S.Union([ListVideos, EditVideo]);
-export const DeleteVideoConfirmation = ts("DeleteVideoConfirmation", { videoId: S.String });
-export const UnpublishVideoConfirmation = ts("UnpublishVideoConfirmation", { videoId: S.String });
-export const PendingConfirmation = S.Union([DeleteVideoConfirmation, UnpublishVideoConfirmation]);
+export const Screen = S.Union([ListAssets, EditAsset]);
+export const DeleteAssetConfirmation = ts("DeleteAssetConfirmation", { assetId: S.String });
+export const UnpublishAssetConfirmation = ts("UnpublishAssetConfirmation", { assetId: S.String });
+export const PendingConfirmation = S.Union([DeleteAssetConfirmation, UnpublishAssetConfirmation]);
 export type PendingConfirmation = typeof PendingConfirmation.Type;
 
 export const Model = S.Struct({
   screen: Screen,
-  videos: S.Array(VideoSchema),
+  assets: S.Array(AssetSchema),
   editTitle: S.String,
   editDescription: S.String,
-  editVideo: S.Option(VideoSchema),
+  editAsset: S.Option(AssetSchema),
   editChapters: S.Array(ChapterSchema),
   chapterStartDrafts: S.Record(S.String, S.String),
   chapterValidationError: S.Option(S.String),
@@ -56,7 +56,7 @@ export const Model = S.Struct({
   selectedFile: S.Option(FoldkitFile.File),
   selectedPoster: S.Option(FoldkitFile.File),
   isUploading: S.Boolean,
-  uploadingVideoId: S.Option(S.String),
+  uploadingAssetId: S.Option(S.String),
   uploadStage: S.String,
   uploadPct: S.Finite,
   isPublishing: S.Boolean,
@@ -67,11 +67,11 @@ export const Model = S.Struct({
 export type Model = typeof Model.Type;
 
 export const initialModel = (): Model => ({
-  screen: ListVideos(),
-  videos: [],
+  screen: ListAssets(),
+  assets: [],
   editTitle: "",
   editDescription: "",
-  editVideo: Option.none(),
+  editAsset: Option.none(),
   editChapters: [],
   chapterStartDrafts: {},
   chapterValidationError: Option.none(),
@@ -85,7 +85,7 @@ export const initialModel = (): Model => ({
   selectedFile: Option.none(),
   selectedPoster: Option.none(),
   isUploading: false,
-  uploadingVideoId: Option.none(),
+  uploadingAssetId: Option.none(),
   uploadStage: "",
   uploadPct: 0,
   isPublishing: false,
@@ -109,9 +109,9 @@ export const formatDuration = (sec: number): string => {
 
 export const formatDate = (ts: number): string => new Date(ts).toLocaleDateString();
 
-export const isPublished = (video: Video): boolean => video.publishedAt !== null;
+export const isPublished = (video: Asset): boolean => video.publishedAt !== null;
 
-export const hasUnpublishedChanges = (video: Video): boolean => {
+export const hasUnpublishedChanges = (video: Asset): boolean => {
   if (video.updatedAt === null) {
     return false;
   }

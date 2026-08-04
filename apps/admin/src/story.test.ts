@@ -2,10 +2,10 @@ import { Option } from "effect";
 import { Story } from "foldkit";
 import { describe, expect, test } from "vitest";
 import {
-  CreateVideoCmd,
+  CreateAssetCmd,
   FocusChapterTitle,
   GenerateChapterId,
-  LoadVideos,
+  LoadAssets,
   SaveChaptersCmd,
 } from "./commands";
 import {
@@ -16,36 +16,36 @@ import {
   UpdatedChapterTitle,
   ClickedBack,
   ClickedConfirmPendingAction,
-  ClickedDeleteVideo,
-  ClickedEditVideo,
+  ClickedDeleteAsset,
+  ClickedEditAsset,
   ClickedUnpublish,
-  FailedCreateVideo,
-  FailedDeleteVideo,
-  FailedLoadVideos,
+  FailedCreateAsset,
+  FailedDeleteAsset,
+  FailedLoadAssets,
   FailedUnpublish,
   FailedUploadProgress,
   FocusedChapterTitle,
   GeneratedChapterId,
-  SubmittedCreateVideo,
+  SubmittedCreateAsset,
   SubmittedUpload,
-  SucceededCreateVideo,
-  SucceededDeleteVideo,
-  SucceededLoadVideos,
+  SucceededCreateAsset,
+  SucceededDeleteAsset,
+  SucceededLoadAssets,
   SucceededSaveChapters,
   SucceededUnpublish,
   SucceededUpload,
 } from "./message";
-import { EditVideo, initialModel, type Video } from "./model";
+import { EditAsset, initialModel, type Asset } from "./model";
 import { init, update } from "./update";
 
-const video: Video = {
+const video: Asset = {
   id: "video-1",
   slug: "fixture-video",
   kind: "video",
-  title: "Fixture Video",
+  title: "Fixture Asset",
   description: "Fixture description",
   posterKey: null,
-  hlsKey: "",
+  mediaKey: "",
   durationSec: 0,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
@@ -53,21 +53,21 @@ const video: Video = {
 };
 
 describe("admin story", () => {
-  test("loads videos on initialization", () => {
+  test("loads assets on initialization", () => {
     const [model, commands] = init();
 
     expect(model).toEqual(initialModel());
     expect(commands).toHaveLength(1);
-    expect(commands[0]?.name).toBe(LoadVideos.name);
+    expect(commands[0]?.name).toBe(LoadAssets.name);
   });
 
-  test("stores loaded videos and load failures", () => {
+  test("stores loaded assets and load failures", () => {
     Story.story(
       update,
       Story.with(initialModel()),
-      Story.message(SucceededLoadVideos({ videos: [video] })),
-      Story.model((model) => expect(model.videos).toEqual([video])),
-      Story.message(FailedLoadVideos({ error: "Network unavailable" })),
+      Story.message(SucceededLoadAssets({ assets: [video] })),
+      Story.model((model) => expect(model.assets).toEqual([video])),
+      Story.message(FailedLoadAssets({ error: "Network unavailable" })),
       Story.model((model) =>
         expect(model.errorMessage).toEqual(Option.some("Network unavailable")),
       ),
@@ -78,12 +78,12 @@ describe("admin story", () => {
     Story.story(
       update,
       Story.with(initialModel()),
-      Story.message(SubmittedCreateVideo()),
-      Story.Command.expectExact(CreateVideoCmd()),
-      Story.Command.resolve(CreateVideoCmd, SucceededCreateVideo({ video })),
+      Story.message(SubmittedCreateAsset()),
+      Story.Command.expectExact(CreateAssetCmd()),
+      Story.Command.resolve(CreateAssetCmd, SucceededCreateAsset({ video })),
       Story.model((model) => {
-        expect(model.screen).toEqual({ _tag: "EditVideo", videoId: video.id });
-        expect(model.editVideo).toEqual(Option.some(video));
+        expect(model.screen).toEqual({ _tag: "EditAsset", assetId: video.id });
+        expect(model.editAsset).toEqual(Option.some(video));
       }),
     );
   });
@@ -92,8 +92,8 @@ describe("admin story", () => {
     Story.story(
       update,
       Story.with(initialModel()),
-      Story.message(SubmittedCreateVideo()),
-      Story.Command.resolve(CreateVideoCmd, FailedCreateVideo({ error: "Create failed" })),
+      Story.message(SubmittedCreateAsset()),
+      Story.Command.resolve(CreateAssetCmd, FailedCreateAsset({ error: "Create failed" })),
       Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Create failed"))),
     );
   });
@@ -103,14 +103,14 @@ describe("admin story", () => {
       update,
       Story.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some({ ...video, hlsKey: "videos/video-1/master.m3u8" }),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some({ ...video, mediaKey: "assets/video-1/master.m3u8" }),
       }),
       Story.message(ClickedAddChapter()),
-      Story.Command.expectExact(GenerateChapterId({ videoId: video.id, startSec: 0 })),
+      Story.Command.expectExact(GenerateChapterId({ assetId: video.id, startSec: 0 })),
       Story.Command.resolve(
         GenerateChapterId,
-        GeneratedChapterId({ chapterId: "chapter-1", videoId: video.id, startSec: 42 }),
+        GeneratedChapterId({ chapterId: "chapter-1", assetId: video.id, startSec: 42 }),
       ),
       Story.Command.expectExact(FocusChapterTitle({ chapterId: "chapter-1" })),
       Story.Command.resolve(FocusChapterTitle, FocusedChapterTitle({ chapterId: "chapter-1" })),
@@ -118,7 +118,7 @@ describe("admin story", () => {
         expect(model.editChapters).toEqual([
           {
             id: "chapter-1",
-            videoId: video.id,
+            assetId: video.id,
             title: "",
             startSec: 42,
             sortOrder: 0,
@@ -129,16 +129,16 @@ describe("admin story", () => {
   });
 
   test("re-sorts chapters when a start time is edited", () => {
-    const editedVideo = { ...video, durationSec: 300 };
+    const editedAsset = { ...video, durationSec: 300 };
     Story.story(
       update,
       Story.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(editedVideo),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some(editedAsset),
         editChapters: [
-          { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
-          { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 1 },
+          { id: "a", assetId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
+          { id: "b", assetId: video.id, title: "Shipping", startSec: 60, sortOrder: 1 },
         ],
       }),
       Story.message(UpdatedChapterStart({ id: "b", value: "0:10" })),
@@ -155,8 +155,8 @@ describe("admin story", () => {
         SaveChaptersCmd({
           id: video.id,
           chapters: [
-            { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 0 },
-            { id: "a", videoId: video.id, title: "Intro", startSec: 90, sortOrder: 1 },
+            { id: "b", assetId: video.id, title: "Shipping", startSec: 60, sortOrder: 0 },
+            { id: "a", assetId: video.id, title: "Intro", startSec: 90, sortOrder: 1 },
           ],
         }),
       ),
@@ -164,8 +164,8 @@ describe("admin story", () => {
         SaveChaptersCmd,
         SucceededSaveChapters({
           chapters: [
-            { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 0 },
-            { id: "a", videoId: video.id, title: "Intro", startSec: 90, sortOrder: 1 },
+            { id: "b", assetId: video.id, title: "Shipping", startSec: 60, sortOrder: 0 },
+            { id: "a", assetId: video.id, title: "Intro", startSec: 90, sortOrder: 1 },
           ],
         }),
       ),
@@ -173,16 +173,16 @@ describe("admin story", () => {
   });
 
   test("blocks saving when two chapters share a timestamp", () => {
-    const editedVideo = { ...video, durationSec: 300 };
+    const editedAsset = { ...video, durationSec: 300 };
     Story.story(
       update,
       Story.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(editedVideo),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some(editedAsset),
         editChapters: [
-          { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
-          { id: "b", videoId: video.id, title: "Shipping", startSec: 60, sortOrder: 1 },
+          { id: "a", assetId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
+          { id: "b", assetId: video.id, title: "Shipping", startSec: 60, sortOrder: 1 },
         ],
       }),
       Story.message(UpdatedChapterStart({ id: "b", value: "0:00" })),
@@ -201,9 +201,9 @@ describe("admin story", () => {
       update,
       Story.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some({ ...video, durationSec: 300 }),
-        editChapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 30, sortOrder: 0 }],
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some({ ...video, durationSec: 300 }),
+        editChapters: [{ id: "a", assetId: video.id, title: "Intro", startSec: 30, sortOrder: 0 }],
       }),
       Story.message(UpdatedChapterStart({ id: "a", value: "nope" })),
       Story.message(CommittedChapterStart({ id: "a" })),
@@ -223,9 +223,9 @@ describe("admin story", () => {
       update,
       Story.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some({ ...video, durationSec: 54 }),
-        editChapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 }],
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some({ ...video, durationSec: 54 }),
+        editChapters: [{ id: "a", assetId: video.id, title: "Intro", startSec: 0, sortOrder: 0 }],
       }),
       Story.message(UpdatedChapterStart({ id: "a", value: "9:99" })),
       Story.message(UpdatedChapterStart({ id: "a", value: "9:00" })),
@@ -234,18 +234,18 @@ describe("admin story", () => {
       Story.Command.resolve(
         SaveChaptersCmd,
         SucceededSaveChapters({
-          chapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 54, sortOrder: 0 }],
+          chapters: [{ id: "a", assetId: video.id, title: "Intro", startSec: 54, sortOrder: 0 }],
         }),
       ),
     );
   });
 
   test("preserves title edits made while chapters are saving", () => {
-    const chapter = { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 };
+    const chapter = { id: "a", assetId: video.id, title: "Intro", startSec: 0, sortOrder: 0 };
     const base = {
       ...initialModel(),
-      screen: EditVideo({ videoId: video.id }),
-      editVideo: Option.some(video),
+      screen: EditAsset({ assetId: video.id }),
+      editAsset: Option.some(video),
       editChapters: [chapter],
     };
     const [saving] = update(base, BlurredChapterField());
@@ -261,11 +261,11 @@ describe("admin story", () => {
   });
 
   test("does not queue an unchanged chapter save", () => {
-    const chapter = { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 };
+    const chapter = { id: "a", assetId: video.id, title: "Intro", startSec: 0, sortOrder: 0 };
     const base = {
       ...initialModel(),
-      screen: EditVideo({ videoId: video.id }),
-      editVideo: Option.some(video),
+      screen: EditAsset({ assetId: video.id }),
+      editAsset: Option.some(video),
       editChapters: [chapter],
     };
     const [saving] = update(base, BlurredChapterField());
@@ -278,11 +278,11 @@ describe("admin story", () => {
   test("keeps draft validation visible across title edits", () => {
     const base = {
       ...initialModel(),
-      screen: EditVideo({ videoId: video.id }),
-      editVideo: Option.some({ ...video, durationSec: 300 }),
+      screen: EditAsset({ assetId: video.id }),
+      editAsset: Option.some({ ...video, durationSec: 300 }),
       editChapters: [
-        { id: "a", videoId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
-        { id: "b", videoId: video.id, title: "Middle", startSec: 60, sortOrder: 1 },
+        { id: "a", assetId: video.id, title: "Intro", startSec: 0, sortOrder: 0 },
+        { id: "b", assetId: video.id, title: "Middle", startSec: 60, sortOrder: 1 },
       ],
     };
     const [drafted] = update(base, UpdatedChapterStart({ id: "b", value: "0:00" }));
@@ -298,9 +298,9 @@ describe("admin story", () => {
   test("clears stale timestamp validation when a draft returns to the saved value", () => {
     const base = {
       ...initialModel(),
-      screen: EditVideo({ videoId: video.id }),
-      editVideo: Option.some({ ...video, durationSec: 300 }),
-      editChapters: [{ id: "a", videoId: video.id, title: "Intro", startSec: 30, sortOrder: 0 }],
+      screen: EditAsset({ assetId: video.id }),
+      editAsset: Option.some({ ...video, durationSec: 300 }),
+      editChapters: [{ id: "a", assetId: video.id, title: "Intro", startSec: 30, sortOrder: 0 }],
       chapterStartDrafts: { a: "0:30" },
       chapterValidationError: Option.some("Invalid timestamp"),
     };
@@ -315,12 +315,12 @@ describe("admin story", () => {
       update,
       Story.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(video),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some(video),
         editChapters: [
           {
             id: "chapter-1",
-            videoId: video.id,
+            assetId: video.id,
             title: "",
             startSec: 0,
             sortOrder: 0,
@@ -340,81 +340,99 @@ describe("admin story", () => {
   test("waits for confirmation before deleting", () => {
     const [pendingModel, pendingCommands] = update(
       initialModel(),
-      ClickedDeleteVideo({ id: video.id }),
+      ClickedDeleteAsset({ id: video.id }),
     );
 
     expect(pendingModel.pendingConfirmation).toEqual(
-      Option.some({ _tag: "DeleteVideoConfirmation", videoId: video.id }),
+      Option.some({ _tag: "DeleteAssetConfirmation", assetId: video.id }),
     );
-    expect(pendingCommands.map((command) => command.name)).not.toContain("DeleteVideo");
+    expect(pendingCommands.map((command) => command.name)).not.toContain("DeleteAsset");
 
     const [confirmedModel, confirmedCommands] = update(pendingModel, ClickedConfirmPendingAction());
 
     expect(confirmedModel.pendingConfirmation).toEqual(Option.none());
-    expect(confirmedCommands.map((command) => command.name)).toContain("DeleteVideo");
+    expect(confirmedCommands.map((command) => command.name)).toContain("DeleteAsset");
+  });
+
+  test("requires a saved asset before upload", () => {
+    const [model] = update(
+      {
+        ...initialModel(),
+        selectedFile: Option.some(new File(["media"], "recording.mp3", { type: "audio/mpeg" })),
+      },
+      SubmittedUpload(),
+    );
+
+    expect(model.errorMessage).toEqual(
+      Option.some("Save the asset before uploading to create a stable identifier"),
+    );
   });
 
   test("keeps upload ownership until the upload command finishes", () => {
+    const uploadedAsset = { ...video, mediaKey: "assets/video-1/master.m3u8", durationSec: 42 };
     const [uploadingModel] = update(
       {
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(video),
+        screen: EditAsset({ assetId: video.id }),
+        assets: [video],
+        editAsset: Option.some(video),
         selectedFile: Option.some(new File(["video"], "video.mp4", { type: "video/mp4" })),
       },
       SubmittedUpload(),
     );
 
-    expect(uploadingModel.uploadingVideoId).toEqual(Option.some(video.id));
+    expect(uploadingModel.uploadingAssetId).toEqual(Option.some(video.id));
 
     const [afterProgressFailure] = update(
       uploadingModel,
       FailedUploadProgress({ error: "Progress unavailable" }),
     );
     expect(afterProgressFailure.isUploading).toBe(true);
-    expect(afterProgressFailure.uploadingVideoId).toEqual(Option.some(video.id));
+    expect(afterProgressFailure.uploadingAssetId).toEqual(Option.some(video.id));
 
     const [afterBack] = update(afterProgressFailure, ClickedBack());
-    const [afterEdit] = update(afterBack, ClickedEditVideo({ id: "video-2" }));
-    expect(afterEdit.screen).toEqual(EditVideo({ videoId: video.id }));
+    const [afterEdit] = update(afterBack, ClickedEditAsset({ id: "video-2" }));
+    expect(afterEdit.screen).toEqual(EditAsset({ assetId: video.id }));
 
-    const [completedModel] = update(afterEdit, SucceededUpload({ video }));
+    const [completedModel] = update(afterEdit, SucceededUpload({ video: uploadedAsset }));
     expect(completedModel.isUploading).toBe(false);
-    expect(completedModel.uploadingVideoId).toEqual(Option.none());
+    expect(completedModel.uploadingAssetId).toEqual(Option.none());
+    expect(completedModel.editAsset).toEqual(Option.some(uploadedAsset));
+    expect(completedModel.assets).toEqual([uploadedAsset]);
   });
 
   test("applies delete success and failure outcomes", () => {
-    const model = { ...initialModel(), videos: [video] };
-    const [deletedModel] = update(model, SucceededDeleteVideo({ id: video.id }));
-    const [failedModel] = update(model, FailedDeleteVideo({ error: "Delete failed" }));
+    const model = { ...initialModel(), assets: [video] };
+    const [deletedModel] = update(model, SucceededDeleteAsset({ id: video.id }));
+    const [failedModel] = update(model, FailedDeleteAsset({ error: "Delete failed" }));
 
-    expect(deletedModel.videos).toEqual([]);
+    expect(deletedModel.assets).toEqual([]);
     expect(failedModel.errorMessage).toEqual(Option.some("Delete failed"));
   });
 
   test("confirms unpublish and applies its outcomes", () => {
-    const publishedVideo = { ...video, publishedAt: 1_750_000_002_000 };
+    const publishedAsset = { ...video, publishedAt: 1_750_000_002_000 };
     const model = {
       ...initialModel(),
-      screen: EditVideo({ videoId: video.id }),
-      videos: [publishedVideo],
-      editVideo: Option.some(publishedVideo),
+      screen: EditAsset({ assetId: video.id }),
+      assets: [publishedAsset],
+      editAsset: Option.some(publishedAsset),
     };
     const [pendingModel] = update(model, ClickedUnpublish({ id: video.id }));
     const [confirmedModel, commands] = update(pendingModel, ClickedConfirmPendingAction());
 
     expect(confirmedModel.isUnpublishing).toBe(true);
-    expect(commands.map((command) => command.name)).toContain("UnpublishVideo");
+    expect(commands.map((command) => command.name)).toContain("UnpublishAsset");
 
     const [unpublishedModel] = update(
       confirmedModel,
-      SucceededUnpublish({ video: { ...publishedVideo, publishedAt: null } }),
+      SucceededUnpublish({ video: { ...publishedAsset, publishedAt: null } }),
     );
     const [failedModel] = update(confirmedModel, FailedUnpublish({ error: "Unpublish failed" }));
 
     expect(unpublishedModel.isUnpublishing).toBe(false);
-    expect(unpublishedModel.editVideo).toEqual(
-      Option.some({ ...publishedVideo, publishedAt: null }),
+    expect(unpublishedModel.editAsset).toEqual(
+      Option.some({ ...publishedAsset, publishedAt: null }),
     );
     expect(failedModel.isUnpublishing).toBe(false);
     expect(failedModel.errorMessage).toEqual(Option.some("Unpublish failed"));

@@ -13,7 +13,7 @@ type Html = ReturnType<typeof html<Message>>;
 export const confirmationDialogView = (h: Html, model: Model) => {
   const isDelete =
     Option.isSome(model.pendingConfirmation) &&
-    model.pendingConfirmation.value._tag === "DeleteVideoConfirmation";
+    model.pendingConfirmation.value._tag === "DeleteAssetConfirmation";
   const title = isDelete ? "Delete video?" : "Unpublish video?";
   const description = isDelete
     ? "This permanently deletes the local video and cannot be undone."

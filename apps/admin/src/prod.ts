@@ -1,8 +1,8 @@
 import { S3Client } from "bun";
 import { readdir } from "node:fs/promises";
 import { Context, Effect, Layer, Option, Schema as S } from "effect";
-import type { Chapter, Video } from "@videoshare/shared/Video";
-import { ProdSyncError } from "@videoshare/shared/VideoErrors";
+import type { Chapter, Asset } from "@videoshare/shared/Asset";
+import { ProdSyncError } from "@videoshare/shared/AssetErrors";
 
 const wrapProdError =
   (operation: string) =>
@@ -117,9 +117,9 @@ const uploadDir = (localDir: string, keyPrefix: string) =>
     );
   }).pipe(wrapProdError("uploadDir"));
 
-const upsertVideo = (video: Video) =>
+const upsertAsset = (video: Asset) =>
   d1Query(
-    `INSERT INTO videos (id, slug, kind, title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at, updated_at)
+    `INSERT INTO assets (id, slug, kind, title, description, poster_key, media_key, duration_sec, password_hash, created_at, published_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        slug = excluded.slug,
@@ -127,7 +127,7 @@ const upsertVideo = (video: Video) =>
        title = excluded.title,
        description = excluded.description,
        poster_key = excluded.poster_key,
-       hls_key = excluded.hls_key,
+       media_key = excluded.media_key,
        duration_sec = excluded.duration_sec,
        password_hash = excluded.password_hash,
        published_at = excluded.published_at,
@@ -139,7 +139,7 @@ const upsertVideo = (video: Video) =>
       video.title,
       video.description,
       video.posterKey,
-      video.hlsKey,
+      video.mediaKey,
       video.durationSec,
       video.passwordHash,
       video.createdAt,
@@ -148,13 +148,13 @@ const upsertVideo = (video: Video) =>
     ],
   );
 
-const replaceChapters = (videoId: string, chapters: ReadonlyArray<Chapter>) =>
+const replaceChapters = (assetId: string, chapters: ReadonlyArray<Chapter>) =>
   Effect.gen(function* () {
-    yield* d1Query(`DELETE FROM chapters WHERE video_id = ?`, [videoId]);
+    yield* d1Query(`DELETE FROM chapters WHERE asset_id = ?`, [assetId]);
     for (const chapter of chapters) {
       yield* d1Query(
-        `INSERT INTO chapters (id, video_id, title, start_sec, sort_order) VALUES (?, ?, ?, ?, ?)`,
-        [chapter.id, chapter.videoId, chapter.title, chapter.startSec, chapter.sortOrder],
+        `INSERT INTO chapters (id, asset_id, title, start_sec, sort_order) VALUES (?, ?, ?, ?, ?)`,
+        [chapter.id, chapter.assetId, chapter.title, chapter.startSec, chapter.sortOrder],
       );
     }
   });
@@ -184,10 +184,10 @@ const listPrefixKeys = (prefix: string) =>
     }
   });
 
-const removeR2Prefix = (videoId: string) =>
+const removeR2Prefix = (assetId: string) =>
   Effect.gen(function* () {
     const client = r2();
-    const keys = yield* listPrefixKeys(`media/${videoId}/`);
+    const keys = yield* listPrefixKeys(`media/${assetId}/`);
     yield* Effect.forEach(
       keys,
       (key) =>
@@ -199,104 +199,104 @@ const removeR2Prefix = (videoId: string) =>
     );
   }).pipe(wrapProdError("removeMedia"));
 
-const unpublishVideo = (videoId: string) =>
-  d1Query(`UPDATE videos SET published_at = NULL WHERE id = ?`, [videoId]).pipe(
+const unpublishAsset = (assetId: string) =>
+  d1Query(`UPDATE assets SET published_at = NULL WHERE id = ?`, [assetId]).pipe(
     wrapProdError("unpublish"),
   );
 
-const deleteVideoRow = (videoId: string) =>
-  d1Query(`DELETE FROM videos WHERE id = ?`, [videoId]).pipe(wrapProdError("removeFromProd"));
+const deleteAssetRow = (assetId: string) =>
+  d1Query(`DELETE FROM assets WHERE id = ?`, [assetId]).pipe(wrapProdError("removeFromProd"));
 
 export interface ProdSyncService {
   readonly uploadMedia: (
-    videoId: string,
+    assetId: string,
     localMediaDir: string,
   ) => Effect.Effect<void, ProdSyncError>;
-  readonly mediaExists: (videoId: string) => Effect.Effect<boolean, ProdSyncError>;
+  readonly mediaExists: (assetId: string) => Effect.Effect<boolean, ProdSyncError>;
   readonly syncMetadata: (
-    video: Video,
+    video: Asset,
     chapters: ReadonlyArray<Chapter>,
   ) => Effect.Effect<void, ProdSyncError>;
   readonly pushToProd: (
-    video: Video,
+    video: Asset,
     chapters: ReadonlyArray<Chapter>,
     localMediaDir: string,
   ) => Effect.Effect<void, ProdSyncError>;
-  readonly removeMedia: (videoId: string) => Effect.Effect<void, ProdSyncError>;
-  readonly unpublish: (videoId: string) => Effect.Effect<void, ProdSyncError>;
-  readonly removeFromProd: (videoId: string) => Effect.Effect<void, ProdSyncError>;
+  readonly removeMedia: (assetId: string) => Effect.Effect<void, ProdSyncError>;
+  readonly unpublish: (assetId: string) => Effect.Effect<void, ProdSyncError>;
+  readonly removeFromProd: (assetId: string) => Effect.Effect<void, ProdSyncError>;
 }
 
 export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admin/ProdSync") {
   static readonly layer: Layer.Layer<ProdSync> = Layer.succeed(
     ProdSync,
     ProdSync.of({
-      uploadMedia: (videoId, localMediaDir) => uploadDir(localMediaDir, `media/${videoId}`),
-      mediaExists: (videoId) =>
+      uploadMedia: (assetId, localMediaDir) => uploadDir(localMediaDir, `media/${assetId}`),
+      mediaExists: (assetId) =>
         Effect.tryPromise({
-          try: () => r2().exists(`media/${videoId}/master.m3u8`),
+          try: () => r2().exists(`media/${assetId}/master.m3u8`),
           catch: (cause) => new ProdSyncError({ operation: "mediaExists", cause }),
         }).pipe(wrapProdError("mediaExists")),
       syncMetadata: (video, chapters) =>
         Effect.gen(function* () {
-          yield* upsertVideo(video);
+          yield* upsertAsset(video);
           yield* replaceChapters(video.id, chapters);
         }).pipe(wrapProdError("syncMetadata")),
       pushToProd: (video, chapters, localMediaDir) =>
         Effect.gen(function* () {
           yield* uploadDir(localMediaDir, `media/${video.id}`);
-          yield* upsertVideo(video);
+          yield* upsertAsset(video);
           yield* replaceChapters(video.id, chapters);
         }).pipe(wrapProdError("pushToProd")),
-      removeMedia: (videoId) => removeR2Prefix(videoId),
-      unpublish: (videoId) => unpublishVideo(videoId),
-      removeFromProd: (videoId) =>
+      removeMedia: (assetId) => removeR2Prefix(assetId),
+      unpublish: (assetId) => unpublishAsset(assetId),
+      removeFromProd: (assetId) =>
         Effect.gen(function* () {
-          yield* removeR2Prefix(videoId);
-          yield* deleteVideoRow(videoId);
+          yield* removeR2Prefix(assetId);
+          yield* deleteAssetRow(assetId);
         }),
     }),
   );
 }
 
-export const uploadMedia = (videoId: string, localMediaDir: string) =>
+export const uploadMedia = (assetId: string, localMediaDir: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.uploadMedia(videoId, localMediaDir);
+    return yield* sync.uploadMedia(assetId, localMediaDir);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const mediaExists = (videoId: string) =>
+export const mediaExists = (assetId: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.mediaExists(videoId);
+    return yield* sync.mediaExists(assetId);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const syncMetadata = (video: Video, chapters: ReadonlyArray<Chapter>) =>
+export const syncMetadata = (video: Asset, chapters: ReadonlyArray<Chapter>) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
     return yield* sync.syncMetadata(video, chapters);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const pushToProd = (video: Video, chapters: ReadonlyArray<Chapter>, localMediaDir: string) =>
+export const pushToProd = (video: Asset, chapters: ReadonlyArray<Chapter>, localMediaDir: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
     return yield* sync.pushToProd(video, chapters, localMediaDir);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const removeMedia = (videoId: string) =>
+export const removeMedia = (assetId: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.removeMedia(videoId);
+    return yield* sync.removeMedia(assetId);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const unpublish = (videoId: string) =>
+export const unpublish = (assetId: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.unpublish(videoId);
+    return yield* sync.unpublish(assetId);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const removeFromProd = (videoId: string) =>
+export const removeFromProd = (assetId: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.removeFromProd(videoId);
+    return yield* sync.removeFromProd(assetId);
   }).pipe(Effect.provide(ProdSync.layer));

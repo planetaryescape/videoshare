@@ -6,18 +6,18 @@ import {
   formatDuration,
   hasUnpublishedChanges,
   type Model,
-  type Video,
+  type Asset,
 } from "../model";
 import {
-  ClickedDeleteVideo,
-  ClickedEditVideo,
+  ClickedDeleteAsset,
+  ClickedEditAsset,
   type Message,
-  SubmittedCreateVideo,
+  SubmittedCreateAsset,
 } from "../message";
 
 type Html = ReturnType<typeof html<Message>>;
 
-const renderRow = (h: Html, video: Video) =>
+const renderRow = (h: Html, video: Asset) =>
   h.keyed("tr")(
     video.id,
     [h.Class("transition-colors hover:bg-gray-800/50")],
@@ -26,7 +26,7 @@ const renderRow = (h: Html, video: Video) =>
         [h.Class("px-4 py-3")],
         [
           Button.view<Message>({
-            onClick: ClickedEditVideo({ id: video.id }),
+            onClick: ClickedEditAsset({ id: video.id }),
             toView: ({ button }) =>
               h.button(
                 [
@@ -79,7 +79,7 @@ const renderRow = (h: Html, video: Video) =>
         [h.Class("px-4 py-3")],
         [
           Button.view<Message>({
-            onClick: ClickedDeleteVideo({ id: video.id }),
+            onClick: ClickedDeleteAsset({ id: video.id }),
             toView: ({ button }) =>
               h.button(
                 [
@@ -97,27 +97,27 @@ const renderRow = (h: Html, video: Video) =>
   );
 
 const renderRows = (h: Html, model: Model) => {
-  if (model.videos.length === 0) {
+  if (model.assets.length === 0) {
     return [
       h.tr(
         [],
-        [h.td([h.Colspan(6), h.Class("px-4 py-8 text-center text-gray-500")], ["No videos yet"])],
+        [h.td([h.Colspan(6), h.Class("px-4 py-8 text-center text-gray-500")], ["No assets yet"])],
       ),
     ];
   }
-  return model.videos.map((video) => renderRow(h, video));
+  return model.assets.map((video) => renderRow(h, video));
 };
 
-export const listVideosView = (h: Html, model: Model) =>
+export const listAssetsView = (h: Html, model: Model) =>
   h.div(
     [h.Class("mx-auto max-w-6xl")],
     [
       h.div(
         [h.Class("flex items-center justify-between mb-8")],
         [
-          h.h1([h.Class("text-2xl font-bold text-white")], ["Videos"]),
+          h.h1([h.Class("text-2xl font-bold text-white")], ["Assets"]),
           Button.view<Message>({
-            onClick: SubmittedCreateVideo(),
+            onClick: SubmittedCreateAsset(),
             toView: ({ button }) =>
               h.button(
                 [
@@ -126,7 +126,7 @@ export const listVideosView = (h: Html, model: Model) =>
                     "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors",
                   ),
                 ],
-                ["New Video"],
+                ["New Asset"],
               ),
           }),
         ],
@@ -150,7 +150,7 @@ export const listVideosView = (h: Html, model: Model) =>
           h.table(
             [h.Class("w-full text-left text-sm")],
             [
-              h.caption([h.Class("sr-only")], ["Videos available to edit and publish"]),
+              h.caption([h.Class("sr-only")], ["Assets available to edit and publish"]),
               h.thead(
                 [],
                 [

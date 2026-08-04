@@ -13,10 +13,10 @@ import {
   VideoSampleSink,
 } from "mediabunny";
 import type { ConversionAudioOptions, VideoSample } from "mediabunny";
-import type { Kind } from "@videoshare/shared/Video";
+import type { Kind } from "@videoshare/shared/Asset";
 import {
   InvalidConversionError,
-  NoVideoTrackError,
+  NoAssetTrackError,
   PosterDecodeError,
   TranscodeError,
 } from "../errors/TranscodeErrors.ts";
@@ -80,11 +80,11 @@ const toBmpBytes = (sample: VideoSample): Effect.Effect<Uint8Array, PosterDecode
   });
 
 const writePoster = (
-  videoId: string,
+  assetId: string,
   file: File,
 ): Effect.Effect<
   void,
-  NoVideoTrackError | PosterDecodeError | TranscodeError | StorageError,
+  NoAssetTrackError | PosterDecodeError | TranscodeError | StorageError,
   Storage
 > =>
   Effect.gen(function* () {
@@ -96,30 +96,30 @@ const writePoster = (
     const work = Effect.gen(function* () {
       const videoTrack = yield* Effect.tryPromise({
         try: () => input.getPrimaryVideoTrack(),
-        catch: (cause) => new TranscodeError({ videoId, operation: "getPrimaryVideoTrack", cause }),
+        catch: (cause) => new TranscodeError({ assetId, operation: "getPrimaryVideoTrack", cause }),
       });
       if (!videoTrack) {
-        return yield* new NoVideoTrackError({ filename: file.name });
+        return yield* new NoAssetTrackError({ filename: file.name });
       }
 
       const sink = new VideoSampleSink(videoTrack);
       const start = yield* Effect.tryPromise({
         try: () => videoTrack.getFirstTimestamp(),
-        catch: (cause) => new TranscodeError({ videoId, operation: "getFirstTimestamp", cause }),
+        catch: (cause) => new TranscodeError({ assetId, operation: "getFirstTimestamp", cause }),
       });
       const duration = yield* Effect.tryPromise({
         try: () => videoTrack.computeDuration(),
-        catch: (cause) => new TranscodeError({ videoId, operation: "computeDuration", cause }),
+        catch: (cause) => new TranscodeError({ assetId, operation: "computeDuration", cause }),
       });
       const preferred = duration > start ? Math.min(start + 1, duration) : start;
       const fetched =
         (yield* Effect.tryPromise({
           try: () => sink.getSample(preferred),
-          catch: (cause) => new TranscodeError({ videoId, operation: "getSample", cause }),
+          catch: (cause) => new TranscodeError({ assetId, operation: "getSample", cause }),
         })) ??
         (yield* Effect.tryPromise({
           try: () => sink.getSample(start),
-          catch: (cause) => new TranscodeError({ videoId, operation: "getSample", cause }),
+          catch: (cause) => new TranscodeError({ assetId, operation: "getSample", cause }),
         }));
       if (!fetched) {
         return yield* new PosterDecodeError({
@@ -137,7 +137,7 @@ const writePoster = (
             roundDimensionsTo: 2,
             alpha: "discard",
           }),
-        catch: (cause) => new TranscodeError({ videoId, operation: "transformFrame", cause }),
+        catch: (cause) => new TranscodeError({ assetId, operation: "transformFrame", cause }),
       });
       frame = transformed;
       const currentFrame: Awaited<ReturnType<VideoSample["transform"]>> = frame;
@@ -145,9 +145,9 @@ const writePoster = (
       const bmp = yield* toBmpBytes(currentFrame);
       const jpeg = yield* Effect.tryPromise({
         try: () => new Bun.Image(bmp).jpeg({ quality: 85, progressive: true }).bytes(),
-        catch: (cause) => new TranscodeError({ videoId, operation: "encodeJpeg", cause }),
+        catch: (cause) => new TranscodeError({ assetId, operation: "encodeJpeg", cause }),
       });
-      yield* storage.writeFile(`${videoId}/poster.jpg`, jpeg);
+      yield* storage.writeFile(`${assetId}/poster.jpg`, jpeg);
     });
 
     return yield* work.pipe(
@@ -162,7 +162,7 @@ const writePoster = (
   });
 
 const writePosterImage = (
-  videoId: string,
+  assetId: string,
   file: File,
 ): Effect.Effect<void, PosterDecodeError | StorageError, Storage> =>
   Effect.gen(function* () {
@@ -175,7 +175,7 @@ const writePosterImage = (
           .bytes(),
       catch: (cause) => new PosterDecodeError({ filename: file.name, cause }),
     });
-    yield* storage.writeFile(`${videoId}/poster.jpg`, jpeg);
+    yield* storage.writeFile(`${assetId}/poster.jpg`, jpeg);
   });
 
 export interface TranscodeResult {
@@ -185,15 +185,15 @@ export interface TranscodeResult {
 
 export interface TranscoderService {
   readonly transcode: (
-    videoId: string,
+    assetId: string,
     file: File,
   ) => Effect.Effect<
     TranscodeResult,
-    NoVideoTrackError | PosterDecodeError | TranscodeError | InvalidConversionError | StorageError,
+    NoAssetTrackError | PosterDecodeError | TranscodeError | InvalidConversionError | StorageError,
     Storage
   >;
   readonly writePoster: (
-    videoId: string,
+    assetId: string,
     file: File,
   ) => Effect.Effect<void, PosterDecodeError | StorageError, Storage>;
 }
@@ -209,11 +209,11 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
       const publishContext = yield* Effect.context<ProgressBus>();
 
       const transcode = (
-        videoId: string,
+        assetId: string,
         file: File,
       ): Effect.Effect<
         TranscodeResult,
-        | NoVideoTrackError
+        | NoAssetTrackError
         | PosterDecodeError
         | TranscodeError
         | InvalidConversionError
@@ -221,7 +221,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
         Storage
       > =>
         Effect.gen(function* () {
-          yield* storage.resetVideoDir(videoId);
+          yield* storage.resetAssetDir(assetId);
 
           const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) });
           let conversion: Conversion | null = null;
@@ -230,13 +230,13 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
             const duration = yield* Effect.tryPromise({
               try: () => input.computeDuration(),
               catch: (cause) =>
-                new TranscodeError({ videoId, operation: "computeDuration", cause }),
+                new TranscodeError({ assetId, operation: "computeDuration", cause }),
             });
 
             const videoTrack = yield* Effect.tryPromise({
               try: () => input.getPrimaryVideoTrack(),
               catch: (cause) =>
-                new TranscodeError({ videoId, operation: "getPrimaryVideoTrack", cause }),
+                new TranscodeError({ assetId, operation: "getPrimaryVideoTrack", cause }),
             });
             const kind: Kind = videoTrack ? "video" : "audio";
 
@@ -247,7 +247,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
               }),
               target: new PathedTarget(
                 "master.m3u8",
-                ({ path }) => new FilePathTarget(`${storage.videoDir(videoId)}/${path}`),
+                ({ path }) => new FilePathTarget(`${storage.videoDir(assetId)}/${path}`),
               ),
             });
 
@@ -291,7 +291,7 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
                       audio: audioConfig,
                     }),
               catch: (cause) =>
-                new TranscodeError({ videoId, operation: "Conversion.init", cause }),
+                new TranscodeError({ assetId, operation: "Conversion.init", cause }),
             });
             conversion = built;
 
@@ -300,16 +300,16 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
                 .map((discarded) => `${discarded.track.type}:${discarded.reason}`)
                 .join(", ");
               return yield* new InvalidConversionError({
-                videoId,
+                assetId,
                 reason: reasons.length > 0 ? reasons : "unknown",
               });
             }
 
-            yield* progress.publish({ videoId, stage: "transcoding", pct: 0 });
+            yield* progress.publish({ assetId, stage: "transcoding", pct: 0 });
             conversion.onProgress = (p) => {
               Effect.runForkWith(publishContext)(
                 progress.publish({
-                  videoId,
+                  assetId,
                   stage: "transcoding",
                   pct: Math.min(98, Math.round(p * 98)),
                 }),
@@ -318,15 +318,15 @@ export class Transcoder extends Context.Service<Transcoder, TranscoderService>()
             const currentConversion: Conversion = conversion;
             yield* Effect.tryPromise({
               try: () => currentConversion.execute(),
-              catch: (cause) => new TranscodeError({ videoId, operation: "execute", cause }),
+              catch: (cause) => new TranscodeError({ assetId, operation: "execute", cause }),
             });
 
             if (kind === "video") {
-              yield* progress.publish({ videoId, stage: "poster", pct: 99 });
-              yield* writePoster(videoId, file);
+              yield* progress.publish({ assetId, stage: "poster", pct: 99 });
+              yield* writePoster(assetId, file);
             }
 
-            yield* progress.publish({ videoId, stage: "done", pct: 100 });
+            yield* progress.publish({ assetId, stage: "done", pct: 100 });
             return { durationSec: Number.isFinite(duration) ? duration : 0, kind };
           });
 

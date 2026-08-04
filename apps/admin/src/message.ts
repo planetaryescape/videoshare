@@ -1,21 +1,21 @@
 import { Schema as S } from "effect";
 import { Dialog, FileDrop } from "@foldkit/ui";
 import { m } from "foldkit/message";
-import { ChapterSchema, VideoSchema } from "./model";
+import { ChapterSchema, AssetSchema } from "./model";
 
-export const ClickedEditVideo = m("ClickedEditVideo", { id: S.String });
+export const ClickedEditAsset = m("ClickedEditAsset", { id: S.String });
 export const ClickedBack = m("ClickedBack");
 export const UpdatedTitle = m("UpdatedTitle", { title: S.String });
 export const UpdatedDescription = m("UpdatedDescription", { description: S.String });
 export const BlurredEditField = m("BlurredEditField");
-export const SucceededSaveVideo = m("SucceededSaveVideo", { video: VideoSchema });
-export const FailedSaveVideo = m("FailedSaveVideo", { error: S.String });
-export const SubmittedCreateVideo = m("SubmittedCreateVideo");
-export const SucceededCreateVideo = m("SucceededCreateVideo", { video: VideoSchema });
-export const FailedCreateVideo = m("FailedCreateVideo", { error: S.String });
-export const SucceededLoadVideos = m("SucceededLoadVideos", { videos: S.Array(VideoSchema) });
-export const FailedLoadVideos = m("FailedLoadVideos", { error: S.String });
-export const GotVideoFileDropMessage = m("GotVideoFileDropMessage", {
+export const SucceededSaveAsset = m("SucceededSaveAsset", { video: AssetSchema });
+export const FailedSaveAsset = m("FailedSaveAsset", { error: S.String });
+export const SubmittedCreateAsset = m("SubmittedCreateAsset");
+export const SucceededCreateAsset = m("SucceededCreateAsset", { video: AssetSchema });
+export const FailedCreateAsset = m("FailedCreateAsset", { error: S.String });
+export const SucceededLoadAssets = m("SucceededLoadAssets", { assets: S.Array(AssetSchema) });
+export const FailedLoadAssets = m("FailedLoadAssets", { error: S.String });
+export const GotAssetFileDropMessage = m("GotAssetFileDropMessage", {
   message: FileDrop.Message,
 });
 export const GotPosterFileDropMessage = m("GotPosterFileDropMessage", {
@@ -23,7 +23,7 @@ export const GotPosterFileDropMessage = m("GotPosterFileDropMessage", {
 });
 export const ClearedPoster = m("ClearedPoster");
 export const SubmittedUpload = m("SubmittedUpload");
-export const SucceededUpload = m("SucceededUpload", { video: VideoSchema });
+export const SucceededUpload = m("SucceededUpload", { video: AssetSchema });
 export const FailedUpload = m("FailedUpload", { error: S.String });
 export const FailedUploadProgress = m("FailedUploadProgress", { error: S.String });
 export const ReceivedUploadProgress = m("ReceivedUploadProgress", {
@@ -31,27 +31,27 @@ export const ReceivedUploadProgress = m("ReceivedUploadProgress", {
   pct: S.Finite.check(S.isBetween({ minimum: 0, maximum: 100 })),
 });
 export const ClickedPublish = m("ClickedPublish", { id: S.String });
-export const SucceededPublish = m("SucceededPublish", { video: VideoSchema });
+export const SucceededPublish = m("SucceededPublish", { video: AssetSchema });
 export const FailedPublish = m("FailedPublish", { error: S.String });
 export const ClickedUnpublish = m("ClickedUnpublish", { id: S.String });
 export const GotConfirmationDialogMessage = m("GotConfirmationDialogMessage", {
   message: Dialog.Message,
 });
 export const ClickedConfirmPendingAction = m("ClickedConfirmPendingAction");
-export const SucceededUnpublish = m("SucceededUnpublish", { video: VideoSchema });
+export const SucceededUnpublish = m("SucceededUnpublish", { video: AssetSchema });
 export const FailedUnpublish = m("FailedUnpublish", { error: S.String });
-export const ClickedDeleteVideo = m("ClickedDeleteVideo", { id: S.String });
-export const SucceededDeleteVideo = m("SucceededDeleteVideo", { id: S.String });
-export const FailedDeleteVideo = m("FailedDeleteVideo", { error: S.String });
-export const SucceededLoadVideoDetail = m("SucceededLoadVideoDetail", {
-  video: VideoSchema,
+export const ClickedDeleteAsset = m("ClickedDeleteAsset", { id: S.String });
+export const SucceededDeleteAsset = m("SucceededDeleteAsset", { id: S.String });
+export const FailedDeleteAsset = m("FailedDeleteAsset", { error: S.String });
+export const SucceededLoadAssetDetail = m("SucceededLoadAssetDetail", {
+  video: AssetSchema,
   chapters: S.Array(ChapterSchema),
 });
-export const FailedLoadVideoDetail = m("FailedLoadVideoDetail", { error: S.String });
+export const FailedLoadAssetDetail = m("FailedLoadAssetDetail", { error: S.String });
 export const ClickedAddChapter = m("ClickedAddChapter");
 export const GeneratedChapterId = m("GeneratedChapterId", {
   chapterId: S.String,
-  videoId: S.String,
+  assetId: S.String,
   startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
 });
 export const FocusedChapterTitle = m("FocusedChapterTitle", { chapterId: S.String });
@@ -70,19 +70,19 @@ export const CopiedLink = m("CopiedLink");
 export const FailedCopyLink = m("FailedCopyLink", { error: S.String });
 
 export const Message = S.Union([
-  ClickedEditVideo,
+  ClickedEditAsset,
   ClickedBack,
   UpdatedTitle,
   UpdatedDescription,
   BlurredEditField,
-  SucceededSaveVideo,
-  FailedSaveVideo,
-  SubmittedCreateVideo,
-  SucceededCreateVideo,
-  FailedCreateVideo,
-  SucceededLoadVideos,
-  FailedLoadVideos,
-  GotVideoFileDropMessage,
+  SucceededSaveAsset,
+  FailedSaveAsset,
+  SubmittedCreateAsset,
+  SucceededCreateAsset,
+  FailedCreateAsset,
+  SucceededLoadAssets,
+  FailedLoadAssets,
+  GotAssetFileDropMessage,
   GotPosterFileDropMessage,
   ClearedPoster,
   SubmittedUpload,
@@ -98,11 +98,11 @@ export const Message = S.Union([
   ClickedConfirmPendingAction,
   SucceededUnpublish,
   FailedUnpublish,
-  ClickedDeleteVideo,
-  SucceededDeleteVideo,
-  FailedDeleteVideo,
-  SucceededLoadVideoDetail,
-  FailedLoadVideoDetail,
+  ClickedDeleteAsset,
+  SucceededDeleteAsset,
+  FailedDeleteAsset,
+  SucceededLoadAssetDetail,
+  FailedLoadAssetDetail,
   ClickedAddChapter,
   GeneratedChapterId,
   FocusedChapterTitle,

@@ -1,10 +1,10 @@
-INSERT OR IGNORE INTO videos (
+INSERT OR IGNORE INTO assets (
   id,
   slug,
   title,
   description,
   poster_key,
-  hls_key,
+  media_key,
   duration_sec,
   password_hash,
   created_at,
@@ -24,7 +24,7 @@ INSERT OR IGNORE INTO videos (
 
 INSERT OR IGNORE INTO chapters (
   id,
-  video_id,
+  asset_id,
   title,
   start_sec,
   sort_order

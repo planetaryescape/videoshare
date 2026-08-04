@@ -3,23 +3,23 @@ import { Dialog } from "@foldkit/ui";
 import { Scene } from "foldkit";
 import { describe, test } from "vitest";
 import {
-  DeleteVideoConfirmation,
-  EditVideo,
+  DeleteAssetConfirmation,
+  EditAsset,
   initialModel,
   type Chapter,
-  type Video,
+  type Asset,
 } from "./model";
 import { update } from "./update";
 import { view } from "./view";
 
-const video: Video = {
+const video: Asset = {
   id: "video-1",
   slug: "fixture-video",
   kind: "video",
-  title: "Fixture Video",
+  title: "Fixture Asset",
   description: "Fixture description",
   posterKey: null,
-  hlsKey: "videos/video-1/master.m3u8",
+  mediaKey: "assets/video-1/master.m3u8",
   durationSec: 125,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
@@ -28,7 +28,7 @@ const video: Video = {
 
 const chapter: Chapter = {
   id: "chapter-1",
-  videoId: video.id,
+  assetId: video.id,
   title: "Introduction",
   startSec: 0,
   sortOrder: 0,
@@ -39,9 +39,9 @@ describe("admin scenes", () => {
     Scene.scene(
       { update, view },
       Scene.with(initialModel()),
-      Scene.expect(Scene.role("heading", { name: "Videos", level: 1 })).toExist(),
-      Scene.expect(Scene.text("No videos yet")).toExist(),
-      Scene.expect(Scene.role("button", { name: "New Video" })).toExist(),
+      Scene.expect(Scene.role("heading", { name: "Assets", level: 1 })).toExist(),
+      Scene.expect(Scene.text("No assets yet")).toExist(),
+      Scene.expect(Scene.role("button", { name: "New Asset" })).toExist(),
     );
   });
 
@@ -50,9 +50,9 @@ describe("admin scenes", () => {
       { update, view },
       Scene.with({
         ...initialModel(),
-        screen: { _tag: "EditVideo", videoId: video.id },
-        videos: [video],
-        editVideo: Option.some(video),
+        screen: { _tag: "EditAsset", assetId: video.id },
+        assets: [video],
+        editAsset: Option.some(video),
         editTitle: video.title,
         editDescription: video.description ?? "",
       }),
@@ -69,8 +69,8 @@ describe("admin scenes", () => {
       { update, view },
       Scene.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some({ ...video, hlsKey: "" }),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some({ ...video, mediaKey: "" }),
         editTitle: video.title,
         editDescription: video.description ?? "",
       }),
@@ -83,12 +83,12 @@ describe("admin scenes", () => {
       { update, view },
       Scene.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some({ ...video, hlsKey: "" }),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some({ ...video, mediaKey: "" }),
         editTitle: video.title,
         editDescription: video.description ?? "",
         isUploading: true,
-        uploadingVideoId: Option.some(video.id),
+        uploadingAssetId: Option.some(video.id),
         uploadStage: "transcoding",
         uploadPct: 42,
       }),
@@ -99,7 +99,7 @@ describe("admin scenes", () => {
   });
 
   test("renders published video controls and pending changes", () => {
-    const publishedVideo = {
+    const publishedAsset = {
       ...video,
       publishedAt: 1_750_000_002_000,
       updatedAt: 1_750_000_003_000,
@@ -109,10 +109,10 @@ describe("admin scenes", () => {
       { update, view },
       Scene.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(publishedVideo),
-        editTitle: publishedVideo.title,
-        editDescription: publishedVideo.description ?? "",
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some(publishedAsset),
+        editTitle: publishedAsset.title,
+        editDescription: publishedAsset.description ?? "",
       }),
       Scene.expect(Scene.role("button", { name: "Republish" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Unpublish" })).toExist(),
@@ -125,8 +125,8 @@ describe("admin scenes", () => {
       { update, view },
       Scene.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(video),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some(video),
         editTitle: video.title,
         editDescription: video.description ?? "",
         editChapters: [{ ...chapter, title: "" }],
@@ -143,8 +143,8 @@ describe("admin scenes", () => {
       { update, view },
       Scene.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(video),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some(video),
         editTitle: video.title,
         editDescription: video.description ?? "",
         editChapters: [
@@ -165,8 +165,8 @@ describe("admin scenes", () => {
       { update, view },
       Scene.with({
         ...initialModel(),
-        screen: EditVideo({ videoId: video.id }),
-        editVideo: Option.some(video),
+        screen: EditAsset({ assetId: video.id }),
+        editAsset: Option.some(video),
         editTitle: video.title,
         editDescription: video.description ?? "",
         editChapters: [
@@ -187,7 +187,7 @@ describe("admin scenes", () => {
       Scene.with({
         ...initialModel(),
         confirmationDialog: Dialog.init({ id: "video-action-confirmation", isOpen: true }),
-        pendingConfirmation: Option.some(DeleteVideoConfirmation({ videoId: video.id })),
+        pendingConfirmation: Option.some(DeleteAssetConfirmation({ assetId: video.id })),
       }),
       Scene.expect(Scene.role("dialog")).toExist(),
       Scene.expect(Scene.role("heading", { name: "Delete video?" })).toExist(),

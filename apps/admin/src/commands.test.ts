@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { expect, test } from "vitest";
 import { CHAPTER_PLAYER_ID, currentChapterStartSec } from "./chapterPlayback";
-import { GenerateChapterId, LoadVideos } from "./commands";
+import { GenerateChapterId, LoadAssets } from "./commands";
 
 test("reads the current review playback second", () => {
   const player = document.createElement("video");
@@ -18,41 +18,41 @@ test("reads the current review playback second", () => {
 
 test("retains the chapter timestamp captured at click time", async () => {
   const result = await Effect.runPromise(
-    GenerateChapterId({ videoId: "video-1", startSec: 42 }).effect,
+    GenerateChapterId({ assetId: "video-1", startSec: 42 }).effect,
   );
 
   expect(result).toMatchObject({
     _tag: "GeneratedChapterId",
-    videoId: "video-1",
+    assetId: "video-1",
     startSec: 42,
   });
 });
 
-test("maps network rejection to FailedLoadVideos", async () => {
+test("maps network rejection to FailedLoadAssets", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(() => Promise.reject(new Error("Network unavailable")), {
     preconnect: originalFetch.preconnect,
   });
 
   try {
-    const result = await Effect.runPromise(LoadVideos().effect);
+    const result = await Effect.runPromise(LoadAssets().effect);
 
-    expect(result).toEqual({ _tag: "FailedLoadVideos", error: "Network unavailable" });
+    expect(result).toEqual({ _tag: "FailedLoadAssets", error: "Network unavailable" });
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("maps invalid JSON to FailedLoadVideos", async () => {
+test("maps invalid JSON to FailedLoadAssets", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(() => Promise.resolve(new Response("not json")), {
     preconnect: originalFetch.preconnect,
   });
 
   try {
-    const result = await Effect.runPromise(LoadVideos().effect);
+    const result = await Effect.runPromise(LoadAssets().effect);
 
-    expect(result._tag).toBe("FailedLoadVideos");
+    expect(result._tag).toBe("FailedLoadAssets");
   } finally {
     globalThis.fetch = originalFetch;
   }

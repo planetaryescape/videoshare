@@ -9,7 +9,7 @@ import { ProgressBus } from "./src/services/ProgressBus.ts";
 import { Transcoder } from "./src/services/Transcoder.ts";
 import { Storage } from "./src/services/Storage.ts";
 import { ProdSync } from "./src/prod.ts";
-import { VideoRepository } from "@videoshare/shared/VideoRepository";
+import { AssetRepository } from "@videoshare/shared/AssetRepository";
 import { makeProgressHandler, type ProgressSocketData } from "./src/ws/progress.ts";
 import { corsMiddleware, mediaRouter } from "./src/routes/media.ts";
 
@@ -34,7 +34,7 @@ const appLayer = Layer.mergeAll(
   ProgressBus.layer,
   providedStorage,
   ProdSync.layer,
-  VideoRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
+  AssetRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
   Transcoder.layer.pipe(Layer.provide(ProgressBus.layer), Layer.provide(providedStorage)),
 );
 
@@ -64,9 +64,9 @@ Bun.serve<ProgressSocketData>({
   maxRequestBodySize: 1024 * 1024 * 1024 * 5,
   fetch(req, server) {
     if (new URL(req.url).pathname === "/ws") {
-      const videoId = new URL(req.url).searchParams.get("videoId");
-      if (!videoId) return new Response("videoId required", { status: 400 });
-      if (server.upgrade(req, { data: { videoId, fiber: null } })) return undefined;
+      const assetId = new URL(req.url).searchParams.get("assetId");
+      if (!assetId) return new Response("assetId required", { status: 400 });
+      if (server.upgrade(req, { data: { assetId, fiber: null } })) return undefined;
       return new Response("Upgrade failed", { status: 400 });
     }
     return handler(req, appContext);

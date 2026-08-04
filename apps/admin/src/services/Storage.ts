@@ -11,11 +11,11 @@ const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export interface StorageService {
   readonly rootDir: string;
-  readonly videoDir: (videoId: string) => string;
+  readonly videoDir: (assetId: string) => string;
   readonly mediaPath: (relative: string) => string;
-  readonly ensureVideoDir: (videoId: string) => Effect.Effect<void, StorageError, never>;
-  readonly resetVideoDir: (videoId: string) => Effect.Effect<void, StorageError, never>;
-  readonly removeVideoDir: (videoId: string) => Effect.Effect<void, StorageError, never>;
+  readonly ensureAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
+  readonly resetAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
+  readonly removeAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
   readonly exists: (relative: string) => Effect.Effect<boolean, StorageError, never>;
   readonly readFile: (relative: string) => Effect.Effect<Uint8Array, StorageError, never>;
   readonly writeFile: (
@@ -55,9 +55,9 @@ const resolveSafe = (path: Path.Path, root: string, relative: string): string =>
   return resolved;
 };
 
-const validateVideoId = (videoId: string): void => {
-  if (!VIDEO_ID_PATTERN.test(videoId)) {
-    throw new PathTraversalError(`Invalid videoId: ${videoId}`);
+const validateAssetId = (assetId: string): void => {
+  if (!VIDEO_ID_PATTERN.test(assetId)) {
+    throw new PathTraversalError(`Invalid assetId: ${assetId}`);
   }
 };
 
@@ -91,45 +91,45 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
 
         return Storage.of({
           rootDir: root,
-          videoDir: (videoId) => {
-            validateVideoId(videoId);
-            return path.join(root, videoId);
+          videoDir: (assetId) => {
+            validateAssetId(assetId);
+            return path.join(root, assetId);
           },
           mediaPath: (relative) => resolveSafe(path, root, relative),
-          ensureVideoDir: (videoId) =>
+          ensureAssetDir: (assetId) =>
             Effect.try({
-              try: () => validateVideoId(videoId),
-              catch: toStorageError("ensureVideoDir"),
+              try: () => validateAssetId(assetId),
+              catch: toStorageError("ensureAssetDir"),
             }).pipe(
               Effect.flatMap(() =>
                 fs
-                  .makeDirectory(path.join(root, videoId), { recursive: true })
-                  .pipe(Effect.asVoid, liftPlatformError("ensureVideoDir")),
+                  .makeDirectory(path.join(root, assetId), { recursive: true })
+                  .pipe(Effect.asVoid, liftPlatformError("ensureAssetDir")),
               ),
             ),
-          resetVideoDir: (videoId) =>
+          resetAssetDir: (assetId) =>
             Effect.gen(function* () {
               yield* Effect.try({
-                try: () => validateVideoId(videoId),
-                catch: toStorageError("resetVideoDir"),
+                try: () => validateAssetId(assetId),
+                catch: toStorageError("resetAssetDir"),
               });
-              const dir = path.join(root, videoId);
+              const dir = path.join(root, assetId);
               yield* fs
                 .remove(dir, { recursive: true, force: true })
-                .pipe(liftPlatformError("removeVideoDir"));
+                .pipe(liftPlatformError("removeAssetDir"));
               yield* fs
                 .makeDirectory(dir, { recursive: true })
-                .pipe(Effect.asVoid, liftPlatformError("ensureVideoDir"));
+                .pipe(Effect.asVoid, liftPlatformError("ensureAssetDir"));
             }),
-          removeVideoDir: (videoId) =>
+          removeAssetDir: (assetId) =>
             Effect.gen(function* () {
               yield* Effect.try({
-                try: () => validateVideoId(videoId),
-                catch: toStorageError("removeVideoDir"),
+                try: () => validateAssetId(assetId),
+                catch: toStorageError("removeAssetDir"),
               });
               yield* fs
-                .remove(path.join(root, videoId), { recursive: true, force: true })
-                .pipe(Effect.asVoid, liftPlatformError("removeVideoDir"));
+                .remove(path.join(root, assetId), { recursive: true, force: true })
+                .pipe(Effect.asVoid, liftPlatformError("removeAssetDir"));
             }),
           exists: (relative) =>
             Effect.try({

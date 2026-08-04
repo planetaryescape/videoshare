@@ -1,12 +1,12 @@
 import { Schema } from "effect";
 
-export class VideoNotFoundError extends Schema.TaggedErrorClass<VideoNotFoundError>()(
-  "VideoNotFoundError",
+export class AssetNotFoundError extends Schema.TaggedErrorClass<AssetNotFoundError>()(
+  "AssetNotFoundError",
   { id: Schema.String },
   { httpApiStatus: 404 },
 ) {
   override get message(): string {
-    return `Video not found: ${this.id}`;
+    return `Asset not found: ${this.id}`;
   }
 }
 
@@ -16,7 +16,7 @@ export class PasswordRequiredError extends Schema.TaggedErrorClass<PasswordRequi
   { httpApiStatus: 401 },
 ) {
   override get message(): string {
-    return `Password required for video: ${this.slug}`;
+    return `Password required for asset: ${this.slug}`;
   }
 }
 
@@ -26,7 +26,7 @@ export class IncorrectPasswordError extends Schema.TaggedErrorClass<IncorrectPas
   { httpApiStatus: 403 },
 ) {
   override get message(): string {
-    return `Incorrect password for video: ${this.slug}`;
+    return `Incorrect password for asset: ${this.slug}`;
   }
 }
 
@@ -61,7 +61,7 @@ export class ProdSyncError extends Schema.TaggedErrorClass<ProdSyncError>()(
 }
 
 export const errorStatus: Record<string, number> = {
-  VideoNotFoundError: 404,
+  AssetNotFoundError: 404,
   PasswordRequiredError: 401,
   IncorrectPasswordError: 403,
   SlugAlreadyExistsError: 409,

@@ -11,7 +11,7 @@ import {
   isPublished,
   shareUrl,
   type Model,
-  type Video,
+  type Asset,
 } from "../model";
 import {
   BlurredEditField,
@@ -22,7 +22,7 @@ import {
   ClickedPublish,
   ClickedUnpublish,
   GotPosterFileDropMessage,
-  GotVideoFileDropMessage,
+  GotAssetFileDropMessage,
   type Message,
   SubmittedUpload,
   UpdatedDescription,
@@ -86,7 +86,7 @@ const uploadProgress = (h: Html, model: Model) => {
   );
 };
 
-const reviewPlayer = (h: Html, video: Video) =>
+const reviewPlayer = (h: Html, video: Asset) =>
   h.section(
     [h.Class("overflow-hidden rounded-xl border border-gray-800 bg-gray-900/50")],
     [
@@ -107,8 +107,8 @@ const reviewPlayer = (h: Html, video: Video) =>
             [
               h.Id(CHAPTER_PLAYER_ID),
               h.Title(video.title),
-              h.Src(localMediaUrl(video.hlsKey)),
-              h.DataAttribute("hls-source", localMediaUrl(video.hlsKey)),
+              h.Src(localMediaUrl(video.mediaKey)),
+              h.DataAttribute("hls-source", localMediaUrl(video.mediaKey)),
               h.Controls(true),
               h.Preload("metadata"),
               h.Playsinline(true),
@@ -138,7 +138,7 @@ const reviewPlayer = (h: Html, video: Video) =>
 const chaptersSection = (h: Html, model: Model) => {
   const duplicates = duplicateStartSecs(model.editChapters);
   const count = model.editChapters.length;
-  const canAddChapters = Option.isSome(model.editVideo) && model.editVideo.value.hlsKey !== "";
+  const canAddChapters = Option.isSome(model.editAsset) && model.editAsset.value.mediaKey !== "";
 
   return h.section(
     [h.Class("rounded-xl border border-gray-800 bg-gray-900/50")],
@@ -231,8 +231,8 @@ const chaptersSection = (h: Html, model: Model) => {
   );
 };
 
-export const editVideoView = (h: Html, model: Model) => {
-  const video = Option.isSome(model.editVideo) ? model.editVideo.value : null;
+export const editAssetView = (h: Html, model: Model) => {
+  const video = Option.isSome(model.editAsset) ? model.editAsset.value : null;
 
   return h.div(
     [h.Class("mx-auto max-w-4xl")],
@@ -259,11 +259,11 @@ export const editVideoView = (h: Html, model: Model) => {
                 ],
                 [h.path([h.D("M15 19l-7-7 7-7")], [])],
               ),
-              " Back to videos",
+              " Back to assets",
             ],
           ),
       }),
-      h.h1([h.Class("mb-8 text-2xl font-bold text-white")], [video ? video.title : "New Video"]),
+      h.h1([h.Class("mb-8 text-2xl font-bold text-white")], [video ? video.title : "New Asset"]),
       ...(Option.isSome(model.errorMessage)
         ? [
             h.div(
@@ -286,7 +286,7 @@ export const editVideoView = (h: Html, model: Model) => {
               Input.view<Message>({
                 id: "video-title",
                 value: model.editTitle,
-                placeholder: "Video title",
+                placeholder: "Asset title",
                 onInput: (value) => UpdatedTitle({ title: value }),
                 toView: ({ input, label, description }) =>
                   h.div(
@@ -303,7 +303,7 @@ export const editVideoView = (h: Html, model: Model) => {
                           "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500",
                         ),
                       ]),
-                      h.span([...description, h.Class("sr-only")], ["Video title"]),
+                      h.span([...description, h.Class("sr-only")], ["Asset title"]),
                     ],
                   ),
               }),
@@ -316,7 +316,7 @@ export const editVideoView = (h: Html, model: Model) => {
                 id: "video-description",
                 value: model.editDescription,
                 rows: 3,
-                placeholder: "Video description",
+                placeholder: "Asset description",
                 onInput: (value) => UpdatedDescription({ description: value }),
                 toView: ({ textarea, label, description }) =>
                   h.div(
@@ -357,7 +357,7 @@ export const editVideoView = (h: Html, model: Model) => {
                 ),
               ]
             : []),
-          ...(!video || !video.hlsKey
+          ...(!video || !video.mediaKey
             ? [
                 h.div(
                   [h.Class("rounded-lg border border-dashed border-gray-600 bg-gray-900/50 p-6")],
@@ -384,7 +384,7 @@ export const editVideoView = (h: Html, model: Model) => {
                             ["Drop a file here or click to browse", h.input(input)],
                           ),
                       },
-                      toParentMessage: (message) => GotVideoFileDropMessage({ message }),
+                      toParentMessage: (message) => GotAssetFileDropMessage({ message }),
                     }),
                     ...(Option.isSome(model.selectedFile)
                       ? [
@@ -470,8 +470,8 @@ export const editVideoView = (h: Html, model: Model) => {
                 ),
               ]
             : []),
-          ...(video?.hlsKey ? [reviewPlayer(h, video)] : []),
-          ...(video?.hlsKey
+          ...(video?.mediaKey ? [reviewPlayer(h, video)] : []),
+          ...(video?.mediaKey
             ? [
                 h.div(
                   [h.Class("space-y-3")],

@@ -1,6 +1,6 @@
 import { D1Client } from "@effect/sql-d1";
-import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import type { Chapter, Video } from "@videoshare/shared/Video";
+import { ViewerCatalog } from "@videoshare/shared/ViewerCatalog";
+import type { Chapter, Asset } from "@videoshare/shared/Asset";
 import { Effect, Layer, Option } from "effect";
 import playerCss from "../generated/player.css?raw";
 import playerScript from "../generated/player.js?raw";
@@ -41,27 +41,27 @@ const faviconLinks = `<link rel="icon" type="image/png" sizes="32x32" href="/_as
     <link rel="icon" type="image/png" sizes="16x16" href="/_assets/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/_assets/apple-touch-icon.png">`;
 
-const repositoryLayer = (env: ViewerEnv) =>
-  VideoRepository.layerNoDeps.pipe(Layer.provide(D1Client.layer({ db: env.DB })));
+const catalogLayer = (env: ViewerEnv) =>
+  ViewerCatalog.layerNoDeps.pipe(Layer.provide(D1Client.layer({ db: env.DB })));
 
-const runRepository = <A>(env: ViewerEnv, effect: Effect.Effect<A, unknown, VideoRepository>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(repositoryLayer(env))));
+const runCatalog = <A>(env: ViewerEnv, effect: Effect.Effect<A, unknown, ViewerCatalog>) =>
+  Effect.runPromise(effect.pipe(Effect.provide(catalogLayer(env))));
 
-const loadVideo = (env: ViewerEnv, slug: string) =>
-  runRepository(
+const loadAssetPage = (env: ViewerEnv, slug: string) =>
+  runCatalog(
     env,
     Effect.gen(function* () {
-      const repository = yield* VideoRepository;
-      const videoOption = yield* repository.findBySlug(slug);
-      if (Option.isNone(videoOption)) {
-        return Option.none<{ readonly video: Video; readonly chapters: ReadonlyArray<Chapter> }>();
-      }
-      const video = videoOption.value;
-      if (video.publishedAt === null) {
-        return Option.none<{ readonly video: Video; readonly chapters: ReadonlyArray<Chapter> }>();
-      }
-      const chapters = yield* repository.listChapters(video.id);
-      return Option.some({ video, chapters });
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findAssetPage(slug);
+    }),
+  );
+
+const loadAssetMedia = (env: ViewerEnv, slug: string) =>
+  runCatalog(
+    env,
+    Effect.gen(function* () {
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findAssetMedia(slug);
     }),
   );
 
@@ -242,17 +242,17 @@ const absoluteUrl = (origin: string, value: string | null) => {
   return `${origin}${value.startsWith("/") ? value : `/${value}`}`;
 };
 
-const ogTags = (origin: string, slug: string, video: Video) => {
+const ogTags = (origin: string, slug: string, asset: Asset) => {
   const pageUrl = `${origin}${mediaPrefix(slug).replace(/\/$/, "")}`;
-  const imageUrl = absoluteUrl(origin, resolveMediaUrl(slug, video.posterKey));
-  const description = video.description ?? "";
+  const imageUrl = absoluteUrl(origin, resolveMediaUrl(slug, asset.posterKey));
+  const description = asset.description ?? "";
   const tags = [
-    `<meta property="og:type" content="${video.kind === "audio" ? "music.song" : "video.other"}">`,
-    `<meta property="og:title" content="${escapeHtml(video.title)}">`,
+    `<meta property="og:type" content="${asset.kind === "audio" ? "music.song" : "video.other"}">`,
+    `<meta property="og:title" content="${escapeHtml(asset.title)}">`,
     `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
     `<meta property="og:site_name" content="VideoShare">`,
     `<meta name="twitter:card" content="${imageUrl ? "summary_large_image" : "summary"}">`,
-    `<meta name="twitter:title" content="${escapeHtml(video.title)}">`,
+    `<meta name="twitter:title" content="${escapeHtml(asset.title)}">`,
   ];
   if (description) {
     tags.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
@@ -269,13 +269,13 @@ const ogTags = (origin: string, slug: string, video: Video) => {
 const viewerPage = (
   origin: string,
   slug: string,
-  video: Video,
+  asset: Asset,
   chapters: ReadonlyArray<Chapter>,
 ) => {
-  const isAudio = video.kind === "audio";
+  const isAudio = asset.kind === "audio";
   const chaptersTrack = chaptersTrackFor(chapters);
-  const posterUrl = resolveMediaUrl(slug, video.posterKey);
-  const manifestUrl = resolveMediaUrl(slug, video.hlsKey);
+  const posterUrl = resolveMediaUrl(slug, asset.posterKey);
+  const manifestUrl = resolveMediaUrl(slug, asset.mediaKey);
   const chapterItems = chapters
     .map(
       (chapter) => `<li>
@@ -292,9 +292,9 @@ const viewerPage = (
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(video.title)}</title>
+    <title>${escapeHtml(asset.title)}</title>
     ${faviconLinks}
-    ${ogTags(origin, slug, video)}
+    ${ogTags(origin, slug, asset)}
     <link rel="stylesheet" href="/_assets/player.css?v=${assetVersion}">
     <style>
       :root { color-scheme: dark; }
@@ -324,8 +324,8 @@ const viewerPage = (
     <main>
       <div class="player-shell${isAudio ? " is-audio" : ""}">
         <media-player
-          title="${escapeHtml(video.title)}"
-          src="${escapeHtml(manifestUrl ?? video.hlsKey)}"
+          title="${escapeHtml(asset.title)}"
+          src="${escapeHtml(manifestUrl ?? asset.mediaKey)}"
           view-type="${isAudio ? "audio" : "video"}"
           stream-type="on-demand"
           playsinline
@@ -340,8 +340,8 @@ const viewerPage = (
       </div>
       <div class="meta">
         <div>
-          <h1>${escapeHtml(video.title)}</h1>
-          <p>${escapeHtml(video.description ?? "")}</p>
+          <h1>${escapeHtml(asset.title)}</h1>
+          <p>${escapeHtml(asset.description ?? "")}</p>
           <div class="slug">/${escapeHtml(slug)}</div>
         </div>
         ${chapterItems ? `<ul class="chapters">${chapterItems}</ul>` : ""}
@@ -414,21 +414,21 @@ const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: 
     return notFoundResponse();
   }
 
-  const result = await loadVideo(env, slug);
+  const result = await loadAssetMedia(env, slug);
   if (Option.isNone(result)) {
     return notFoundResponse();
   }
 
-  const { video } = result.value;
-  if (video.passwordHash && !isAuthorized(request, slug, video.passwordHash)) {
+  const asset = result.value;
+  if (asset.passwordHash && !isAuthorized(request, slug, asset.passwordHash)) {
     return new Response("Forbidden", { status: 403 });
   }
 
-  if (isAbsoluteUrl(video.hlsKey)) {
+  if (isAbsoluteUrl(asset.mediaKey)) {
     return notFoundResponse();
   }
 
-  const key = `${r2KeyDir(video.hlsKey)}${file}`;
+  const key = `${r2KeyDir(asset.mediaKey)}${file}`;
   const object = await env.BUCKET.get(key);
   if (!object) {
     return notFoundResponse();
@@ -493,18 +493,18 @@ export default {
     }
 
     try {
-      const result = await loadVideo(env, slug);
+      const result = await loadAssetPage(env, slug);
       if (Option.isNone(result)) {
         return notFoundResponse();
       }
 
-      const { video, chapters } = result.value;
-      if (video.passwordHash) {
+      const { asset, chapters } = result.value;
+      if (asset.passwordHash) {
         if (request.method === "POST") {
           const formData = await request.formData();
           const password = formData.get("password");
-          if (typeof password !== "string" || (await sha256(password)) !== video.passwordHash) {
-            return new Response(passwordPage(slug, video.title, "Incorrect password."), {
+          if (typeof password !== "string" || (await sha256(password)) !== asset.passwordHash) {
+            return new Response(passwordPage(slug, asset.title, "Incorrect password."), {
               status: 403,
               headers: { "content-type": "text/html; charset=utf-8" },
             });
@@ -514,20 +514,20 @@ export default {
             status: 303,
             headers: {
               location: url.toString(),
-              "set-cookie": `${cookieName(slug)}=${video.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/${slug}; HttpOnly; SameSite=Lax; Secure`,
+              "set-cookie": `${cookieName(slug)}=${asset.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/${slug}; HttpOnly; SameSite=Lax; Secure`,
             },
           });
         }
 
-        if (!isAuthorized(request, slug, video.passwordHash)) {
-          return new Response(passwordPage(slug, video.title), {
+        if (!isAuthorized(request, slug, asset.passwordHash)) {
+          return new Response(passwordPage(slug, asset.title), {
             status: 401,
             headers: { "content-type": "text/html; charset=utf-8" },
           });
         }
       }
 
-      return new Response(viewerPage(url.origin, slug, video, chapters), {
+      return new Response(viewerPage(url.origin, slug, asset, chapters), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     } catch {

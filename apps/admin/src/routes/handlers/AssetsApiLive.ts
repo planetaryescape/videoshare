@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
-import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import { Video, VideoId } from "@videoshare/shared/Video";
-import { VideoNotFoundError } from "@videoshare/shared/VideoErrors";
+import { AssetRepository } from "@videoshare/shared/AssetRepository";
+import { Asset, AssetId } from "@videoshare/shared/Asset";
+import { AssetNotFoundError } from "@videoshare/shared/AssetErrors";
 import { generateSlug } from "@videoshare/shared/Slug";
 import { Effect, Option } from "effect";
 import { Storage } from "../../services/Storage.ts";
@@ -9,34 +9,34 @@ import { chaptersFromInput } from "../../schemas/Chapters.ts";
 import { ProdSync } from "../../prod.ts";
 import { AdminApi } from "../AdminApi.ts";
 
-export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers) =>
+export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers) =>
   Effect.gen(function* () {
-    const repo = yield* VideoRepository;
+    const repo = yield* AssetRepository;
     const storage = yield* Storage;
     const prod = yield* ProdSync;
 
     return handlers
-      .handle("listVideos", () => repo.list())
-      .handle("getVideo", ({ params }) =>
+      .handle("listAssets", () => repo.list())
+      .handle("getAsset", ({ params }) =>
         Effect.gen(function* () {
-          const found = yield* repo.findById(VideoId.make(params.id));
+          const found = yield* repo.findById(AssetId.make(params.id));
           if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ id: params.id });
+            return yield* new AssetNotFoundError({ id: params.id });
           }
           const chapters = yield* repo.listChapters(found.value.id);
           return { video: found.value, chapters };
         }),
       )
-      .handle("createVideo", ({ payload }) =>
+      .handle("createAsset", ({ payload }) =>
         Effect.gen(function* () {
-          const video = new Video({
-            id: VideoId.make(crypto.randomUUID()),
+          const video = new Asset({
+            id: AssetId.make(crypto.randomUUID()),
             slug: generateSlug(),
             kind: "video",
             title: payload.title,
             description: payload.description ?? null,
             posterKey: null,
-            hlsKey: "",
+            mediaKey: "",
             durationSec: 0,
             passwordHash: null,
             createdAt: Date.now(),
@@ -46,13 +46,13 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
           return yield* repo.create(video);
         }),
       )
-      .handle("updateVideo", ({ params, payload }) =>
+      .handle("updateAsset", ({ params, payload }) =>
         Effect.gen(function* () {
-          const found = yield* repo.findById(VideoId.make(params.id));
+          const found = yield* repo.findById(AssetId.make(params.id));
           if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ id: params.id });
+            return yield* new AssetNotFoundError({ id: params.id });
           }
-          const updated = new Video({
+          const updated = new Asset({
             ...found.value,
             title: payload.title ?? found.value.title,
             description: payload.description ?? found.value.description,
@@ -68,15 +68,15 @@ export const VideosApiLive = HttpApiBuilder.group(AdminApi, "videos", (handlers)
           return { video, chapters };
         }),
       )
-      .handle("deleteVideo", ({ params }) =>
+      .handle("deleteAsset", ({ params }) =>
         Effect.gen(function* () {
-          const id = VideoId.make(params.id);
+          const id = AssetId.make(params.id);
           const found = yield* repo.findById(id);
           if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ id: params.id });
+            return yield* new AssetNotFoundError({ id: params.id });
           }
           yield* prod.removeFromProd(params.id);
-          yield* storage.removeVideoDir(params.id);
+          yield* storage.removeAssetDir(params.id);
           yield* repo.delete(id);
           return { success: true };
         }),

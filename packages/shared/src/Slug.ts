@@ -1,4 +1,4 @@
-import { Slug } from "./Video.ts";
+import { Slug } from "./Asset.ts";
 
 const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 
