@@ -115,7 +115,7 @@ export const Model = S.Struct({
 export type Model = typeof Model.Type;
 
 export const initialModel = (): Model => ({
-  screen: ListAssets(),
+  screen: ProjectList(),
   assets: [],
   projects: [],
   projectsLoadState: ProjectsLoading(),

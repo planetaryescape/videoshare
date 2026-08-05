@@ -57,7 +57,7 @@ class MarkerStore {
 }
 
 describe("MediaReplacement", () => {
-  test("invalidates every affected marker before retaining existing media metadata on failure", async () => {
+  test("retains regenerated metadata when marker invalidation fails so a retry is recoverable", async () => {
     const sql = SqliteClient.layer({ filename: ":memory:" });
     const markers = new MarkerStore("media/asset-1/original.png");
     const repositories = AssetRepository.layerNoDeps.pipe(Layer.provide(sql));
@@ -85,7 +85,7 @@ describe("MediaReplacement", () => {
       "media/asset-1/original.png",
     ]);
     expect(Result.isFailure(result.replace)).toBe(true);
-    expect(Option.getOrThrow(result.persisted).mediaKey).toBe("legacy/asset-1/master.m3u8");
+    expect(Option.getOrThrow(result.persisted).mediaKey).toBe("media/asset-1/original.png");
   });
 
   test("deduplicates media keys that share one directory", async () => {

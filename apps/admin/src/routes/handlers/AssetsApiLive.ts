@@ -2,7 +2,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
 import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
 import { Asset, AssetId } from "@videoshare/shared/Asset";
-import { AssetNotFoundError } from "@videoshare/shared/AssetErrors";
+import { AssetNotFoundError, ImageChaptersNotAllowedError } from "@videoshare/shared/AssetErrors";
 import { generateSlug } from "@videoshare/shared/Slug";
 import { Effect, Option } from "effect";
 import { Storage } from "../../services/Storage.ts";
@@ -37,7 +37,7 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
       .handle("createAsset", ({ payload }) =>
         gate.serialize(
           Effect.gen(function* () {
-            const video = new Asset({
+            const asset = new Asset({
               id: AssetId.make(crypto.randomUUID()),
               slug: generateSlug(),
               kind: "video",
@@ -55,7 +55,7 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
               publishedAt: null,
               updatedAt: null,
             });
-            return yield* repo.create(video);
+            return yield* repo.create(asset);
           }),
         ),
       )
@@ -72,14 +72,19 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
               description: payload.description ?? found.value.description,
               updatedAt: Date.now(),
             });
-            const video = yield* repo.update(updated);
+            if (updated.kind === "image" && (payload.chapters?.length ?? 0) > 0)
+              return yield* new ImageChaptersNotAllowedError({
+                assetId: updated.id,
+                chapterCount: payload.chapters?.length ?? 0,
+              });
+            const asset = yield* repo.update(updated);
 
             if (payload.chapters !== undefined) {
-              yield* repo.replaceChapters(video.id, chaptersFromInput(video.id, payload.chapters));
+              yield* repo.replaceChapters(asset.id, chaptersFromInput(asset.id, payload.chapters));
             }
 
-            const chapters = yield* repo.listChapters(video.id);
-            return { video, chapters };
+            const chapters = yield* repo.listChapters(asset.id);
+            return { video: asset, chapters };
           }),
         ),
       )
@@ -92,9 +97,9 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
               return yield* new AssetNotFoundError({ id: params.id });
             }
             yield* assertDirectAssetMutationAllowed(found.value, "delete", projects);
-            yield* prod.removeFromProd(params.id);
+            yield* prod.removeFromProd(params.id, found.value.mediaKey);
             yield* storage.removeAssetDir(params.id);
-            yield* repo.delete(id);
+            yield* repo.delete(id, Date.now());
             return { success: true };
           }),
         ),

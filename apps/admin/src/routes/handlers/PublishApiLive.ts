@@ -30,6 +30,7 @@ export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handler
             }
             if (!found.value.mediaKey)
               return yield* new NotTranscodedError({ assetId: found.value.id });
+            yield* assertDirectAssetMutationAllowed(found.value, "publish", projects);
             return yield* publisher.publishAsset(found.value.id);
           }),
         ),
@@ -42,7 +43,7 @@ export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handler
               return yield* new AssetNotFoundError({ id: params.id });
             }
             yield* assertDirectAssetMutationAllowed(found.value, "unpublish", projects);
-            yield* prod.removeMedia(found.value.id);
+            yield* prod.removeMedia(found.value.mediaKey);
             yield* prod.unpublish(found.value.id);
             const unpublished = new Asset({ ...found.value, publishedAt: null });
             return yield* repo.update(unpublished);

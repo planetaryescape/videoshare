@@ -1,7 +1,8 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/unstable/httpapi";
 import { Multipart } from "effect/unstable/http";
-import { Asset, AssetId } from "@videoshare/shared/Asset";
+import { AssetId } from "@videoshare/shared/Asset";
+import { BrowserProjectAsset } from "../../projects/contracts.ts";
 import {
   PersistenceError,
   ProdSyncError,
@@ -30,6 +31,7 @@ import {
   UpdateAssetRequest,
   AssetListResponse,
   AssetWithChapters,
+  AssetIdPath,
   ProjectListResponse,
   ProjectDetail,
   CreateProjectRequest,
@@ -40,7 +42,7 @@ import {
 
 const IdParam = Schema.Struct({ id: Schema.String });
 
-const Asset201 = Asset.pipe(HttpApiSchema.status(201));
+const Asset201 = BrowserProjectAsset.pipe(HttpApiSchema.status(201));
 
 export class AssetsApi extends HttpApiGroup.make("assets")
   .add(
@@ -51,7 +53,7 @@ export class AssetsApi extends HttpApiGroup.make("assets")
   )
   .add(
     HttpApiEndpoint.get("getAsset", "/:id", {
-      params: IdParam,
+      params: AssetIdPath,
       success: AssetWithChapters,
       error: [AssetNotFoundError, PersistenceError],
     }),
@@ -65,15 +67,20 @@ export class AssetsApi extends HttpApiGroup.make("assets")
   )
   .add(
     HttpApiEndpoint.put("updateAsset", "/:id", {
-      params: IdParam,
+      params: AssetIdPath,
       payload: UpdateAssetRequest,
       success: AssetWithChapters,
-      error: [AssetNotFoundError, ImageChaptersNotAllowedError, PersistenceError],
+      error: [
+        AssetNotFoundError,
+        ImageChaptersNotAllowedError,
+        SlugAlreadyExistsError,
+        PersistenceError,
+      ],
     }),
   )
   .add(
     HttpApiEndpoint.delete("deleteAsset", "/:id", {
-      params: IdParam,
+      params: AssetIdPath,
       success: DeleteResponse,
       error: [
         AssetNotFoundError,
@@ -112,7 +119,12 @@ export class ProjectsApi extends HttpApiGroup.make("projects")
       params: IdParam,
       payload: UpdateProjectRequest,
       success: ProjectDetail,
-      error: [ProjectNotFoundError, SlugAlreadyExistsError, PersistenceError],
+      error: [
+        ProjectNotFoundError,
+        ProjectPublicationValidationError,
+        SlugAlreadyExistsError,
+        PersistenceError,
+      ],
     }),
   )
   .add(
@@ -141,7 +153,7 @@ export class ProjectsApi extends HttpApiGroup.make("projects")
   .add(
     HttpApiEndpoint.post("publishProject", "/:id/publish", {
       params: IdParam,
-      success: DeleteResponse,
+      success: ProjectDetail,
       error: [
         ProjectNotFoundError,
         ProjectPublicationValidationError,
@@ -153,7 +165,7 @@ export class ProjectsApi extends HttpApiGroup.make("projects")
   .add(
     HttpApiEndpoint.delete("unpublishProject", "/:id/publish", {
       params: IdParam,
-      success: DeleteResponse,
+      success: ProjectDetail,
       error: [ProjectNotFoundError, PersistenceError, ProdSyncError],
     }),
   )
@@ -172,8 +184,9 @@ export class UploadApi extends HttpApiGroup.make("upload")
       payload: Schema.Struct({
         assetId: Schema.String,
         file: Multipart.SingleFileSchema,
+        poster: Schema.optional(Multipart.SingleFileSchema),
       }).pipe(HttpApiSchema.asMultipart()),
-      success: Asset,
+      success: BrowserProjectAsset,
       error: [
         UploadValidationError,
         AssetNotFoundError,
@@ -184,6 +197,8 @@ export class UploadApi extends HttpApiGroup.make("upload")
         InvalidImageError,
         UnsupportedMediaError,
         InvalidMediaShapeError,
+        PublishedProjectMemberMutationError,
+        SlugAlreadyExistsError,
         ProdSyncError,
         PersistenceError,
         StorageError,
@@ -195,13 +210,15 @@ export class UploadApi extends HttpApiGroup.make("upload")
 export class PublishApi extends HttpApiGroup.make("publish")
   .add(
     HttpApiEndpoint.post("publish", "/:id", {
-      params: IdParam,
-      success: Asset,
+      params: AssetIdPath,
+      success: BrowserProjectAsset,
       error: [
         AssetNotFoundError,
         AssetPublicationValidationError,
         InvalidMediaShapeError,
         NotTranscodedError,
+        PublishedProjectMemberMutationError,
+        SlugAlreadyExistsError,
         ProdSyncError,
         PersistenceError,
         StorageError,
@@ -210,11 +227,12 @@ export class PublishApi extends HttpApiGroup.make("publish")
   )
   .add(
     HttpApiEndpoint.post("unpublish", "/:id/unpublish", {
-      params: IdParam,
-      success: Asset,
+      params: AssetIdPath,
+      success: BrowserProjectAsset,
       error: [
         AssetNotFoundError,
         PublishedProjectMemberMutationError,
+        SlugAlreadyExistsError,
         ProdSyncError,
         PersistenceError,
       ],

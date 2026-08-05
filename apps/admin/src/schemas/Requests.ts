@@ -1,5 +1,6 @@
 import { Schema } from "effect";
-import { Chapter, Slug, Asset, AssetId, ProjectId } from "@videoshare/shared/Asset";
+import { Chapter, Slug, AssetId, ProjectId } from "@videoshare/shared/Asset";
+import { BrowserProjectAsset } from "../projects/contracts.ts";
 
 export const ChapterInput = Schema.Struct({
   id: Schema.optional(Schema.String),
@@ -8,7 +9,7 @@ export const ChapterInput = Schema.Struct({
 });
 export type ChapterInput = typeof ChapterInput.Type;
 
-const NonBlankTitle = Schema.String.check(Schema.isMinLength(1));
+const NonBlankTitle = Schema.String.check(Schema.isPattern(/\S/));
 
 export const CreateAssetRequest = Schema.Struct({
   title: NonBlankTitle,
@@ -54,16 +55,16 @@ export const MoveProjectMemberRequest = Schema.Struct({
 });
 
 export const AssetIdParam = Schema.Struct({
-  id: Schema.String,
+  id: AssetId,
 });
 
 export const AssetWithChapters = Schema.Struct({
-  video: Asset,
+  video: BrowserProjectAsset,
   chapters: Schema.Array(Chapter),
 });
 export type AssetWithChapters = typeof AssetWithChapters.Type;
 
-export const AssetListResponse = Schema.Array(Asset);
+export const AssetListResponse = Schema.Array(BrowserProjectAsset);
 export type AssetListResponse = typeof AssetListResponse.Type;
 
 export const DeleteResponse = Schema.Struct({

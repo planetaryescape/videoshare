@@ -315,6 +315,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             projectOperation: () => ProjectOperationIdle(),
             projectMetadataSaveInFlight: () => false,
             projectMembershipOperation: () => ProjectMembershipIdle(),
+            isPublishing: () => false,
             copiedLink: () => false,
             errorMessage: () => Option.none(),
           },
@@ -373,6 +374,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               projectTitle: () => detail.project.title,
               projectDescription: () => detail.project.description ?? "",
               projectPassword: () => Option.none(),
+              isPublishing: () => false,
             }),
       FailedLoadProject: ({ id, error }) =>
         model.screen._tag !== "ProjectEdit" || model.screen.projectId !== id
@@ -446,14 +448,15 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           ? noCmd(model)
           : withEvo(
               model,
-              { isPublishing: () => false, projectOperation: () => ProjectOperationIdle() },
+              { projectOperation: () => ProjectOperationIdle() },
               LoadProject({ id }),
               LoadAssets(),
               LoadProjects(),
             ),
-      FailedPublishProject: ({ error }) =>
+      FailedPublishProject: ({ id, error }) =>
         model.projectOperation._tag !== "ProjectOperationPending" ||
         model.projectOperation.kind !== "publish" ||
+        model.projectOperation.id !== id ||
         !isActiveProjectOperation(model)
           ? noCmd(model)
           : withEvo(model, {
@@ -474,14 +477,15 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           ? noCmd(model)
           : withEvo(
               model,
-              { isPublishing: () => false, projectOperation: () => ProjectOperationIdle() },
+              { projectOperation: () => ProjectOperationIdle() },
               LoadProject({ id }),
               LoadAssets(),
               LoadProjects(),
             ),
-      FailedUnpublishProject: ({ error }) =>
+      FailedUnpublishProject: ({ id, error }) =>
         model.projectOperation._tag !== "ProjectOperationPending" ||
         model.projectOperation.kind !== "unpublish" ||
+        model.projectOperation.id !== id ||
         !isActiveProjectOperation(model)
           ? noCmd(model)
           : withEvo(model, {
@@ -514,9 +518,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
                   asset.projectId === id ? { ...asset, projectId: null, sortOrder: null } : asset,
                 ),
             }),
-      FailedDeleteProject: ({ error }) =>
+      FailedDeleteProject: ({ id, error }) =>
         model.projectOperation._tag !== "ProjectOperationPending" ||
         model.projectOperation.kind !== "delete" ||
+        model.projectOperation.id !== id ||
         !isActiveProjectOperation(model)
           ? noCmd(model)
           : withEvo(model, {
@@ -582,6 +587,9 @@ export const update: (model: Model, message: Message) => Update = (model, messag
                 chapterSaveInFlight: () => false,
                 chapterSaveQueued: () => false,
                 chapterSaveSnapshot: () => [],
+                projectOperation: () => ProjectOperationIdle(),
+                projectMembershipOperation: () => ProjectMembershipIdle(),
+                isPublishing: () => false,
                 copiedLink: () => false,
                 errorMessage: () => Option.none(),
                 projectsLoadState: () => ProjectsLoading(),
@@ -670,7 +678,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           onNone: () => model.errorMessage,
           onSome: (outMessage) =>
             outMessage._tag === "RejectedNonFiles"
-              ? Option.some("Please select a video or audio file")
+              ? Option.some("Please select a video, audio, or image file")
               : Option.none(),
         });
         return withEvo(

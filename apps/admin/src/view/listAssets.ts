@@ -1,5 +1,6 @@
 import { Option } from "effect";
 import { Button } from "@foldkit/ui";
+import { sectionNav } from "./projects.ts";
 import type { html } from "foldkit/html";
 import {
   formatDate,
@@ -13,7 +14,6 @@ import {
   ClickedEditAsset,
   type Message,
   SubmittedCreateAsset,
-  ClickedProjects,
 } from "../message";
 
 type Html = ReturnType<typeof html<Message>>;
@@ -113,14 +113,11 @@ export const listAssetsView = (h: Html, model: Model) =>
   h.div(
     [h.Class("mx-auto max-w-6xl")],
     [
+      sectionNav(h, "assets"),
       h.div(
         [h.Class("flex items-center justify-between mb-8")],
         [
           h.h1([h.Class("text-2xl font-bold text-white")], ["Assets"]),
-          h.button(
-            [h.Type("button"), h.OnClick(ClickedProjects()), h.Class("text-sm text-blue-300")],
-            ["Projects"],
-          ),
           Button.view<Message>({
             onClick: SubmittedCreateAsset(),
             toView: ({ button }) =>

@@ -3,9 +3,9 @@ import { Effect } from "effect";
 import { projectPasswordHash } from "./password.ts";
 
 describe("project password boundary", () => {
-  test("uses the portable Worker SHA-256 hex representation", async () => {
-    await expect(Effect.runPromise(projectPasswordHash("hello"))).resolves.toBe(
-      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+  test("uses a salted PBKDF2 verifier", async () => {
+    await expect(Effect.runPromise(projectPasswordHash("hello"))).resolves.toMatch(
+      /^pbkdf2-sha256\$210000\$[0-9a-f]{32}\$[0-9a-f]{64}$/,
     );
   });
 

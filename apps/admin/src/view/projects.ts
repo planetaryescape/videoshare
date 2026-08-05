@@ -18,6 +18,7 @@ import {
   ClickedMoveProjectMember,
   ClickedRetryLoadProjects,
   ClickedPublishProject,
+  ClickedProjects,
   ClickedUnpublishProject,
   ClickedCopyLink,
   ClickedRetryProjectOperation,
@@ -34,7 +35,7 @@ const panel = "rounded-xl border border-gray-800 bg-gray-900/50";
 const control =
   "w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
-const nav = (h: Html, active: "assets" | "projects") =>
+export const sectionNav = (h: Html, active: "assets" | "projects") =>
   h.nav(
     [h.AriaLabel("Admin sections"), h.Class("mb-8 flex gap-2")],
     [
@@ -48,8 +49,14 @@ const nav = (h: Html, active: "assets" | "projects") =>
         ],
         ["Assets"],
       ),
-      h.span(
-        [h.Class("rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white")],
+      h.button(
+        [
+          h.Type("button"),
+          h.OnClick(ClickedProjects()),
+          h.Class(
+            `rounded-lg px-3 py-2 text-sm font-medium ${active === "projects" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`,
+          ),
+        ],
         ["Projects"],
       ),
     ],
@@ -96,7 +103,7 @@ export const projectListView = (h: Html, model: Model) =>
   h.div(
     [h.Class("mx-auto max-w-4xl")],
     [
-      nav(h, "projects"),
+      sectionNav(h, "projects"),
       h.div(
         [h.Class("mb-8 flex items-center justify-between gap-4")],
         [
@@ -362,7 +369,7 @@ export const projectEditView = (h: Html, model: Model) => {
   return h.div(
     [h.Class("mx-auto max-w-4xl")],
     [
-      nav(h, "projects"),
+      sectionNav(h, "projects"),
       h.div(
         [h.Class("mb-8")],
         [

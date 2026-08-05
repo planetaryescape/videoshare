@@ -310,7 +310,10 @@ test("publishing projects records Foldkit success, failure, and share-link state
   };
   const [publishing, commands] = update(model, ClickedPublishProject({ id: "project-1" }));
   const [published] = update(publishing, SucceededPublishProject({ id: "project-1" }));
-  const [failed] = update(publishing, FailedPublishProject({ error: "remote unavailable" }));
+  const [failed] = update(
+    publishing,
+    FailedPublishProject({ id: "project-1", error: "remote unavailable" }),
+  );
   const [copying, copyCommands] = update(
     model,
     ClickedCopyLink({ url: "https://example.test/p/project-1" }),
@@ -319,7 +322,7 @@ test("publishing projects records Foldkit success, failure, and share-link state
 
   expect(publishing.isPublishing).toBe(true);
   expect(commands).toHaveLength(1);
-  expect(published.isPublishing).toBe(false);
+  expect(published.isPublishing).toBe(true);
   expect(published.projectOperation._tag).toBe("ProjectOperationIdle");
   expect(published.projects[0]?.publishedAt).toBeNull();
   expect(published.editProject).toEqual(model.editProject);
@@ -351,7 +354,10 @@ test("unpublishing a project removes only its project publication state", () => 
   };
   const [unpublishing, commands] = update(model, ClickedUnpublishProject({ id: "project-1" }));
   const [unpublished] = update(unpublishing, SucceededUnpublishProject({ id: "project-1" }));
-  const [failed] = update(unpublishing, FailedUnpublishProject({ error: "remote unavailable" }));
+  const [failed] = update(
+    unpublishing,
+    FailedUnpublishProject({ id: "project-1", error: "remote unavailable" }),
+  );
 
   expect(unpublishing.isPublishing).toBe(true);
   expect(commands).toHaveLength(1);
@@ -418,7 +424,10 @@ test("failed project operation retains its typed retry", () => {
     editProject: Option.some(detail([asset("a", "project-1", 0)])),
   };
   const [publishing] = update(model, ClickedPublishProject({ id: "project-1" }));
-  const [failed] = update(publishing, FailedPublishProject({ error: "remote unavailable" }));
+  const [failed] = update(
+    publishing,
+    FailedPublishProject({ id: "project-1", error: "remote unavailable" }),
+  );
   const [, retry] = update(failed, ClickedRetryProjectOperation());
 
   expect(failed.projectOperation).toMatchObject({

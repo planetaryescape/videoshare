@@ -3,7 +3,10 @@ import { Effect, Option } from "effect";
 import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
 import { Project } from "@videoshare/shared/Project";
 import { ProjectId } from "@videoshare/shared/Asset";
-import { ProjectNotFoundError } from "@videoshare/shared/AssetErrors";
+import {
+  ProjectNotFoundError,
+  ProjectPublicationValidationError,
+} from "@videoshare/shared/AssetErrors";
 import { generateSlug } from "@videoshare/shared/Slug";
 import { projectPasswordHash } from "../../projects/password.ts";
 import { projectDetailFromAggregate } from "../../projects/projectDto.ts";
@@ -53,6 +56,15 @@ export const ProjectsApiLive = HttpApiBuilder.group(AdminApi, "projects", (handl
         gate.serialize(
           Effect.gen(function* () {
             const current = (yield* requireAggregate(repo, ProjectId.make(params.id))).project;
+            if (
+              current.publishedAt !== null &&
+              payload.slug !== undefined &&
+              payload.slug !== current.slug
+            )
+              return yield* new ProjectPublicationValidationError({
+                projectId: current.id,
+                reason: "publishedSlugChange",
+              });
             const passwordHash = yield* projectPasswordHash(payload.password);
             return projectDetailFromAggregate(
               yield* repo.update(
@@ -96,12 +108,20 @@ export const ProjectsApiLive = HttpApiBuilder.group(AdminApi, "projects", (handl
       )
       .handle("publishProject", ({ params }) =>
         gate.serialize(
-          publisher.publishProject(ProjectId.make(params.id)).pipe(Effect.as({ success: true })),
+          Effect.gen(function* () {
+            const id = ProjectId.make(params.id);
+            yield* publisher.publishProject(id);
+            return projectDetailFromAggregate(yield* requireAggregate(repo, id));
+          }),
         ),
       )
       .handle("unpublishProject", ({ params }) =>
         gate.serialize(
-          publisher.unpublishProject(ProjectId.make(params.id)).pipe(Effect.as({ success: true })),
+          Effect.gen(function* () {
+            const id = ProjectId.make(params.id);
+            yield* publisher.unpublishProject(id);
+            return projectDetailFromAggregate(yield* requireAggregate(repo, id));
+          }),
         ),
       )
       .handle("deleteProject", ({ params }) =>

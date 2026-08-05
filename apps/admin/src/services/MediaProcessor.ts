@@ -26,6 +26,7 @@ import { ProgressBus } from "./ProgressBus.ts";
 import { Storage } from "./Storage.ts";
 
 const abrRungs: ReadonlyArray<number> = [1080, 720, 480];
+const maxImageBytes = 50 * 1024 * 1024;
 
 const selectAbrHeights = (sourceHeight: number): ReadonlyArray<number> => {
   const selected = abrRungs.filter((h) => h <= sourceHeight);
@@ -251,7 +252,7 @@ export interface MediaProcessorService {
     | InvalidConversionError
     | StorageError
   >;
-  readonly writePoster: (
+  readonly writeCoverImage: (
     assetId: string,
     file: File,
   ) => Effect.Effect<void, PosterDecodeError | StorageError>;
@@ -280,6 +281,8 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
           }
           const format = imageFormat(header);
           if (format) {
+            if (file.size > maxImageBytes)
+              return yield* new InvalidImageError({ filename: file.name });
             const bytes = new Uint8Array(
               yield* Effect.tryPromise({
                 try: () => file.arrayBuffer(),
@@ -288,17 +291,16 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
             );
             const dimensions = yield* Effect.tryPromise({
               try: async () => {
-                const image = new Bun.Image(bytes);
-                await image.metadata();
+                const metadata = await new Bun.Image(bytes).metadata();
                 if (
-                  !Number.isInteger(image.width) ||
-                  !Number.isInteger(image.height) ||
-                  image.width < 1 ||
-                  image.height < 1
+                  !Number.isInteger(metadata.width) ||
+                  !Number.isInteger(metadata.height) ||
+                  metadata.width < 1 ||
+                  metadata.height < 1
                 ) {
                   throw new Error("image has invalid dimensions");
                 }
-                return { width: image.width, height: image.height };
+                return { width: metadata.width, height: metadata.height };
               },
               catch: () => new InvalidImageError({ filename: file.name }),
             });
@@ -340,7 +342,7 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
               }),
               target: new PathedTarget(
                 "master.m3u8",
-                ({ path }) => new FilePathTarget(`${storage.videoDir(assetId)}/${path}`),
+                ({ path }) => new FilePathTarget(`${storage.assetDir(assetId)}/${path}`),
               ),
             });
 
@@ -443,7 +445,7 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
       return MediaProcessor.of({
         process: (assetId, file) =>
           process(assetId, file).pipe(Effect.provideService(Storage, storage)),
-        writePoster: (assetId, file) =>
+        writeCoverImage: (assetId, file) =>
           writePosterImage(assetId, file).pipe(Effect.provideService(Storage, storage)),
       });
     }),

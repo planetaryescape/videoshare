@@ -1,5 +1,6 @@
 import { Context, Effect, FileSystem, Layer, Path } from "effect";
 import type { PlatformError } from "effect/PlatformError";
+import { mediaContentType } from "@videoshare/shared/MediaContentType";
 import { StorageError } from "../errors/StorageErrors.ts";
 
 const liftPlatformError =
@@ -7,11 +8,11 @@ const liftPlatformError =
   <A, R>(effect: Effect.Effect<A, PlatformError, R>): Effect.Effect<A, StorageError, R> =>
     Effect.mapError(effect, (cause) => new StorageError({ operation, cause }));
 
-const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const ASSET_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export interface StorageService {
   readonly rootDir: string;
-  readonly videoDir: (assetId: string) => string;
+  readonly assetDir: (assetId: string) => string;
   readonly mediaPath: (relative: string) => string;
   readonly ensureAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
   readonly resetAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
@@ -31,16 +32,6 @@ export interface StorageService {
   >;
 }
 
-const inferContentType = (key: string): string => {
-  if (key.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
-  if (key.endsWith(".ts")) return "video/mp2t";
-  if (key.endsWith(".jpg") || key.endsWith(".jpeg")) return "image/jpeg";
-  if (key.endsWith(".png")) return "image/png";
-  if (key.endsWith(".webp")) return "image/webp";
-  if (key.endsWith(".vtt")) return "text/vtt";
-  return "application/octet-stream";
-};
-
 class PathTraversalError extends Error {
   readonly _tag = "PathTraversalError";
 }
@@ -58,7 +49,7 @@ const resolveSafe = (path: Path.Path, root: string, relative: string): string =>
 };
 
 const validateAssetId = (assetId: string): void => {
-  if (!VIDEO_ID_PATTERN.test(assetId)) {
+  if (!ASSET_ID_PATTERN.test(assetId)) {
     throw new PathTraversalError(`Invalid assetId: ${assetId}`);
   }
 };
@@ -93,7 +84,7 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
 
         return Storage.of({
           rootDir: root,
-          videoDir: (assetId) => {
+          assetDir: (assetId) => {
             validateAssetId(assetId);
             return path.join(root, assetId);
           },
@@ -159,7 +150,7 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
                 catch: toStorageError("serveFile"),
               });
               const body = yield* fs.readFile(p).pipe(liftPlatformError("readFile"));
-              return { body, contentType: inferContentType(relative) };
+              return { body, contentType: mediaContentType(relative) };
             }),
         });
       }),

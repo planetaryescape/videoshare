@@ -221,7 +221,9 @@ export const PublishProject = Command.define(
     if (!response.ok)
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     return SucceededPublishProject({ id });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedPublishProject({ error: errMsg(error) })))),
+  }).pipe(
+    Effect.catch((error) => Effect.succeed(FailedPublishProject({ id, error: errMsg(error) }))),
+  ),
 );
 
 export const UnpublishProject = Command.define(
@@ -236,7 +238,7 @@ export const UnpublishProject = Command.define(
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     return SucceededUnpublishProject({ id });
   }).pipe(
-    Effect.catch((error) => Effect.succeed(FailedUnpublishProject({ error: errMsg(error) }))),
+    Effect.catch((error) => Effect.succeed(FailedUnpublishProject({ id, error: errMsg(error) }))),
   ),
 );
 
@@ -251,7 +253,9 @@ export const DeleteProject = Command.define(
     if (!response.ok)
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     return SucceededDeleteProject({ id });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedDeleteProject({ error: errMsg(error) })))),
+  }).pipe(
+    Effect.catch((error) => Effect.succeed(FailedDeleteProject({ id, error: errMsg(error) }))),
+  ),
 );
 
 export const CreateAssetCmd = Command.define(

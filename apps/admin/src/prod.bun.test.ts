@@ -201,7 +201,7 @@ const storage = Layer.succeed(
   Storage,
   Storage.of({
     rootDir: "/tmp",
-    videoDir: (id) => `/tmp/${id}`,
+    assetDir: (id) => `/tmp/${id}`,
     mediaPath: (path) => path,
     ensureAssetDir: () => Effect.void,
     resetAssetDir: () => Effect.void,
@@ -214,12 +214,17 @@ const storage = Layer.succeed(
   }),
 );
 
-const publishFixture = async (
+const publishFixture = async ({
   failCatalog = false,
   unpublishAfterPublish = false,
-  externalMediaKey: string | null = null,
-  targetPasswordHash: string | null = null,
-) => {
+  externalMediaKey = null,
+  targetPasswordHash = null,
+}: {
+  readonly failCatalog?: boolean;
+  readonly unpublishAfterPublish?: boolean;
+  readonly externalMediaKey?: string | null;
+  readonly targetPasswordHash?: string | null;
+} = {}) => {
   const sql = SqliteClient.layer({ filename: ":memory:" });
   const recording = new RecordingProdSync();
   recording.failCatalog = failCatalog;
@@ -292,7 +297,7 @@ describe("Publisher project publication", () => {
   });
 
   test("unpublishing removes the remote project but retains local members and direct asset publication", async () => {
-    const result = await publishFixture(false, true);
+    const result = await publishFixture({ unpublishAfterPublish: true });
 
     expect(result.recording.events).toContain("remove-project:target");
     expect(Option.getOrThrow(result.targetAfter).project.publishedAt).toBeNull();
@@ -304,14 +309,17 @@ describe("Publisher project publication", () => {
   });
 
   test("remote failure leaves local publication timestamps unchanged", async () => {
-    const result = await publishFixture(true);
+    const result = await publishFixture({ failCatalog: true });
     expect(Result.isFailure(result.first)).toBe(true);
     expect(Option.getOrNull(result.targetAfter)?.project.publishedAt).toBeNull();
     expect(Option.getOrNull(result.assetAfter)?.publishedAt).toBeNull();
   });
 
   test("rejects an absolute media key in a password-protected project", async () => {
-    const result = await publishFixture(false, false, "https://cdn.example/video.m3u8", "hash");
+    const result = await publishFixture({
+      externalMediaKey: "https://cdn.example/video.m3u8",
+      targetPasswordHash: "hash",
+    });
 
     expect(Result.isFailure(result.first)).toBe(true);
     if (Result.isFailure(result.first))
@@ -324,7 +332,7 @@ describe("Publisher project publication", () => {
   });
 
   test("publishes a passwordless project with an absolute media key without R2 synchronization", async () => {
-    const result = await publishFixture(false, false, "https://cdn.example/video.m3u8");
+    const result = await publishFixture({ externalMediaKey: "https://cdn.example/video.m3u8" });
 
     expect(Result.isSuccess(result.first)).toBe(true);
     expect(result.recording.events).toContain("catalog");

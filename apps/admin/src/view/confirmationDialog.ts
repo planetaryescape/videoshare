@@ -14,11 +14,18 @@ export const confirmationDialogView = (h: Html, model: Model) => {
   const pending = Option.getOrUndefined(model.pendingConfirmation);
   const isProjectDelete = pending?._tag === "DeleteProjectConfirmation";
   const isDelete = pending?._tag === "DeleteAssetConfirmation" || isProjectDelete;
+  const assetId =
+    pending?._tag === "DeleteAssetConfirmation" || pending?._tag === "UnpublishAssetConfirmation"
+      ? pending.assetId
+      : undefined;
+  const asset =
+    assetId === undefined ? undefined : model.assets.find((item) => item.id === assetId);
+  const assetLabel = asset?.kind ?? "asset";
   const title = isProjectDelete
     ? "Delete project?"
     : isDelete
-      ? "Delete video?"
-      : "Unpublish video?";
+      ? `Delete ${assetLabel}?`
+      : `Unpublish ${assetLabel}?`;
   const deletedProject =
     pending?._tag === "DeleteProjectConfirmation" &&
     Option.isSome(model.editProject) &&
@@ -30,8 +37,8 @@ export const confirmationDialogView = (h: Html, model: Model) => {
       ? "This removes the published project. Assets, media, and direct links remain; local assets become unfiled."
       : "This deletes the draft project. Assets, media, and direct links remain; local assets become unfiled."
     : isDelete
-      ? "This permanently deletes the local video and cannot be undone."
-      : "This takes the video offline and removes its published media. You can publish it again later.";
+      ? `This permanently deletes the local ${assetLabel} and cannot be undone.`
+      : `This takes the ${assetLabel} offline and removes its published media. You can publish it again later.`;
 
   return h.submodel({
     slotId: model.confirmationDialog.id,

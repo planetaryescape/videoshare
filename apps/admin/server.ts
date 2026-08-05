@@ -15,7 +15,7 @@ registerMediabunnyServer();
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)));
 
-const appLayer = makeAppLayer(dbFilename);
+const appLayer = makeAppLayer(sqlLayer);
 
 // Build `appLayer` once via a `ManagedRuntime` so its resources stay alive for
 // the server lifetime. Reuse its context for the WebSocket progress handler.

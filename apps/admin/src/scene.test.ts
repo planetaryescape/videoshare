@@ -81,13 +81,13 @@ const projectDetail = (overrides: Partial<ProjectDetail> = {}): ProjectDetail =>
 });
 
 describe("admin scenes", () => {
-  test("renders an empty video list", () => {
+  test("renders the project list by default", () => {
     Scene.scene(
       { update, view },
       Scene.with(initialModel()),
-      Scene.expect(Scene.role("heading", { name: "Assets", level: 1 })).toExist(),
-      Scene.expect(Scene.text("No assets yet")).toExist(),
-      Scene.expect(Scene.role("button", { name: "New Asset" })).toExist(),
+      Scene.expect(Scene.role("heading", { name: "Projects", level: 1 })).toExist(),
+      Scene.expect(Scene.text("Loading projects…")).toExist(),
+      Scene.expect(Scene.role("button", { name: "New Project" })).toExist(),
     );
   });
 
@@ -308,7 +308,7 @@ describe("admin scenes", () => {
         pendingConfirmation: Option.some(DeleteAssetConfirmation({ assetId: video.id })),
       }),
       Scene.expect(Scene.role("dialog")).toExist(),
-      Scene.expect(Scene.role("heading", { name: "Delete video?" })).toExist(),
+      Scene.expect(Scene.role("heading", { name: "Delete asset?" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Cancel" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Delete" })).toExist(),
     );

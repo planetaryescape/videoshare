@@ -1,13 +1,17 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { HttpServerRequest } from "effect/unstable/http";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
+import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
 import { Asset, AssetId } from "@videoshare/shared/Asset";
 import { AssetNotFoundError } from "@videoshare/shared/AssetErrors";
 import { MediaProcessor } from "../../services/MediaProcessor.ts";
 import { UploadValidationError } from "../../errors/UploadErrors.ts";
 import { AdminApi } from "../AdminApi.ts";
-import { PublicationGate } from "../../services/PublicationGate.ts";
+import {
+  assertDirectAssetMutationAllowed,
+  PublicationGate,
+} from "../../services/PublicationGate.ts";
 import { MediaReplacement } from "../../services/MediaReplacement.ts";
 
 export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers) =>
@@ -15,6 +19,7 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
     const repo = yield* AssetRepository;
     const processor = yield* MediaProcessor;
     const replacement = yield* MediaReplacement;
+    const projects = yield* ProjectRepository;
     const gate = yield* PublicationGate;
 
     return handlers.handleRaw("upload", ({ request }) =>
@@ -45,15 +50,16 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
           const poster = posterField instanceof File && posterField.size > 0 ? posterField : null;
 
           const found = yield* repo.findById(AssetId.make(assetId));
-          if (found._tag === "None") {
+          if (Option.isNone(found)) {
             return yield* new AssetNotFoundError({ id: assetId });
           }
 
+          yield* assertDirectAssetMutationAllowed(found.value, "upload", projects);
           const processed = yield* processor.process(assetId, file);
 
           if (poster && processed.kind !== "image") {
             yield* processor
-              .writePoster(assetId, poster)
+              .writeCoverImage(assetId, poster)
               .pipe(
                 Effect.catchTag(
                   "PosterDecodeError",
@@ -68,7 +74,7 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
               ? null
               : poster !== null || processed.kind === "video"
                 ? `media/${assetId}/poster.jpg`
-                : found.value.posterKey;
+                : null;
           const updated = new Asset({
             ...found.value,
             kind: processed.kind,

@@ -5,6 +5,7 @@ import type {
   InvalidMediaShapeError,
   PersistenceError,
   ProdSyncError,
+  SlugAlreadyExistsError,
 } from "@videoshare/shared/AssetErrors";
 import { r2KeyDir } from "@videoshare/shared/MediaKey";
 import { ProdSync } from "../prod.ts";
@@ -24,14 +25,17 @@ const markerInvalidationMediaKeys = (
   return mediaKeys;
 };
 
-/** Invalidates publication markers before atomically recording regenerated asset media. */
+/** Records regenerated media before invalidating its publication markers so retries use matching metadata. */
 export class MediaReplacement extends Context.Service<
   MediaReplacement,
   {
     readonly replace: (
       previous: Asset,
       updated: Asset,
-    ) => Effect.Effect<Asset, PersistenceError | InvalidMediaShapeError | ProdSyncError>;
+    ) => Effect.Effect<
+      Asset,
+      PersistenceError | SlugAlreadyExistsError | InvalidMediaShapeError | ProdSyncError
+    >;
   }
 >()("admin/MediaReplacement") {
   static readonly layer = Layer.effect(
@@ -42,6 +46,7 @@ export class MediaReplacement extends Context.Service<
       return MediaReplacement.of({
         replace: (previous, updated) =>
           Effect.gen(function* () {
+            const replaced = yield* assets.replaceMedia(updated);
             const [invalidationFailures] = yield* Effect.partition(
               markerInvalidationMediaKeys(previous.mediaKey, updated.mediaKey),
               prod.invalidateMedia,
@@ -49,7 +54,7 @@ export class MediaReplacement extends Context.Service<
             );
             const invalidationFailure = invalidationFailures.at(0);
             if (invalidationFailure !== undefined) return yield* invalidationFailure;
-            return yield* assets.replaceMedia(updated);
+            return replaced;
           }),
       });
     }),

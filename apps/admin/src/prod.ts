@@ -5,8 +5,9 @@ import { Asset, AssetId, type Chapter, type ProjectId } from "@videoshare/shared
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
 import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
 import type { ProjectAggregate } from "@videoshare/shared/Project";
+import { mediaContentType } from "@videoshare/shared/MediaContentType";
 import { r2KeyDir } from "@videoshare/shared/MediaKey";
-import type { PersistenceError } from "@videoshare/shared/AssetErrors";
+import type { PersistenceError, SlugAlreadyExistsError } from "@videoshare/shared/AssetErrors";
 import {
   AssetNotFoundError,
   AssetPublicationValidationError,
@@ -52,6 +53,8 @@ const r2 = () =>
   });
 
 type D1Param = string | number | null;
+const maxD1BatchStatements = 100;
+const maxD1BatchPayloadBytes = 1_000_000;
 
 const D1Response = S.Struct({
   success: S.Boolean,
@@ -93,13 +96,24 @@ export const isSuccessfulD1BatchResponse = (
  * Runtime verification: production deployment must confirm the account/API version executes this
  * documented batch request atomically; the REST contract alone does not prove deployed atomicity.
  */
-const d1Batch = (statements: ReadonlyArray<D1Statement>) =>
-  Effect.tryPromise({
+const d1Batch = (statements: ReadonlyArray<D1Statement>) => {
+  const payloadBytes = new TextEncoder().encode(JSON.stringify({ batch: statements })).byteLength;
+  if (statements.length > maxD1BatchStatements || payloadBytes > maxD1BatchPayloadBytes)
+    return Effect.fail(
+      new ProdSyncError({
+        operation: "d1Batch",
+        cause: new Error(
+          `D1 batch exceeds limits: ${statements.length} statements, ${payloadBytes} bytes`,
+        ),
+      }),
+    );
+  return Effect.tryPromise({
     try: async () => {
       const response = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId()}/d1/database/${databaseId()}/query`,
         {
           ...d1BatchRequest(statements),
+          signal: AbortSignal.timeout(30_000),
           headers: {
             Authorization: `Bearer ${apiToken()}`,
             "content-type": "application/json",
@@ -114,6 +128,7 @@ const d1Batch = (statements: ReadonlyArray<D1Statement>) =>
     },
     catch: (cause) => new ProdSyncError({ operation: "d1Batch", cause }),
   });
+};
 
 const d1Query = (sql: string, params: ReadonlyArray<D1Param>) =>
   Effect.tryPromise({
@@ -122,6 +137,7 @@ const d1Query = (sql: string, params: ReadonlyArray<D1Param>) =>
         `https://api.cloudflare.com/client/v4/accounts/${accountId()}/d1/database/${databaseId()}/query`,
         {
           method: "POST",
+          signal: AbortSignal.timeout(30_000),
           headers: {
             Authorization: `Bearer ${apiToken()}`,
             "content-type": "application/json",
@@ -152,18 +168,9 @@ export const mediaCompletionMarkerKey = (assetId: string) => `media/${assetId}/.
 
 /** Derives the completion marker beside the manifest/image object without trusting it as complete. */
 export const mediaCompletionMarkerForMediaKey = (mediaKey: string) => {
-  const slash = mediaKey.lastIndexOf("/");
-  return `${slash === -1 ? "" : mediaKey.slice(0, slash + 1)}.complete`;
-};
-
-const contentType = (key: string): string => {
-  if (key.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
-  if (key.endsWith(".ts")) return "video/mp2t";
-  if (key.endsWith(".jpg") || key.endsWith(".jpeg")) return "image/jpeg";
-  if (key.endsWith(".png")) return "image/png";
-  if (key.endsWith(".webp")) return "image/webp";
-  if (key.endsWith(".vtt")) return "text/vtt";
-  return "application/octet-stream";
+  const keyDir = r2KeyDir(mediaKey);
+  if (keyDir === "") throw new Error("media key must include an R2 directory");
+  return `${keyDir}.complete`;
 };
 
 interface UploadFile {
@@ -200,7 +207,7 @@ const uploadDir = (localDir: string, keyPrefix: string) =>
       files,
       ({ localPath, key }) =>
         Effect.tryPromise({
-          try: () => client.write(key, Bun.file(localPath), { type: contentType(key) }),
+          try: () => client.write(key, Bun.file(localPath), { type: mediaContentType(key) }),
           catch: (cause) => new ProdSyncError({ operation: "r2.write", cause }),
         }),
       { concurrency: uploadConcurrency, discard: true },
@@ -298,10 +305,17 @@ const listPrefixKeys = (prefix: string) =>
     }
   });
 
-const removeR2Prefix = (assetId: string) =>
+const removeR2Prefix = (mediaKey: string) =>
   Effect.gen(function* () {
+    if (isAbsoluteHttpUrl(mediaKey)) return;
+    const prefix = r2KeyDir(mediaKey);
+    if (prefix === "")
+      return yield* new ProdSyncError({
+        operation: "removeMedia",
+        cause: new Error("media key must include an R2 directory"),
+      });
     const client = r2();
-    const keys = yield* listPrefixKeys(`media/${assetId}/`);
+    const keys = yield* listPrefixKeys(prefix);
     yield* Effect.forEach(
       keys,
       (key) =>
@@ -378,7 +392,7 @@ export const projectSnapshotStatements = (
         { sql: "DELETE FROM chapters WHERE asset_id = ?", params: [asset.id] },
         ...chapters.map((chapter) => ({
           sql: "INSERT INTO chapters (id, asset_id, title, start_sec, sort_order) VALUES (?, ?, ?, ?, ?)",
-          params: [chapter.id, chapter.assetId, chapter.title, chapter.startSec, chapter.sortOrder],
+          params: [chapter.id, asset.id, chapter.title, chapter.startSec, chapter.sortOrder],
         })),
       ];
     }),
@@ -411,9 +425,12 @@ export interface ProdSyncService {
     chapters: ReadonlyArray<Chapter>,
     localMediaDir: string,
   ) => Effect.Effect<void, ProdSyncError>;
-  readonly removeMedia: (assetId: string) => Effect.Effect<void, ProdSyncError>;
+  readonly removeMedia: (mediaKey: string) => Effect.Effect<void, ProdSyncError>;
   readonly unpublish: (assetId: string) => Effect.Effect<void, ProdSyncError>;
-  readonly removeFromProd: (assetId: string) => Effect.Effect<void, ProdSyncError>;
+  readonly removeFromProd: (
+    assetId: string,
+    mediaKey: string,
+  ) => Effect.Effect<void, ProdSyncError>;
 }
 
 export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admin/ProdSync") {
@@ -460,11 +477,11 @@ export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admi
           yield* upsertAsset(video);
           yield* replaceChapters(video.id, chapters);
         }).pipe(wrapProdError("pushToProd")),
-      removeMedia: (assetId) => removeR2Prefix(assetId),
+      removeMedia: (mediaKey) => removeR2Prefix(mediaKey),
       unpublish: (assetId) => unpublishAsset(assetId),
-      removeFromProd: (assetId) =>
+      removeFromProd: (assetId, mediaKey) =>
         Effect.gen(function* () {
-          yield* removeR2Prefix(assetId);
+          yield* removeR2Prefix(mediaKey);
           yield* deleteAssetRow(assetId);
         }),
     }),
@@ -484,6 +501,7 @@ export class Publisher extends Context.Service<
       | AssetPublicationValidationError
       | AssetNotFoundError
       | InvalidMediaShapeError
+      | SlugAlreadyExistsError
     >;
     readonly publishProject: (
       projectId: ProjectId,
@@ -576,7 +594,7 @@ export class Publisher extends Context.Service<
           for (const asset of aggregate.assets) {
             chapters.set(asset.id, yield* assets.listChapters(asset.id));
             if (!isAbsoluteHttpUrl(asset.mediaKey) && !(yield* sync.mediaExists(asset.mediaKey)))
-              yield* sync.uploadMedia(asset.mediaKey, storage.videoDir(asset.id));
+              yield* sync.uploadMedia(asset.mediaKey, storage.assetDir(asset.id));
           }
         const publishedAt = Date.now();
         yield* sync.replaceProjectCatalog({
@@ -601,8 +619,11 @@ export class Publisher extends Context.Service<
             const shapeError = mediaShapeError(asset);
             if (shapeError) return yield* shapeError;
             const published = new Asset({ ...asset, publishedAt: Date.now() });
-            if (!(yield* sync.mediaExists(published.mediaKey)))
-              yield* sync.uploadMedia(published.mediaKey, storage.videoDir(published.id));
+            if (
+              !isAbsoluteHttpUrl(published.mediaKey) &&
+              !(yield* sync.mediaExists(published.mediaKey))
+            )
+              yield* sync.uploadMedia(published.mediaKey, storage.assetDir(published.id));
             yield* sync.syncMetadata(published, yield* assets.listChapters(published.id));
             return yield* assets.update(published);
           }),
@@ -646,10 +667,10 @@ export const pushToProd = (video: Asset, chapters: ReadonlyArray<Chapter>, local
     return yield* sync.pushToProd(video, chapters, localMediaDir);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const removeMedia = (assetId: string) =>
+export const removeMedia = (mediaKey: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.removeMedia(assetId);
+    return yield* sync.removeMedia(mediaKey);
   }).pipe(Effect.provide(ProdSync.layer));
 
 export const unpublish = (assetId: string) =>
@@ -658,8 +679,8 @@ export const unpublish = (assetId: string) =>
     return yield* sync.unpublish(assetId);
   }).pipe(Effect.provide(ProdSync.layer));
 
-export const removeFromProd = (assetId: string) =>
+export const removeFromProd = (assetId: string, mediaKey: string) =>
   Effect.gen(function* () {
     const sync = yield* ProdSync;
-    return yield* sync.removeFromProd(assetId);
+    return yield* sync.removeFromProd(assetId, mediaKey);
   }).pipe(Effect.provide(ProdSync.layer));

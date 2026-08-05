@@ -1,7 +1,7 @@
 import { Layer } from "effect";
 import { HttpServer } from "effect/unstable/http";
 import { BunFileSystem } from "@effect/platform-bun";
-import { SqliteClient } from "@effect/sql-sqlite-bun";
+import type { SqliteClient } from "@effect/sql-sqlite-bun";
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
 import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
 import { MediaProcessor } from "./MediaProcessor.ts";
@@ -14,8 +14,7 @@ import { ProdSync, Publisher } from "../prod.ts";
 const platformLayer = Layer.merge(HttpServer.layerServices, BunFileSystem.layer);
 
 /** Builds the admin service graph against the database selected by the composition root. */
-export const makeAppLayer = (dbFilename: string) => {
-  const sqlLayer = SqliteClient.layer({ filename: dbFilename });
+export const makeAppLayer = (sqlLayer: ReturnType<typeof SqliteClient.layer>) => {
   const storageLive = Storage.layer.pipe(Layer.provide(platformLayer));
   const mediaProcessorLive = Layer.provideMerge(
     MediaProcessor.layer,

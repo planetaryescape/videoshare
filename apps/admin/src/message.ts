@@ -17,10 +17,13 @@ export const ClickedDeleteProject = m("ClickedDeleteProject", { id: S.String });
 export const ClickedRetryProjectOperation = m("ClickedRetryProjectOperation");
 export const ClickedPublishProject = m("ClickedPublishProject", { id: S.String });
 export const SucceededPublishProject = m("SucceededPublishProject", { id: S.String });
-export const FailedPublishProject = m("FailedPublishProject", { error: S.String });
+export const FailedPublishProject = m("FailedPublishProject", { id: S.String, error: S.String });
 export const ClickedUnpublishProject = m("ClickedUnpublishProject", { id: S.String });
 export const SucceededUnpublishProject = m("SucceededUnpublishProject", { id: S.String });
-export const FailedUnpublishProject = m("FailedUnpublishProject", { error: S.String });
+export const FailedUnpublishProject = m("FailedUnpublishProject", {
+  id: S.String,
+  error: S.String,
+});
 export const ClickedMoveProjectMember = m("ClickedMoveProjectMember", {
   assetId: S.String,
   direction: S.Literals(["up", "down"]),
@@ -40,7 +43,7 @@ export const FailedLoadProject = m("FailedLoadProject", { id: S.String, error: S
 export const SucceededSaveProject = m("SucceededSaveProject", { detail: ProjectDetailSchema });
 export const FailedSaveProject = m("FailedSaveProject", { error: S.String });
 export const SucceededDeleteProject = m("SucceededDeleteProject", { id: S.String });
-export const FailedDeleteProject = m("FailedDeleteProject", { error: S.String });
+export const FailedDeleteProject = m("FailedDeleteProject", { id: S.String, error: S.String });
 export const UpdatedTitle = m("UpdatedTitle", { title: S.String });
 export const UpdatedDescription = m("UpdatedDescription", { description: S.String });
 export const BlurredEditField = m("BlurredEditField");

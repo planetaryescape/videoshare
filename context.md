@@ -19,7 +19,7 @@ A two-sided solo video-sharing tool: a public Cloudflare-hosted player reached b
 
 ```
 alchemy.run.ts          Alchemy stack: R2, D1, viewer Worker
-packages/shared/        Video, Chapter, Slug, Errors, Migrations, VideoRepository
+packages/shared/        Asset, Project, Chapter, Slug, Errors, Migrations, repositories
 apps/viewer/            Cloudflare Worker (public player, password gate, R2 proxy)
 apps/admin/             server.ts (Bun REST + WebSocket) + src/ (foldkit + Vite)
 repos/                  vendored reference subtrees (accountability, effectv4, foldkit), git, not built
@@ -30,14 +30,14 @@ scripts/, docs/         dev scripts, architecture/spec/decisions/build-plan
 ## The shared package is the keystone
 
 - `Video`, `Chapter` as `Schema.Class` with branded `VideoId`, `ChapterId`, `Slug`.
-- `VideoRepository` is a `Context.Service` written against the dialect-agnostic `SqlClient`. Each app provides a different client layer; the queries are identical. Repository exposes `findById`, `findBySlug`, `list`, `create`, `update`, `delete`, `listChapters`, `replaceChapters`.
+- `AssetRepository` and `ProjectRepository` are `Context.Service`s written against the dialect-agnostic `SqlClient`. Each app provides a different client layer; their queries are identical.
 - `VideoErrors` uses `Schema.TaggedErrorClass` plus a `errorStatus` map; the route layer maps tags to HTTP status. The project deliberately skips the full `HttpApi` framework.
 - `Migrations` is plain `IF NOT EXISTS` DDL that runs on both SQLite and D1.
 - `Slug.generateSlug` is 16 CSPRNG chars from a URL-safe alphabet.
 
 ## Data model (snake_case in DB, camelCase in TS)
 
-- `videos`: id, slug (unique, unguessable), title, description, poster_key, hls_key, duration_sec, password_hash, created_at, published_at, updated_at.
+- `assets`: id, slug (unique, unguessable), kind, title, description, poster_key, media_key, duration_sec, dimensions, project membership, password_hash, and publication timestamps.
 - `chapters`: id, video_id (FK cascade), title, start_sec, sort_order.
 
 ## Viewer (`apps/viewer`) — deployed
@@ -58,26 +58,23 @@ Two processes on the laptop, both driven by Bun.
 
 - `@effect/sql-sqlite-bun` against `./videoshare-admin.db`, runs `Migrations` on boot.
 - Routes (all CORS-permissive for the Vite dev server):
-  - `GET /api/videos` → `repo.list`
-  - `POST /api/videos` → creates a row with a fresh UUID and slug, `hlsKey: ""`, `publishedAt: null`
-  - `GET /api/videos/:id` → video + chapters
-  - `PUT /api/videos/:id` → updates fields and optionally replaces chapters (re-sorted by array index)
-  - `DELETE /api/videos/:id` → deletes from DB and `rm -rf` the HLS output dir
-  - `POST /api/upload` (multipart `videoId` + `file`) → transcode → upload to R2 → update row with `hlsKey`, `posterKey`, `durationSec`
-  - `POST /api/publish/:id` → require `hlsKey` present; idempotently upload media if missing; `syncMetadata` upserts the row and chapters to D1
-  - `GET /media/*` → serves transcoded HLS files locally (path-traversal blocked)
-  - `WS /ws?videoId=...` → push `{stage, pct}` frames to all subscribers of that videoId
+  - `GET /api/assets` and `GET /api/assets/:id` → asset catalog and chapters
+  - `POST /api/assets`, `PUT /api/assets/:id`, and `DELETE /api/assets/:id` manage assets
+  - `POST /api/upload` accepts multipart `assetId`, `file`, and optional `poster`; it processes local media before publication
+  - `POST /api/publish/:id` publishes a direct asset; project publication synchronizes complete catalogs
+  - `GET /media/*` → serves locally processed media (path-traversal blocked)
+  - `WS /ws?assetId=...` → pushes `{stage, pct}` frames to subscribers for that asset
 - Effect error handling: `runRoute` catches the four domain error tags, looks up the HTTP status in `errorStatus`, and pretty-prints any other cause to stderr.
 - Transcode (`transcode`) uses mediabunny to write HLS (MPEG-TS segments, 6s target) with an ABR ladder of 1080/720/480 (rungs ≤ source height, else 480), AVC high-quality bitrate, AAC 128 kbps stereo, 30fps, 2s keyframe interval. Emits `transcoding` / `poster` / `done` progress frames. `writePoster` decodes one frame at +1s, rescales to ≤1280 wide, encodes a progressive JPEG via `Bun.Image`.
 - `prod.ts` does the cloud sync: `S3Client` (Bun) → R2 with content-type sniff, D1 query via Cloudflare REST API (`upsertVideo` with `ON CONFLICT(id) DO UPDATE`, plus `replaceChapters`). `uploadDir` walks the local HLS dir and uploads with 8-way concurrency.
 
 ### `src/` (foldkit on Vite :5173)
 
-- `Model` (a `Schema.Struct`): screen union (`ListVideos` | `EditVideo`), videos, edit buffers, selected `File`, upload/publish flags, `errorMessage: Option<string>`. Helpers `shareUrl`, `formatDuration`, `isPublished`, `hasUnpublishedChanges`.
+- `Model` (a `Schema.Struct`): assets and projects, edit buffers, selected files, upload/publication flags, and `errorMessage: Option<string>`. Helpers include share URLs and publication-state checks.
 - `Message`: every action is a tagged effect-schema message (`ClickedNewVideo`, `SubmittedUpload`, `ReceivedUploadProgress`, etc.) so the runtime is typed and exhaustively checked.
 - `update` is a `Match.tagsExhaustive` on `Message` returning `[Model, ReadonlyArray<Command>]`. Commands live in `commands.ts` (`LoadVideos`, `CreateVideoCmd`, `UploadVideoCmd`, `PublishVideoCmd`, etc.). `evo` from `foldkit/struct` for immutable updates.
 - `view` dispatches between `listVideosView` and `editVideoView` (separate files for composition discipline). Dark Tailwind v4 theme, no comments.
-- `subscriptions.uploadProgress` opens a WebSocket to `:3001/ws?videoId=...` while uploading, decodes each frame with an Effect schema, and feeds `ReceivedUploadProgress` messages back into the runtime.
+- `subscriptions.uploadProgress` opens a WebSocket to `:3001/ws?assetId=...` while uploading, decodes each frame with an Effect schema, and feeds `ReceivedUploadProgress` messages back into the runtime.
 - `entry.ts` builds the program with `Runtime.makeProgram({ Model, init, update, view, subscriptions, container, devTools: { Message } })`.
 
 ## Alchemy (`alchemy.run.ts`)
@@ -115,5 +112,5 @@ No accounts, comments, analytics, signed URLs, multi-CDN, or mobile admin. Mobil
 - `docs/build-plan.md:1`
 - `apps/admin/server.ts:263`
 - `apps/viewer/src/worker.ts:384`
-- `packages/shared/src/VideoRepository.ts:52`
+- `packages/shared/src/AssetRepository.ts`
 - `alchemy.run.ts:5`
