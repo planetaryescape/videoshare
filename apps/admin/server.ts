@@ -4,7 +4,7 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { registerMediabunnyServer } from "@mediabunny/server";
 import { AdminApiLive, handlersLayer } from "./src/routes/AdminApiLive.ts";
-import { AppLayer } from "./src/services/AppLayer.ts";
+import { makeAppLayer } from "./src/services/AppLayer.ts";
 import { makeProgressHandler, type ProgressSocketData } from "./src/ws/progress.ts";
 import { corsMiddleware, mediaRouter } from "./src/routes/media.ts";
 
@@ -15,7 +15,7 @@ registerMediabunnyServer();
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)));
 
-const appLayer = AppLayer;
+const appLayer = makeAppLayer(dbFilename);
 
 // Build `appLayer` once via a `ManagedRuntime` so its resources stay alive for
 // the server lifetime. Reuse its context for the WebSocket progress handler.
@@ -23,7 +23,8 @@ const appRuntime = ManagedRuntime.make(appLayer);
 const appContext = await appRuntime.context();
 const appContextLayer = Layer.succeedContext(appContext);
 
-const fullLayer = Layer.mergeAll(handlersLayer, AdminApiLive, mediaRouter, corsMiddleware).pipe(
+const apiLayer = AdminApiLive.pipe(Layer.provide(handlersLayer));
+const fullLayer = Layer.mergeAll(apiLayer, mediaRouter, corsMiddleware).pipe(
   Layer.provide(appContextLayer),
 );
 

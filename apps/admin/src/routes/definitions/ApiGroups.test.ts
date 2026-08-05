@@ -2,17 +2,23 @@ import { HttpApi } from "effect/unstable/httpapi";
 import { expect, test } from "vitest";
 import { AdminApi } from "../AdminApi";
 
-test("exposes chapter replacement beneath the assets API prefix once", () => {
-  const paths: Array<string> = [];
+test("does not declare multiple handlers for the same method and route shape", () => {
+  const routeOwners = new Map<string, Array<string>>();
 
   HttpApi.reflect(AdminApi, {
     onGroup: () => undefined,
     onEndpoint: ({ endpoint }) => {
-      if (endpoint.identifier === "replaceChapters") {
-        paths.push(endpoint.path);
-      }
+      const routeShape = endpoint.path.replaceAll(/:[^/]+/g, ":param");
+      const routeKey = `${endpoint.method} ${routeShape}`;
+      const owners = routeOwners.get(routeKey) ?? [];
+      owners.push(endpoint.identifier);
+      routeOwners.set(routeKey, owners);
     },
   });
 
-  expect(paths).toEqual(["/api/assets/:assetId"]);
+  const duplicateRoutes = [...routeOwners]
+    .filter(([, owners]) => owners.length > 1)
+    .map(([route, owners]) => ({ route, owners }));
+
+  expect(duplicateRoutes).toEqual([]);
 });

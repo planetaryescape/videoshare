@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from "effect/unstable/httpapi";
 import { Multipart } from "effect/unstable/http";
-import { Chapter, Asset, AssetId } from "@videoshare/shared/Asset";
+import { Asset, AssetId } from "@videoshare/shared/Asset";
 import {
   PersistenceError,
   ProdSyncError,
@@ -25,7 +25,6 @@ import {
 import { NotTranscodedError, UploadValidationError } from "../../errors/UploadErrors.ts";
 import { InvalidImageError, UnsupportedMediaError } from "../../errors/MediaErrors.ts";
 import {
-  ChapterInput,
   CreateAssetRequest,
   DeleteResponse,
   UpdateAssetRequest,
@@ -222,14 +221,3 @@ export class PublishApi extends HttpApiGroup.make("publish")
     }),
   )
   .prefix("/publish") {}
-
-export class ChaptersApi extends HttpApiGroup.make("chapters")
-  .add(
-    HttpApiEndpoint.put("replaceChapters", "/:assetId", {
-      params: Schema.Struct({ assetId: AssetId }),
-      payload: Schema.Array(ChapterInput),
-      success: Schema.Array(Chapter),
-      error: [AssetNotFoundError, ImageChaptersNotAllowedError, PersistenceError],
-    }),
-  )
-  .prefix("/assets") {}
