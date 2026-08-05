@@ -117,7 +117,9 @@ describe("local asset migration", () => {
         yield* migrate;
         yield* sql`
           INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at)
-          VALUES ('legacy-summary', 'summary', 'video', 'Summary', 'media/legacy-summary/master.m3u8', 1, 1)
+          VALUES
+            ('legacy-summary', 'summary', 'video', 'Summary', 'media/legacy-summary/master.m3u8', 1, 1),
+            ('existing-replacement', 'asset-legacy-summary', 'video', 'Existing', 'media/existing/master.m3u8', 1, 1)
         `;
         // Simulate a catalog from before the project summary route was reserved.
         yield* sql`UPDATE assets SET slug = 'summary' WHERE id = 'legacy-summary'`;
@@ -129,7 +131,7 @@ describe("local asset migration", () => {
       }),
     );
 
-    expect(slug).toBe("asset-legacy-summary");
+    expect(slug).toBe("asset-legacy-summary-1");
   });
 
   test("removes the redundant local slug index without relaxing slug uniqueness", async () => {
@@ -298,6 +300,36 @@ describe("D1 SQL path", () => {
           .query<{ readonly kind: string }, []>("SELECT kind FROM assets WHERE id = 'image-1'")
           .get(),
       ).toEqual({ kind: "image" });
+    } finally {
+      database.close();
+    }
+  });
+
+  test("renames a reserved D1 member slug without colliding with an existing replacement", async () => {
+    const database = new Database(":memory:");
+    try {
+      for (const filename of [
+        "0001_init.sql",
+        "0002_add_updated_at.sql",
+        "0003_add_kind.sql",
+        "0004_assets.sql",
+      ]) {
+        database.exec(await migrationSql(filename));
+      }
+      database.exec(`
+        INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at) VALUES
+          ('legacy-summary', 'summary', 'video', 'Summary', 'media/legacy-summary/master.m3u8', 1, 1),
+          ('existing-replacement', 'asset-legacy-summary', 'video', 'Existing', 'media/existing/master.m3u8', 1, 1)
+      `);
+      database.exec(await migrationSql("0005_add_image_kind.sql"));
+
+      expect(
+        database
+          .query<{ readonly slug: string }, []>(
+            "SELECT slug FROM assets WHERE id = 'legacy-summary'",
+          )
+          .get(),
+      ).toEqual({ slug: "asset-legacy-summary-1" });
     } finally {
       database.close();
     }

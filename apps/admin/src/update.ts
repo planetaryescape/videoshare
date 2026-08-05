@@ -85,12 +85,22 @@ const isActiveProjectOperation = (model: Model): boolean =>
   model.projectOperation._tag !== "ProjectOperationIdle" &&
   model.projectOperation.id === activeProjectId(model);
 
-const membershipSave = (model: Model, command: Cmd): Update =>
+const membershipSave = (model: Model, command: (requestId: number) => Cmd): Update =>
   model.projectMetadataSaveInFlight ||
   model.projectMembershipOperation._tag === "ProjectMembershipSaving" ||
   isProjectOperationPending(model)
     ? noCmd(model)
-    : withEvo(model, { projectMembershipOperation: () => ProjectMembershipSaving() }, command);
+    : (() => {
+        const requestId = model.projectSaveRequestId + 1;
+        return withEvo(
+          model,
+          {
+            projectSaveRequestId: () => requestId,
+            projectMembershipOperation: () => ProjectMembershipSaving(),
+          },
+          command(requestId),
+        );
+      })();
 
 const projectCommand = (
   model: Model,
@@ -342,10 +352,12 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         ) {
           return noCmd(model);
         }
+        const requestId = model.projectSaveRequestId + 1;
         return withEvo(
           model,
-          { projectMetadataSaveInFlight: () => true },
+          { projectSaveRequestId: () => requestId, projectMetadataSaveInFlight: () => true },
           SaveProject({
+            requestId,
             id: Option.isSome(existing) ? existing.value.project.id : undefined,
             title: model.projectTitle,
             description: model.projectDescription,
@@ -380,9 +392,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         model.screen._tag !== "ProjectEdit" || model.screen.projectId !== id
           ? noCmd(model)
           : withEvo(model, { errorMessage: () => Option.some(error) }),
-      SucceededSaveProject: ({ detail }) =>
-        !model.projectMetadataSaveInFlight &&
-        model.projectMembershipOperation._tag !== "ProjectMembershipSaving"
+      SucceededSaveProject: ({ requestId, detail }) =>
+        model.projectSaveRequestId !== requestId ||
+        (!model.projectMetadataSaveInFlight &&
+          model.projectMembershipOperation._tag !== "ProjectMembershipSaving")
           ? noCmd(model)
           : withEvo(
               model,
@@ -423,9 +436,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               LoadProjects(),
               LoadAssets(),
             ),
-      FailedSaveProject: ({ error }) =>
-        !model.projectMetadataSaveInFlight &&
-        model.projectMembershipOperation._tag !== "ProjectMembershipSaving"
+      FailedSaveProject: ({ requestId, error }) =>
+        model.projectSaveRequestId !== requestId ||
+        (!model.projectMetadataSaveInFlight &&
+          model.projectMembershipOperation._tag !== "ProjectMembershipSaving")
           ? noCmd(model)
           : withEvo(model, {
               projectMetadataSaveInFlight: () => false,
@@ -532,30 +546,27 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             }),
       ClickedMoveProjectMember: ({ assetId, direction }) => {
         if (Option.isNone(model.editProject)) return noCmd(model);
+        const projectId = model.editProject.value.project.id;
         const members = model.editProject.value.assets;
         const index = members.findIndex((asset) => asset.id === assetId);
         if (index < 0) return noCmd(model);
-        return membershipSave(
-          model,
+        return membershipSave(model, (requestId) =>
           MoveProjectMember({
-            projectId: model.editProject.value.project.id,
+            requestId,
+            projectId,
             assetId,
             position: direction === "up" ? index - 1 : index + 1,
             unfile: false,
           }),
         );
       },
-      ClickedUnfileProjectMember: ({ assetId }) =>
-        Option.isNone(model.editProject)
-          ? noCmd(model)
-          : membershipSave(
-              model,
-              MoveProjectMember({
-                projectId: model.editProject.value.project.id,
-                assetId,
-                unfile: true,
-              }),
-            ),
+      ClickedUnfileProjectMember: ({ assetId }) => {
+        if (Option.isNone(model.editProject)) return noCmd(model);
+        const projectId = model.editProject.value.project.id;
+        return membershipSave(model, (requestId) =>
+          MoveProjectMember({ requestId, projectId, assetId, unfile: true }),
+        );
+      },
       ClickedAssignAssetToProject: ({ assetId, projectId }) =>
         projectId === ""
           ? (() => {
@@ -565,12 +576,13 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               const source = model.editAsset.value.projectId;
               return source === null
                 ? noCmd(model)
-                : membershipSave(
-                    model,
-                    MoveProjectMember({ projectId: source, assetId, unfile: true }),
+                : membershipSave(model, (requestId) =>
+                    MoveProjectMember({ requestId, projectId: source, assetId, unfile: true }),
                   );
             })()
-          : membershipSave(model, MoveProjectMember({ projectId, assetId, unfile: false })),
+          : membershipSave(model, (requestId) =>
+              MoveProjectMember({ requestId, projectId, assetId, unfile: false }),
+            ),
       ClickedEditAsset: (msg: { id: string }) =>
         model.isUploading
           ? noCmd(model)
@@ -686,6 +698,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           {
             videoFileDrop: () => videoFileDrop,
             selectedFile: () => selectedFile,
+            selectedPoster: () =>
+              Option.isSome(selectedFile) && selectedFile.value.type.startsWith("image/")
+                ? Option.none()
+                : model.selectedPoster,
             errorMessage: () => errorMessage,
           },
           ...Command.mapMessages(commands, (message) => GotAssetFileDropMessage({ message })),

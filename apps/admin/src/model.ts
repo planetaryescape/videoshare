@@ -85,6 +85,8 @@ export const Model = S.Struct({
   projectDescription: S.String,
   /** None means untouched; Some("") clears; Some(value) replaces at the HTTP boundary. */
   projectPassword: S.Option(S.String),
+  /** Monotonically identifies the latest metadata or membership save. */
+  projectSaveRequestId: S.Int,
   projectMetadataSaveInFlight: S.Boolean,
   projectMembershipOperation: ProjectMembershipOperation,
   projectOperation: ProjectOperation,
@@ -123,6 +125,7 @@ export const initialModel = (): Model => ({
   projectTitle: "",
   projectDescription: "",
   projectPassword: Option.none(),
+  projectSaveRequestId: 0,
   projectMetadataSaveInFlight: false,
   projectMembershipOperation: ProjectMembershipIdle(),
   projectOperation: ProjectOperationIdle(),

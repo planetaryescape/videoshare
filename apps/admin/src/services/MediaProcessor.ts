@@ -163,21 +163,15 @@ const writePoster = (
     );
   });
 
-const writePosterImage = (
-  assetId: string,
-  file: File,
-): Effect.Effect<void, PosterDecodeError | StorageError, Storage> =>
-  Effect.gen(function* () {
-    const storage = yield* Storage;
-    const jpeg = yield* Effect.tryPromise({
-      try: () =>
-        new Bun.Image(file)
-          .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
-          .jpeg({ quality: 85, progressive: true })
-          .bytes(),
-      catch: (cause) => new PosterDecodeError({ filename: file.name, cause }),
-    });
-    yield* storage.writeFile(`${assetId}/poster.jpg`, jpeg);
+/** Decodes an uploaded cover before media processing mutates the asset directory. */
+const prepareCoverImage = (file: File): Effect.Effect<Uint8Array, PosterDecodeError> =>
+  Effect.tryPromise({
+    try: () =>
+      new Bun.Image(file)
+        .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 85, progressive: true })
+        .bytes(),
+    catch: (cause) => new PosterDecodeError({ filename: file.name, cause }),
   });
 
 type ImageFilename = "original.jpg" | "original.png" | "original.webp";
@@ -252,10 +246,13 @@ export interface MediaProcessorService {
     | InvalidConversionError
     | StorageError
   >;
+  /** Decodes and normalizes a cover before media processing begins. */
+  readonly prepareCoverImage: (file: File) => Effect.Effect<Uint8Array, PosterDecodeError>;
+  /** Writes a previously prepared cover beside processed media. */
   readonly writeCoverImage: (
     assetId: string,
-    file: File,
-  ) => Effect.Effect<void, PosterDecodeError | StorageError>;
+    jpeg: Uint8Array,
+  ) => Effect.Effect<void, StorageError>;
 }
 
 export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcessorService>()(
@@ -445,8 +442,8 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
       return MediaProcessor.of({
         process: (assetId, file) =>
           process(assetId, file).pipe(Effect.provideService(Storage, storage)),
-        writeCoverImage: (assetId, file) =>
-          writePosterImage(assetId, file).pipe(Effect.provideService(Storage, storage)),
+        prepareCoverImage,
+        writeCoverImage: (assetId, jpeg) => storage.writeFile(`${assetId}/poster.jpg`, jpeg),
       });
     }),
   );

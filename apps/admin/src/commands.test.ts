@@ -69,7 +69,8 @@ const saveProjectBody = async (password: Option.Option<string>) => {
 
   try {
     const result = await Effect.runPromise(
-      SaveProject({ id: "project-1", title: "Renamed", description: "", password }).effect,
+      SaveProject({ requestId: 1, id: "project-1", title: "Renamed", description: "", password })
+        .effect,
     );
     expect(result._tag).toBe("SucceededSaveProject");
     return JSON.parse(body);

@@ -37,6 +37,8 @@ const progressHandler = makeProgressHandler(progressRuntime);
 
 Bun.serve<ProgressSocketData>({
   port: 3001,
+  // Project publication uploads media and can exceed Bun's short default idle timeout.
+  idleTimeout: 120,
   maxRequestBodySize: 1024 * 1024 * 1024 * 5,
   fetch(req, server) {
     if (new URL(req.url).pathname === "/ws") {

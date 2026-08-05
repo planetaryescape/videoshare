@@ -87,7 +87,23 @@ export const migrate = Effect.gen(function* () {
     yield* sql`ALTER TABLE assets ADD COLUMN height INTEGER`;
   }
   // `summary` is a project route, so persisted member assets need an addressable slug.
-  yield* sql`UPDATE assets SET slug = 'asset-' || id WHERE slug = 'summary'`;
+  yield* sql`
+    WITH RECURSIVE candidates(id, slug, suffix) AS (
+      SELECT id, 'asset-' || id, 0 FROM assets WHERE slug = 'summary'
+      UNION ALL
+      SELECT id, 'asset-' || id || '-' || (suffix + 1), suffix + 1
+      FROM candidates
+      WHERE EXISTS (SELECT 1 FROM assets existing WHERE existing.slug = candidates.slug)
+    )
+    UPDATE assets
+    SET slug = (
+      SELECT candidates.slug
+      FROM candidates
+      WHERE NOT EXISTS (SELECT 1 FROM assets existing WHERE existing.slug = candidates.slug)
+      LIMIT 1
+    )
+    WHERE slug = 'summary'
+  `;
   if (addedUpdatedAt)
     yield* sql`UPDATE assets SET updated_at = created_at WHERE updated_at IS NULL`;
   // Projects are deliberately independent from SQLite foreign-key enforcement: deletion explicitly unfiles members.
@@ -106,6 +122,22 @@ export const migrate = Effect.gen(function* () {
   const projectColumns = yield* columnsFor(sql, "projects");
   if (!projectColumns.has("published_at"))
     yield* sql`ALTER TABLE projects ADD COLUMN published_at INTEGER`;
+  // Tracks the remote catalog snapshot independently from editable local membership.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS published_project_members (
+      asset_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL
+    )
+  `;
+  // Existing catalogs can seed only their current published membership; subsequent snapshot writes
+  // maintain this table even if a member is later unfiled locally.
+  yield* sql`
+    INSERT OR IGNORE INTO published_project_members (asset_id, project_id)
+    SELECT assets.id, assets.project_id
+    FROM assets
+    JOIN projects ON projects.id = assets.project_id
+    WHERE assets.project_id IS NOT NULL AND projects.published_at IS NOT NULL
+  `;
 
   const chaptersExist = yield* hasTable(sql, "chapters");
   if (!chaptersExist) {

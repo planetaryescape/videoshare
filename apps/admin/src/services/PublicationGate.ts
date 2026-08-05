@@ -10,14 +10,13 @@ export const assertDirectAssetMutationAllowed = (
   projects: typeof ProjectRepository.Service,
 ) =>
   Effect.gen(function* () {
-    if (asset.projectId === null) return;
-    const project = yield* projects.get(asset.projectId);
-    if (Option.isSome(project) && project.value.project.publishedAt !== null)
-      return yield* new PublishedProjectMemberMutationError({
-        assetId: asset.id,
-        projectId: asset.projectId,
-        operation,
-      });
+    const projectId = yield* projects.findPublishedProjectMembership(asset.id);
+    if (Option.isNone(projectId)) return;
+    return yield* new PublishedProjectMemberMutationError({
+      assetId: asset.id,
+      projectId: projectId.value,
+      operation,
+    });
   });
 
 /** Serializes admin mutations with publication within this server process. */

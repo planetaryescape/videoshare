@@ -40,8 +40,14 @@ export const SucceededLoadProjects = m("SucceededLoadProjects", {
 export const FailedLoadProjects = m("FailedLoadProjects", { error: S.String });
 export const SucceededLoadProject = m("SucceededLoadProject", { detail: ProjectDetailSchema });
 export const FailedLoadProject = m("FailedLoadProject", { id: S.String, error: S.String });
-export const SucceededSaveProject = m("SucceededSaveProject", { detail: ProjectDetailSchema });
-export const FailedSaveProject = m("FailedSaveProject", { error: S.String });
+export const SucceededSaveProject = m("SucceededSaveProject", {
+  requestId: S.Int,
+  detail: ProjectDetailSchema,
+});
+export const FailedSaveProject = m("FailedSaveProject", {
+  requestId: S.Int,
+  error: S.String,
+});
 export const SucceededDeleteProject = m("SucceededDeleteProject", { id: S.String });
 export const FailedDeleteProject = m("FailedDeleteProject", { id: S.String, error: S.String });
 export const UpdatedTitle = m("UpdatedTitle", { title: S.String });

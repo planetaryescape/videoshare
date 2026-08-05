@@ -206,6 +206,16 @@ describe("protected project routes", () => {
         )
       ).status,
     ).toBe(404);
+    expect(
+      (
+        await worker.fetch(
+          new Request("https://viewer.example/p/protected/media/protected-member/master.m3u8", {
+            headers: { cookie: cookie ?? "" },
+          }),
+          env,
+        )
+      ).status,
+    ).toBe(200);
   });
 });
 

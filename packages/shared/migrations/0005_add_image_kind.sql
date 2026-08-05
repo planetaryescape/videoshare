@@ -31,14 +31,27 @@ CREATE TABLE assets_next (
   height INTEGER
 );
 
+WITH RECURSIVE candidates(id, slug, suffix) AS (
+  SELECT id, 'asset-' || id, 0 FROM assets WHERE slug = 'summary'
+  UNION ALL
+  SELECT id, 'asset-' || id || '-' || (suffix + 1), suffix + 1
+  FROM candidates
+  WHERE EXISTS (SELECT 1 FROM assets existing WHERE existing.slug = candidates.slug)
+), replacements AS (
+  SELECT id, slug
+  FROM candidates
+  WHERE NOT EXISTS (SELECT 1 FROM assets existing WHERE existing.slug = candidates.slug)
+)
 INSERT INTO assets_next (
   id, slug, kind, title, description, poster_key, media_key, duration_sec,
   password_hash, created_at, published_at, updated_at, project_id, sort_order, width, height
 )
-  SELECT id, CASE WHEN slug = 'summary' THEN 'asset-' || id ELSE slug END,
-         kind, title, description, poster_key, media_key, duration_sec,
-         password_hash, created_at, published_at, updated_at, project_id, sort_order, width, height
-  FROM assets;
+  SELECT assets.id, COALESCE(replacements.slug, assets.slug),
+         assets.kind, assets.title, assets.description, assets.poster_key, assets.media_key,
+         assets.duration_sec, assets.password_hash, assets.created_at, assets.published_at,
+         assets.updated_at, assets.project_id, assets.sort_order, assets.width, assets.height
+  FROM assets
+  LEFT JOIN replacements ON replacements.id = assets.id;
 -- slug's UNIQUE constraint already creates its index. Older catalogs may retain this redundant index.
 DROP INDEX IF EXISTS idx_assets_slug;
 DROP TABLE assets;

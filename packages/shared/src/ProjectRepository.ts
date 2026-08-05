@@ -99,12 +99,16 @@ export class ProjectRepository extends Context.Service<
       ProjectAggregate,
       PersistenceError | ProjectNotFoundError | SlugAlreadyExistsError
     >;
-    /** Atomically records publication for each project and its current members after remote commit. */
+    /** Records the complete remote project-membership snapshot after publication commits. */
     markPublished(
       aggregates: ReadonlyArray<ProjectAggregate>,
       publishedAt: number,
     ): Effect.Effect<void, PersistenceError>;
-    /** Clears only a project's local publication timestamp. */
+    /** Looks up the project that still owns an asset in the remote published snapshot. */
+    findPublishedProjectMembership(
+      assetId: AssetId,
+    ): Effect.Effect<Option.Option<ProjectId>, PersistenceError>;
+    /** Clears a project's local publication timestamp and remote-membership snapshot. */
     clearPublishedAt(id: ProjectId): Effect.Effect<void, PersistenceError>;
     replaceMembers(
       id: ProjectId,
@@ -243,19 +247,41 @@ export class ProjectRepository extends Context.Service<
           markPublished: (aggregates, publishedAt) =>
             sql
               .withTransaction(
-                Effect.forEach(aggregates, ({ project }) =>
-                  Effect.gen(function* () {
-                    yield* sql`UPDATE projects SET published_at=${publishedAt} WHERE id=${project.id}`;
-                    yield* sql`UPDATE assets SET published_at=${publishedAt} WHERE project_id=${project.id}`;
-                  }),
-                ),
+                Effect.gen(function* () {
+                  // A successful full-catalog replacement supersedes every previous remote membership.
+                  yield* sql`DELETE FROM published_project_members`;
+                  yield* Effect.forEach(aggregates, ({ project, assets }) =>
+                    Effect.gen(function* () {
+                      yield* sql`UPDATE projects SET published_at=${publishedAt} WHERE id=${project.id}`;
+                      yield* sql`UPDATE assets SET published_at=${publishedAt} WHERE project_id=${project.id}`;
+                      yield* Effect.forEach(
+                        assets,
+                        (asset) =>
+                          sql`INSERT INTO published_project_members (asset_id, project_id) VALUES (${asset.id}, ${project.id})`,
+                      );
+                    }),
+                  );
+                }),
               )
               .pipe(Effect.asVoid, wrap("markPublished")),
-          clearPublishedAt: (id) =>
-            sql`UPDATE projects SET published_at=NULL WHERE id=${id}`.pipe(
-              Effect.asVoid,
-              wrap("clearPublishedAt"),
+          findPublishedProjectMembership: (assetId) =>
+            sql<{ readonly project_id: string }>`
+              SELECT project_id FROM published_project_members WHERE asset_id = ${assetId} LIMIT 1
+            `.pipe(
+              Effect.map((rows) =>
+                Option.fromNullishOr(rows[0]?.project_id).pipe(Option.map(ProjectId.make)),
+              ),
+              wrap("findPublishedProjectMembership"),
             ),
+          clearPublishedAt: (id) =>
+            sql
+              .withTransaction(
+                Effect.gen(function* () {
+                  yield* sql`UPDATE projects SET published_at=NULL WHERE id=${id}`;
+                  yield* sql`DELETE FROM published_project_members WHERE project_id=${id}`;
+                }),
+              )
+              .pipe(Effect.asVoid, wrap("clearPublishedAt")),
           unfileMember: Effect.fn("ProjectRepository.unfileMember")(function* (
             sourceProjectId: ProjectId,
             assetId: AssetId,
@@ -323,6 +349,7 @@ export class ProjectRepository extends Context.Service<
               Effect.gen(function* () {
                 yield* requireProject(id);
                 yield* sql`UPDATE assets SET project_id=NULL, sort_order=NULL WHERE project_id=${id}`;
+                yield* sql`DELETE FROM published_project_members WHERE project_id=${id}`;
                 yield* sql`DELETE FROM projects WHERE id=${id}`;
               }),
             );

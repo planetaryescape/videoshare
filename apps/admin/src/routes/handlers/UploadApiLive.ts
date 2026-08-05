@@ -55,19 +55,23 @@ export const UploadApiLive = HttpApiBuilder.group(AdminApi, "upload", (handlers)
           }
 
           yield* assertDirectAssetMutationAllowed(found.value, "upload", projects);
+          // A malformed cover must fail before processing replaces the current local media.
+          const cover =
+            poster === null
+              ? null
+              : yield* processor.prepareCoverImage(poster).pipe(
+                  Effect.catchTag(
+                    "PosterDecodeError",
+                    (err) =>
+                      new UploadValidationError({
+                        reason: `Invalid cover image: ${err.message}`,
+                      }),
+                  ),
+                );
           const processed = yield* processor.process(assetId, file);
 
-          if (poster && processed.kind !== "image") {
-            yield* processor
-              .writeCoverImage(assetId, poster)
-              .pipe(
-                Effect.catchTag(
-                  "PosterDecodeError",
-                  (err) =>
-                    new UploadValidationError({ reason: `Invalid cover image: ${err.message}` }),
-                ),
-              );
-          }
+          if (cover !== null && processed.kind !== "image")
+            yield* processor.writeCoverImage(assetId, cover);
 
           const posterKey =
             processed.kind === "image"

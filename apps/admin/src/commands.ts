@@ -163,6 +163,7 @@ export const LoadProject = Command.define(
 export const SaveProject = Command.define(
   "SaveProject",
   {
+    requestId: S.Int,
     id: S.optional(S.String),
     title: S.String,
     description: S.String,
@@ -183,12 +184,25 @@ export const SaveProject = Command.define(
     });
     if (!response.ok)
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
-    return SucceededSaveProject({ detail: yield* decodeProjectDetail(yield* tryJson(response)) });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveProject({ error: errMsg(error) })))),
+    return SucceededSaveProject({
+      requestId: input.requestId,
+      detail: yield* decodeProjectDetail(yield* tryJson(response)),
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(FailedSaveProject({ requestId: input.requestId, error: errMsg(error) })),
+    ),
+  ),
 );
 export const MoveProjectMember = Command.define(
   "MoveProjectMember",
-  { projectId: S.String, assetId: S.String, position: S.optional(S.Int), unfile: S.Boolean },
+  {
+    requestId: S.Int,
+    projectId: S.String,
+    assetId: S.String,
+    position: S.optional(S.Int),
+    unfile: S.Boolean,
+  },
   SucceededSaveProject,
   FailedSaveProject,
 )((input) =>
@@ -207,8 +221,15 @@ export const MoveProjectMember = Command.define(
     );
     if (!response.ok)
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
-    return SucceededSaveProject({ detail: yield* decodeProjectDetail(yield* tryJson(response)) });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveProject({ error: errMsg(error) })))),
+    return SucceededSaveProject({
+      requestId: input.requestId,
+      detail: yield* decodeProjectDetail(yield* tryJson(response)),
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(FailedSaveProject({ requestId: input.requestId, error: errMsg(error) })),
+    ),
+  ),
 );
 export const PublishProject = Command.define(
   "PublishProject",

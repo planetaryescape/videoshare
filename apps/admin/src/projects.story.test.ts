@@ -103,13 +103,14 @@ test("creates a project then uses the server-confirmed edit screen", () => {
     Story.message(BlurredProjectField()),
     Story.Command.expectExact(
       SaveProject({
+        requestId: 1,
         id: undefined,
         title: "Client work",
         description: "",
         password: Option.none(),
       }),
     ),
-    Story.Command.resolve(SaveProject, SucceededSaveProject({ detail: detail() })),
+    Story.Command.resolve(SaveProject, SucceededSaveProject({ requestId: 1, detail: detail() })),
     Story.Command.resolve(LoadProjects, SucceededLoadProjects({ projects: [] })),
     Story.Command.resolve(LoadAssets, SucceededLoadAssets({ assets: [] })),
     Story.model((model) => {
@@ -176,12 +177,31 @@ test("blocks project operations until an in-flight metadata save completes", () 
   };
   const [saving] = update(model, BlurredProjectField());
   const [blocked, commands] = update(saving, ClickedPublishProject({ id: "project-1" }));
-  const [saved] = update(saving, SucceededSaveProject({ detail: detail() }));
+  const [saved] = update(saving, SucceededSaveProject({ requestId: 1, detail: detail() }));
 
   expect(saving.projectMetadataSaveInFlight).toBe(true);
   expect(blocked).toEqual(saving);
   expect(commands).toEqual([]);
   expect(saved.projectMetadataSaveInFlight).toBe(false);
+});
+
+test("ignores a late project save response after another save begins", () => {
+  const editingA = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    editProject: Option.some(detail()),
+    projectTitle: "Renamed project one",
+  };
+  const [savingA] = update(editingA, BlurredProjectField());
+  const [editingB] = update(savingA, ClickedEditProject({ id: "project-2" }));
+  const [savingB] = update({ ...editingB, projectTitle: "Project two" }, BlurredProjectField());
+  const [afterLateA, commands] = update(
+    savingB,
+    SucceededSaveProject({ requestId: 1, detail: detail() }),
+  );
+
+  expect(afterLateA).toEqual(savingB);
+  expect(commands).toEqual([]);
 });
 
 test("resets copied project links when changing project screens", () => {
@@ -274,7 +294,7 @@ test("serializes membership commands and applies server-confirmed assignment to 
   );
   const [confirmed] = update(
     saving,
-    SucceededSaveProject({ detail: detail([asset("free", "project-1", 0)]) }),
+    SucceededSaveProject({ requestId: 1, detail: detail([asset("free", "project-1", 0)]) }),
   );
 
   expect(saving.projectMembershipOperation._tag).toBe("ProjectMembershipSaving");
@@ -409,7 +429,7 @@ test("navigation clears membership saving so a late response cannot reopen the p
   const [navigated] = update(saving, ClickedEditProject({ id: "project-2" }));
   const [afterLateResponse, commands] = update(
     navigated,
-    SucceededSaveProject({ detail: detail(members) }),
+    SucceededSaveProject({ requestId: 1, detail: detail(members) }),
   );
 
   expect(navigated.projectMembershipOperation._tag).toBe("ProjectMembershipIdle");

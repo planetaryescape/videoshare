@@ -250,6 +250,8 @@ const chaptersSection = (h: Html, model: Model) => {
 
 export const editAssetView = (h: Html, model: Model) => {
   const video = Option.isSome(model.editAsset) ? model.editAsset.value : null;
+  const selectedImage =
+    Option.isSome(model.selectedFile) && model.selectedFile.value.type.startsWith("image/");
 
   return h.div(
     [h.Class("mx-auto max-w-4xl")],
@@ -495,57 +497,61 @@ export const editAssetView = (h: Html, model: Model) => {
                           ),
                         ]
                       : []),
-                    h.p(
-                      [h.Class("mt-4 block text-sm font-medium text-gray-300 mb-3")],
-                      ["Cover image (optional)"],
-                    ),
-                    h.submodel({
-                      slotId: model.posterFileDrop.id,
-                      model: model.posterFileDrop,
-                      view: FileDrop.view,
-                      viewInputs: {
-                        accept: ["image/*"],
-                        isDisabled: model.isUploading,
-                        toView: ({ root, input }) =>
-                          h.label(
-                            [
-                              ...root,
-                              h.Class(
-                                "block cursor-pointer rounded-lg border border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-300 transition-colors hover:border-gray-600 data-[drag-over]:border-blue-500 data-[drag-over]:bg-blue-950/30",
-                              ),
-                            ],
-                            ["Drop an image here or click to browse", h.input(input)],
+                    ...(selectedImage
+                      ? []
+                      : [
+                          h.p(
+                            [h.Class("mt-4 block text-sm font-medium text-gray-300 mb-3")],
+                            ["Cover image (optional)"],
                           ),
-                      },
-                      toParentMessage: (message) => GotPosterFileDropMessage({ message }),
-                    }),
-                    ...(Option.isSome(model.selectedPoster)
-                      ? [
-                          h.div(
-                            [h.Class("mt-3 flex items-center gap-2 text-sm text-gray-300")],
-                            [
-                              "Cover: ",
-                              h.span(
-                                [h.Class("font-medium text-white")],
-                                [model.selectedPoster.value.name],
-                              ),
-                              Button.view<Message>({
-                                onClick: ClearedPoster(),
-                                toView: ({ button }) =>
-                                  h.button(
-                                    [
-                                      ...button,
-                                      h.Class(
-                                        "ml-1 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
-                                      ),
-                                    ],
-                                    ["Remove"],
-                                  ),
-                              }),
-                            ],
-                          ),
-                        ]
-                      : []),
+                          h.submodel({
+                            slotId: model.posterFileDrop.id,
+                            model: model.posterFileDrop,
+                            view: FileDrop.view,
+                            viewInputs: {
+                              accept: ["image/*"],
+                              isDisabled: model.isUploading,
+                              toView: ({ root, input }) =>
+                                h.label(
+                                  [
+                                    ...root,
+                                    h.Class(
+                                      "block cursor-pointer rounded-lg border border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-300 transition-colors hover:border-gray-600 data-[drag-over]:border-blue-500 data-[drag-over]:bg-blue-950/30",
+                                    ),
+                                  ],
+                                  ["Drop an image here or click to browse", h.input(input)],
+                                ),
+                            },
+                            toParentMessage: (message) => GotPosterFileDropMessage({ message }),
+                          }),
+                          ...(Option.isSome(model.selectedPoster)
+                            ? [
+                                h.div(
+                                  [h.Class("mt-3 flex items-center gap-2 text-sm text-gray-300")],
+                                  [
+                                    "Cover: ",
+                                    h.span(
+                                      [h.Class("font-medium text-white")],
+                                      [model.selectedPoster.value.name],
+                                    ),
+                                    Button.view<Message>({
+                                      onClick: ClearedPoster(),
+                                      toView: ({ button }) =>
+                                        h.button(
+                                          [
+                                            ...button,
+                                            h.Class(
+                                              "ml-1 rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-red-900/50 hover:text-red-300 transition-colors",
+                                            ),
+                                          ],
+                                          ["Remove"],
+                                        ),
+                                    }),
+                                  ],
+                                ),
+                              ]
+                            : []),
+                        ]),
                     Button.view<Message>({
                       onClick: SubmittedUpload(),
                       isDisabled: model.isUploading || Option.isNone(model.selectedFile),

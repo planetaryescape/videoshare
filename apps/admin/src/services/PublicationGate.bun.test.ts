@@ -89,8 +89,14 @@ test("blocks direct unpublish and delete only for members of locally published p
       yield* assets.create(unfiled);
       yield* projects.move(publishedMember.id, published.id, 2);
       yield* projects.move(draftMember.id, draft.id, 2);
+      const publishedAggregate = Option.getOrThrow(yield* projects.get(published.id));
+      yield* projects.markPublished([publishedAggregate], 10);
       const publishedMemberAfter = Option.getOrThrow(yield* assets.findById(publishedMember.id));
       const draftMemberAfter = Option.getOrThrow(yield* assets.findById(draftMember.id));
+      yield* projects.unfileMember(published.id, publishedMember.id, 11);
+      const locallyUnfiledPublishedMember = Option.getOrThrow(
+        yield* assets.findById(publishedMember.id),
+      );
 
       return {
         blockedUnpublish: yield* Effect.result(
@@ -98,6 +104,12 @@ test("blocks direct unpublish and delete only for members of locally published p
         ),
         blockedDelete: yield* Effect.result(
           assertDirectAssetMutationAllowed(publishedMemberAfter, "delete", projects),
+        ),
+        blockedUploadAfterUnfile: yield* Effect.result(
+          assertDirectAssetMutationAllowed(locallyUnfiledPublishedMember, "upload", projects),
+        ),
+        blockedPublishAfterUnfile: yield* Effect.result(
+          assertDirectAssetMutationAllowed(locallyUnfiledPublishedMember, "publish", projects),
         ),
         draftUnpublish: yield* Effect.result(
           assertDirectAssetMutationAllowed(draftMemberAfter, "unpublish", projects),
@@ -115,7 +127,12 @@ test("blocks direct unpublish and delete only for members of locally published p
     }).pipe(Effect.provide(Layer.mergeAll(sql, repositories))),
   );
 
-  for (const outcome of [result.blockedUnpublish, result.blockedDelete]) {
+  for (const outcome of [
+    result.blockedUnpublish,
+    result.blockedDelete,
+    result.blockedUploadAfterUnfile,
+    result.blockedPublishAfterUnfile,
+  ]) {
     expect(Result.isFailure(outcome)).toBe(true);
     if (Result.isFailure(outcome)) {
       expect(outcome.failure).toMatchObject({

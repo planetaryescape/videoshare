@@ -121,17 +121,20 @@ describe("ProjectRepository", () => {
         yield* projects.create(published);
         yield* projects.move(member.id, published.id, 10);
         const before = Option.getOrThrow(yield* projects.get(published.id));
-        yield* projects.update(new Project({ ...before.project, publishedAt: null }));
+        yield* projects.markPublished([before], 8);
+        yield* projects.clearPublishedAt(published.id);
         return {
           project: Option.getOrThrow(yield* projects.get(published.id)),
           member: Option.getOrThrow(yield* assets.findById(member.id)),
+          membership: yield* projects.findPublishedProjectMembership(member.id),
         };
       }),
     );
 
     expect(result.project.project.publishedAt).toBeNull();
     expect(result.project.assets).toHaveLength(1);
-    expect(result.member).toMatchObject({ projectId: "one", publishedAt: 7 });
+    expect(result.member).toMatchObject({ projectId: "one", publishedAt: 8 });
+    expect(Option.isNone(result.membership)).toBe(true);
   });
 
   test("reorders within the same project without losing members", async () => {
