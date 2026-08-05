@@ -2,6 +2,7 @@ import { D1Client } from "@effect/sql-d1";
 import { ViewerCatalog } from "@videoshare/shared/ViewerCatalog";
 import { r2KeyDir } from "@videoshare/shared/MediaKey";
 import { sha256Hex } from "@videoshare/shared/Sha256";
+import { verifyProjectPassword } from "@videoshare/shared/ProjectPassword";
 import type { Chapter, Asset } from "@videoshare/shared/Asset";
 import { Effect, Layer, Option } from "effect";
 import playerCss from "../generated/player.css?raw";
@@ -14,6 +15,7 @@ import { renderStage } from "./stage.ts";
 import {
   isProjectAuthorized,
   parseProjectRoute,
+  projectCookieName,
   projectCacheControl,
   projectMediaUrl,
   renderProjectGate,
@@ -121,7 +123,6 @@ const parseCookies = (header: string | null) => {
 };
 
 const cookieName = (slug: string) => `video_auth_${slug}`;
-const projectCookieName = (slug: string) => `project_auth_${slug}`;
 
 const isAuthorized = (request: Request, slug: string, passwordHash: string) =>
   parseCookies(request.headers.get("cookie")).get(cookieName(slug)) === passwordHash;
@@ -510,7 +511,10 @@ const serveProject = async (
   if (project.passwordHash) {
     if (request.method === "POST") {
       const password = (await request.formData()).get("password");
-      if (typeof password !== "string" || (await sha256(password)) !== project.passwordHash)
+      if (
+        typeof password !== "string" ||
+        !(await verifyProjectPassword(password, project.passwordHash))
+      )
         return new Response(
           renderProjectGate({
             title: project.title,

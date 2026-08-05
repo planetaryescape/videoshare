@@ -1,3 +1,5 @@
+import type { Asset } from "@videoshare/shared/Asset";
+
 export type ProjectRoute =
   | { readonly _tag: "page"; readonly projectSlug: string; readonly assetSlug: string | null }
   | {
@@ -23,11 +25,14 @@ export const parseProjectRoute = (segments: ReadonlyArray<string>): ProjectRoute
   return { _tag: "page", projectSlug, assetSlug: second ?? null };
 };
 
+/** Returns the project password cookie name for a project slug. */
+export const projectCookieName = (projectSlug: string) => `project_auth_${projectSlug}`;
+
 export const isProjectAuthorized = (
   cookies: ReadonlyMap<string, string>,
   projectSlug: string,
   passwordHash: string | null,
-) => passwordHash === null || cookies.get(`project_auth_${projectSlug}`) === passwordHash;
+) => passwordHash === null || cookies.get(projectCookieName(projectSlug)) === passwordHash;
 
 const isAbsoluteHttpUrl = (value: string) => {
   try {

@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { Asset, AssetId, Slug } from "@videoshare/shared/Asset";
+import { hashProjectPassword } from "@videoshare/shared/ProjectPassword";
 import worker, { renderOpenGraphTags } from "./worker.ts";
 
 type ViewerEnv = Parameters<(typeof worker)["fetch"]>[1];
@@ -153,6 +154,58 @@ describe("legacy direct `p` compatibility", () => {
     expect(legacyHead.headers.get("etag")).toBe("etag-media/legacy-p/legacy.webm");
     expect(legacyHead.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(await legacyHead.text()).toBe("");
+  });
+});
+
+describe("protected project routes", () => {
+  test("gates pages and media until the correct password grants the project cookie", async () => {
+    using database = new Database(":memory:");
+    setupCatalog(database);
+    const passwordHash = await hashProjectPassword("correct horse");
+    database
+      .query(
+        "INSERT INTO projects VALUES ('protected-1', 'protected', 'Protected', NULL, ?, 1, 2, 2)",
+      )
+      .run(passwordHash);
+    database
+      .query(
+        "INSERT INTO assets VALUES ('protected-member', 'protected-member', 'video', 'Protected member', NULL, NULL, 'media/protected-member/master.m3u8', 1, NULL, NULL, NULL, 'protected-1', 0, 1, 2, 2)",
+      )
+      .run();
+    const env = viewerEnv(database);
+
+    expect(
+      (await worker.fetch(new Request("https://viewer.example/p/protected"), env)).status,
+    ).toBe(401);
+    expect(
+      (
+        await worker.fetch(
+          new Request("https://viewer.example/p/protected", {
+            method: "POST",
+            body: new URLSearchParams({ password: "wrong" }),
+          }),
+          env,
+        )
+      ).status,
+    ).toBe(403);
+    const granted = await worker.fetch(
+      new Request("https://viewer.example/p/protected", {
+        method: "POST",
+        body: new URLSearchParams({ password: "correct horse" }),
+      }),
+      env,
+    );
+    expect(granted.status).toBe(303);
+    const cookie = granted.headers.get("set-cookie");
+    expect(cookie).toContain("project_auth_protected=");
+    expect(
+      (
+        await worker.fetch(
+          new Request("https://viewer.example/p/protected/media/protected-member/master.m3u8"),
+          env,
+        )
+      ).status,
+    ).toBe(404);
   });
 });
 

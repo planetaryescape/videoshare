@@ -68,6 +68,8 @@ const setControl = (
   control.classList.toggle("is-disabled", disabled);
 };
 
+const summaryState: ProjectPlayerState = { _tag: "Summary" };
+
 const renderControls = (next: ProjectPlayerState) => {
   if (next._tag === "Summary") {
     const last = memberSlugs.length === 0 ? summaryState : viewing(memberSlugs.length - 1);
@@ -86,8 +88,6 @@ const renderControls = (next: ProjectPlayerState) => {
   setControl(previousControl, "previous", "Previous", previous, next.index === 0);
   setControl(nextControl, "next", "Next", following, false);
 };
-
-const summaryState: ProjectPlayerState = { _tag: "Summary" };
 
 const render = (next: ProjectPlayerState) => {
   state = next;

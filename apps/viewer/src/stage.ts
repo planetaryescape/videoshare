@@ -22,7 +22,7 @@ export const renderStage = (
           ${posterUrl ? `poster="${escapeHtml(posterUrl)}"` : ""}
         >
           <media-outlet>
-            ${chaptersTrack ? `<track kind="chapters" src="${chaptersTrack}" default>` : ""}
+            ${chaptersTrack ? `<track kind="chapters" src="${escapeHtml(chaptersTrack)}" default>` : ""}
           </media-outlet>
           <media-community-skin></media-community-skin>
         </media-player>`;
