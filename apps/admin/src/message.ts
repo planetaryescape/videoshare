@@ -14,6 +14,12 @@ export const UpdatedProjectDescription = m("UpdatedProjectDescription", { descri
 export const UpdatedProjectPassword = m("UpdatedProjectPassword", { password: S.String });
 export const BlurredProjectField = m("BlurredProjectField");
 export const ClickedDeleteProject = m("ClickedDeleteProject", { id: S.String });
+export const ClickedPublishProject = m("ClickedPublishProject", { id: S.String });
+export const SucceededPublishProject = m("SucceededPublishProject", { id: S.String });
+export const FailedPublishProject = m("FailedPublishProject", { error: S.String });
+export const ClickedUnpublishProject = m("ClickedUnpublishProject", { id: S.String });
+export const SucceededUnpublishProject = m("SucceededUnpublishProject", { id: S.String });
+export const FailedUnpublishProject = m("FailedUnpublishProject", { error: S.String });
 export const ClickedMoveProjectMember = m("ClickedMoveProjectMember", {
   assetId: S.String,
   direction: S.Literals(["up", "down"]),
@@ -110,6 +116,12 @@ export const Message = S.Union([
   UpdatedProjectPassword,
   BlurredProjectField,
   ClickedDeleteProject,
+  ClickedPublishProject,
+  SucceededPublishProject,
+  FailedPublishProject,
+  ClickedUnpublishProject,
+  SucceededUnpublishProject,
+  FailedUnpublishProject,
   ClickedMoveProjectMember,
   ClickedUnfileProjectMember,
   ClickedAssignAssetToProject,

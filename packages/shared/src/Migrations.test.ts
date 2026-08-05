@@ -623,4 +623,62 @@ describe("asset persistence and viewer catalog", () => {
     expect(Option.getOrNull(result.media)?.mediaKey).toBe("assets/asset-1/master.m3u8");
     expect(String(Option.getOrNull(result.asset)?.slug)).toBe("legacy_slug");
   });
+
+  test("maps malformed project rows to PersistenceError at every project catalog call site", async () => {
+    const database = sqlLayer();
+    const catalogLayer = ViewerCatalog.layerNoDeps.pipe(Layer.provide(database));
+    const layer = Layer.mergeAll(database, catalogLayer);
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const catalog = yield* ViewerCatalog;
+        yield* migrate;
+        yield* sql`INSERT INTO projects (id, slug, title, created_at, published_at) VALUES ('malformed', 'malformed', '', 1, 2)`;
+        yield* sql`INSERT INTO assets (id, slug, kind, title, media_key, project_id, sort_order, created_at, published_at) VALUES ('member', 'member', 'video', 'Member', 'media/member/master.m3u8', 'malformed', 0, 1, 2)`;
+        return {
+          page: yield* Effect.result(catalog.findProjectPage("malformed", null)),
+          media: yield* Effect.result(catalog.findProjectMedia("malformed", "member")),
+        };
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(result.page).toMatchObject({
+      _tag: "Failure",
+      failure: { _tag: "PersistenceError", operation: "findProjectPage" },
+    });
+    expect(result.media).toMatchObject({
+      _tag: "Failure",
+      failure: { _tag: "PersistenceError", operation: "findProjectMedia" },
+    });
+  });
+
+  test("projects resolve a default or deep member without chapters, while unknown and unpublished members are absent", async () => {
+    const database = sqlLayer();
+    const catalogLayer = ViewerCatalog.layerNoDeps.pipe(Layer.provide(database));
+    const layer = Layer.mergeAll(database, catalogLayer);
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const catalog = yield* ViewerCatalog;
+        yield* migrate;
+        yield* sql`INSERT INTO projects (id, slug, title, created_at, published_at) VALUES ('project-1', 'project_1', 'Project', 1, 2)`;
+        yield* sql`INSERT INTO assets (id, slug, kind, title, media_key, project_id, sort_order, created_at, published_at) VALUES ('member-1', 'member_1', 'video', 'Member', 'media/member-1/master.m3u8', 'project-1', 0, 1, 2)`;
+        yield* sql`INSERT INTO assets (id, slug, kind, title, media_key, project_id, sort_order, created_at, published_at) VALUES ('draft-1', 'draft_1', 'video', 'Draft', 'media/draft-1/master.m3u8', 'project-1', 1, 1, NULL)`;
+        yield* sql`INSERT INTO chapters (id, asset_id, title, start_sec, sort_order) VALUES ('chapter-1', 'member-1', 'Ignored', 0, 0)`;
+        return {
+          root: yield* catalog.findProjectPage("project_1", null),
+          deep: yield* catalog.findProjectPage("project_1", "member_1"),
+          unknown: yield* catalog.findProjectPage("project_1", "missing"),
+          draft: yield* catalog.findProjectPage("project_1", "draft_1"),
+          media: yield* catalog.findProjectMedia("project_1", "member_1"),
+        };
+      }).pipe(Effect.provide(layer)),
+    );
+    expect(String(Option.getOrNull(result.root)?.selected.slug)).toBe("member_1");
+    expect(Option.getOrNull(result.deep)?.assets).toHaveLength(1);
+    expect(String(Option.getOrNull(result.deep)?.selected.slug)).toBe("member_1");
+    expect(Option.isNone(result.unknown)).toBe(true);
+    expect(Option.isNone(result.draft)).toBe(true);
+    expect(String(Option.getOrNull(result.media)?.asset.slug)).toBe("member_1");
+  });
 });

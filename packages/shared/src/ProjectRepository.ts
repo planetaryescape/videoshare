@@ -99,6 +99,13 @@ export class ProjectRepository extends Context.Service<
       ProjectAggregate,
       PersistenceError | ProjectNotFoundError | SlugAlreadyExistsError
     >;
+    /** Atomically records publication for each project and its current members after remote commit. */
+    markPublished(
+      aggregates: ReadonlyArray<ProjectAggregate>,
+      publishedAt: number,
+    ): Effect.Effect<void, PersistenceError>;
+    /** Clears only a project's local publication timestamp. */
+    clearPublishedAt(id: ProjectId): Effect.Effect<void, PersistenceError>;
     replaceMembers(
       id: ProjectId,
       assetIds: ReadonlyArray<AssetId>,
@@ -127,7 +134,12 @@ export class ProjectRepository extends Context.Service<
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const findProject = (id: ProjectId) =>
-          sql<ProjectRow>`SELECT * FROM projects WHERE id = ${id}`.pipe(Effect.map(Array.head));
+          sql<ProjectRow>`
+            SELECT id, slug, title, description, password_hash, created_at, published_at, updated_at
+            FROM projects
+            WHERE id = ${id}
+            LIMIT 1
+          `.pipe(Effect.map(Array.head));
         const requireProject = Effect.fn("ProjectRepository.requireProject")(function* (
           id: ProjectId,
         ) {
@@ -192,7 +204,7 @@ export class ProjectRepository extends Context.Service<
           list: Effect.fn("ProjectRepository.list")(function* () {
             const rows = yield* sql<
               ProjectRow & { member_count: number }
-            >`SELECT p.*, COUNT(a.id) AS member_count FROM projects p LEFT JOIN assets a ON a.project_id = p.id GROUP BY p.id ORDER BY p.created_at DESC`;
+            >`SELECT p.id, p.slug, p.title, p.description, p.password_hash, p.created_at, p.published_at, p.updated_at, COUNT(a.id) AS member_count FROM projects p LEFT JOIN assets a ON a.project_id = p.id GROUP BY p.id ORDER BY p.created_at DESC`;
             return yield* Effect.all(rows.map(decodeSummary));
           }, wrap("list")),
           get: Effect.fn("ProjectRepository.get")(function* (id: ProjectId) {
@@ -228,6 +240,22 @@ export class ProjectRepository extends Context.Service<
               }),
             );
           }, wrap("update")),
+          markPublished: (aggregates, publishedAt) =>
+            sql
+              .withTransaction(
+                Effect.forEach(aggregates, ({ project }) =>
+                  Effect.gen(function* () {
+                    yield* sql`UPDATE projects SET published_at=${publishedAt} WHERE id=${project.id}`;
+                    yield* sql`UPDATE assets SET published_at=${publishedAt} WHERE project_id=${project.id}`;
+                  }),
+                ),
+              )
+              .pipe(Effect.asVoid, wrap("markPublished")),
+          clearPublishedAt: (id) =>
+            sql`UPDATE projects SET published_at=NULL WHERE id=${id}`.pipe(
+              Effect.asVoid,
+              wrap("clearPublishedAt"),
+            ),
           unfileMember: Effect.fn("ProjectRepository.unfileMember")(function* (
             sourceProjectId: ProjectId,
             assetId: AssetId,

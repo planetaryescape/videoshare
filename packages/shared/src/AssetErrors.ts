@@ -97,6 +97,48 @@ export class PersistenceError extends Schema.TaggedErrorClass<PersistenceError>(
   }
 }
 
+export class AssetPublicationValidationError extends Schema.TaggedErrorClass<AssetPublicationValidationError>()(
+  "AssetPublicationValidationError",
+  { assetId: Schema.String, reason: Schema.Literals(["missingMediaKey"]) },
+  { httpApiStatus: 422 },
+) {
+  override get message(): string {
+    return `Asset cannot be published: ${this.assetId} (${this.reason})`;
+  }
+}
+
+export class ProjectPublicationValidationError extends Schema.TaggedErrorClass<ProjectPublicationValidationError>()(
+  "ProjectPublicationValidationError",
+  {
+    projectId: Schema.String,
+    reason: Schema.Literals([
+      "emptyProject",
+      "missingMediaKey",
+      "invalidMediaShape",
+      "absoluteMediaKeyInProtectedProject",
+    ]),
+  },
+  { httpApiStatus: 422 },
+) {
+  override get message(): string {
+    return `Project cannot be published: ${this.projectId} (${this.reason})`;
+  }
+}
+
+export class PublishedProjectMemberMutationError extends Schema.TaggedErrorClass<PublishedProjectMemberMutationError>()(
+  "PublishedProjectMemberMutationError",
+  {
+    assetId: Schema.String,
+    projectId: Schema.String,
+    operation: Schema.Literals(["unpublish", "delete"]),
+  },
+  { httpApiStatus: 409 },
+) {
+  override get message(): string {
+    return `Cannot ${this.operation} asset ${this.assetId}: it belongs to published project ${this.projectId}`;
+  }
+}
+
 export class ProdSyncError extends Schema.TaggedErrorClass<ProdSyncError>()(
   "ProdSyncError",
   { operation: Schema.String, cause: Schema.Defect() },
@@ -116,6 +158,9 @@ export const errorStatus: Record<string, number> = {
   SlugAlreadyExistsError: 409,
   ImageChaptersNotAllowedError: 422,
   InvalidMediaShapeError: 422,
+  AssetPublicationValidationError: 422,
+  ProjectPublicationValidationError: 422,
+  PublishedProjectMemberMutationError: 409,
   PersistenceError: 500,
   ProdSyncError: 502,
 };

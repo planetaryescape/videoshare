@@ -85,6 +85,55 @@ describe("ProjectRepository", () => {
     expect(result.every((item) => item.projectId === null && item.sortOrder === null)).toBe(true);
   });
 
+  test("records project and member publication together", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        yield* migrate;
+        const assets = yield* AssetRepository;
+        const projects = yield* ProjectRepository;
+        const member = asset("a");
+        const publication = project("one");
+        yield* assets.create(member);
+        yield* projects.create(publication);
+        yield* projects.move(member.id, publication.id, 10);
+        const aggregate = Option.getOrThrow(yield* projects.get(publication.id));
+        yield* projects.markPublished([aggregate], 20);
+        return {
+          project: Option.getOrThrow(yield* projects.get(publication.id)),
+          member: Option.getOrThrow(yield* assets.findById(member.id)),
+        };
+      }),
+    );
+
+    expect(result.project.project.publishedAt).toBe(20);
+    expect(result.member.publishedAt).toBe(20);
+  });
+
+  test("unpublishing a project locally preserves member and direct asset publication", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        yield* migrate;
+        const assets = yield* AssetRepository;
+        const projects = yield* ProjectRepository;
+        const member = new Asset({ ...asset("a"), publishedAt: 7 });
+        const published = new Project({ ...project("one"), publishedAt: 8 });
+        yield* assets.create(member);
+        yield* projects.create(published);
+        yield* projects.move(member.id, published.id, 10);
+        const before = Option.getOrThrow(yield* projects.get(published.id));
+        yield* projects.update(new Project({ ...before.project, publishedAt: null }));
+        return {
+          project: Option.getOrThrow(yield* projects.get(published.id)),
+          member: Option.getOrThrow(yield* assets.findById(member.id)),
+        };
+      }),
+    );
+
+    expect(result.project.project.publishedAt).toBeNull();
+    expect(result.project.assets).toHaveLength(1);
+    expect(result.member).toMatchObject({ projectId: "one", publishedAt: 7 });
+  });
+
   test("reorders within the same project without losing members", async () => {
     const result = await run(
       Effect.gen(function* () {

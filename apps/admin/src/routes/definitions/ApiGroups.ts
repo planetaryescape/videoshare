@@ -5,12 +5,15 @@ import { Chapter, Asset, AssetId } from "@videoshare/shared/Asset";
 import {
   PersistenceError,
   ProdSyncError,
+  AssetPublicationValidationError,
   SlugAlreadyExistsError,
   AssetNotFoundError,
   ImageChaptersNotAllowedError,
   InvalidMediaShapeError,
   ProjectNotFoundError,
   InvalidProjectMembersError,
+  ProjectPublicationValidationError,
+  PublishedProjectMemberMutationError,
 } from "@videoshare/shared/AssetErrors";
 import { StorageError } from "../../errors/StorageErrors.ts";
 import {
@@ -73,7 +76,13 @@ export class AssetsApi extends HttpApiGroup.make("assets")
     HttpApiEndpoint.delete("deleteAsset", "/:id", {
       params: IdParam,
       success: DeleteResponse,
-      error: [AssetNotFoundError, PersistenceError, StorageError, ProdSyncError],
+      error: [
+        AssetNotFoundError,
+        PublishedProjectMemberMutationError,
+        PersistenceError,
+        StorageError,
+        ProdSyncError,
+      ],
     }),
   )
   .prefix("/assets") {}
@@ -131,10 +140,29 @@ export class ProjectsApi extends HttpApiGroup.make("projects")
     }),
   )
   .add(
+    HttpApiEndpoint.post("publishProject", "/:id/publish", {
+      params: IdParam,
+      success: DeleteResponse,
+      error: [
+        ProjectNotFoundError,
+        ProjectPublicationValidationError,
+        ProdSyncError,
+        PersistenceError,
+      ],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("unpublishProject", "/:id/publish", {
+      params: IdParam,
+      success: DeleteResponse,
+      error: [ProjectNotFoundError, PersistenceError, ProdSyncError],
+    }),
+  )
+  .add(
     HttpApiEndpoint.delete("deleteProject", "/:id", {
       params: IdParam,
       success: DeleteResponse,
-      error: [ProjectNotFoundError, PersistenceError],
+      error: [ProjectNotFoundError, PersistenceError, ProdSyncError],
     }),
   )
   .prefix("/projects") {}
@@ -172,6 +200,8 @@ export class PublishApi extends HttpApiGroup.make("publish")
       success: Asset,
       error: [
         AssetNotFoundError,
+        AssetPublicationValidationError,
+        InvalidMediaShapeError,
         NotTranscodedError,
         ProdSyncError,
         PersistenceError,
@@ -183,7 +213,12 @@ export class PublishApi extends HttpApiGroup.make("publish")
     HttpApiEndpoint.post("unpublish", "/:id/unpublish", {
       params: IdParam,
       success: Asset,
-      error: [AssetNotFoundError, ProdSyncError, PersistenceError],
+      error: [
+        AssetNotFoundError,
+        PublishedProjectMemberMutationError,
+        ProdSyncError,
+        PersistenceError,
+      ],
     }),
   )
   .prefix("/publish") {}

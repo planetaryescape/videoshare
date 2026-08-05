@@ -40,6 +40,10 @@ import {
   FailedSaveProject,
   SucceededDeleteProject,
   FailedDeleteProject,
+  SucceededPublishProject,
+  FailedPublishProject,
+  SucceededUnpublishProject,
+  FailedUnpublishProject,
 } from "./message";
 
 const SERVER_ORIGIN = `http://${typeof location === "undefined" ? "localhost" : location.hostname}:3001`;
@@ -206,6 +210,36 @@ export const MoveProjectMember = Command.define(
     return SucceededSaveProject({ detail: yield* decodeProjectDetail(yield* tryJson(response)) });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveProject({ error: errMsg(error) })))),
 );
+export const PublishProject = Command.define(
+  "PublishProject",
+  { id: S.String },
+  SucceededPublishProject,
+  FailedPublishProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}/publish`, { method: "POST" });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededPublishProject({ id });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedPublishProject({ error: errMsg(error) })))),
+);
+
+export const UnpublishProject = Command.define(
+  "UnpublishProject",
+  { id: S.String },
+  SucceededUnpublishProject,
+  FailedUnpublishProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}/publish`, { method: "DELETE" });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededUnpublishProject({ id });
+  }).pipe(
+    Effect.catch((error) => Effect.succeed(FailedUnpublishProject({ error: errMsg(error) }))),
+  ),
+);
+
 export const DeleteProject = Command.define(
   "DeleteProject",
   { id: S.String },

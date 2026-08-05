@@ -6,7 +6,8 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "test": "bun test ./src"
+    "test": "bun test ./src",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "effect": ">=4.0.0-beta.101"

@@ -1,5 +1,7 @@
 import { D1Client } from "@effect/sql-d1";
 import { ViewerCatalog } from "@videoshare/shared/ViewerCatalog";
+import { r2KeyDir } from "@videoshare/shared/MediaKey";
+import { sha256Hex } from "@videoshare/shared/Sha256";
 import type { Chapter, Asset } from "@videoshare/shared/Asset";
 import { Effect, Layer, Option } from "effect";
 import playerCss from "../generated/player.css?raw";
@@ -7,6 +9,14 @@ import playerScript from "../generated/player.js?raw";
 import { appleTouchIconBase64, favicon16Base64, favicon32Base64 } from "../generated/favicons";
 import { escapeHtml } from "./escapeHtml.ts";
 import { renderStage } from "./stage.ts";
+import {
+  isProjectAuthorized,
+  parseProjectRoute,
+  projectCacheControl,
+  projectMediaUrl,
+  renderProjectGate,
+  renderProjectPage,
+} from "./project-route.ts";
 
 interface R2ObjectBody {
   readonly body: ReadableStream | null;
@@ -66,12 +76,25 @@ const loadAssetMedia = (env: ViewerEnv, slug: string) =>
       return yield* catalog.findAssetMedia(slug);
     }),
   );
-
-const toHex = (bytes: ArrayBuffer) =>
-  Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
+const loadProjectPage = (env: ViewerEnv, projectSlug: string, assetSlug: string | null) =>
+  runCatalog(
+    env,
+    Effect.gen(function* () {
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findProjectPage(projectSlug, assetSlug);
+    }),
+  );
+const loadProjectMedia = (env: ViewerEnv, projectSlug: string, assetSlug: string) =>
+  runCatalog(
+    env,
+    Effect.gen(function* () {
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findProjectMedia(projectSlug, assetSlug);
+    }),
+  );
 
 const sha256 = async (value: string) =>
-  toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  sha256Hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
 
 const parseCookies = (header: string | null) => {
   const cookies = new Map<string, string>();
@@ -95,6 +118,7 @@ const parseCookies = (header: string | null) => {
 };
 
 const cookieName = (slug: string) => `video_auth_${slug}`;
+const projectCookieName = (slug: string) => `project_auth_${slug}`;
 
 const isAuthorized = (request: Request, slug: string, passwordHash: string) =>
   parseCookies(request.headers.get("cookie")).get(cookieName(slug)) === passwordHash;
@@ -109,11 +133,6 @@ const isAbsoluteUrl = (value: string) => {
 };
 
 const mediaPrefix = (slug: string) => `/${encodeURIComponent(slug)}/`;
-
-const r2KeyDir = (key: string) => {
-  const slash = key.lastIndexOf("/");
-  return slash === -1 ? "" : key.slice(0, slash + 1);
-};
 
 const r2ContentType = (key: string) => {
   if (key.endsWith(".m3u8")) {
@@ -394,6 +413,22 @@ const homePage = `<!doctype html>
   </body>
 </html>`;
 
+const serveR2Media = async (
+  env: ViewerEnv,
+  request: Request,
+  key: string,
+  cacheControl: string,
+): Promise<Response> => {
+  const object = await env.BUCKET.get(key);
+  if (!object) return notFoundResponse();
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("content-type", object.httpMetadata?.contentType ?? r2ContentType(key));
+  headers.set("cache-control", cacheControl);
+  return new Response(request.method === "HEAD" ? null : object.body, { headers });
+};
+
 const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: string) => {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -417,18 +452,182 @@ const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: 
   }
 
   const key = `${r2KeyDir(asset.mediaKey)}${file}`;
-  const object = await env.BUCKET.get(key);
-  if (!object) {
-    return notFoundResponse();
+  return serveR2Media(
+    env,
+    request,
+    key,
+    asset.passwordHash
+      ? "private, no-store"
+      : key.endsWith(".m3u8")
+        ? "no-cache"
+        : assetCacheControl,
+  );
+};
+
+const serveProject = async (
+  env: ViewerEnv,
+  request: Request,
+  url: URL,
+  segments: ReadonlyArray<string>,
+): Promise<Response> => {
+  const route = parseProjectRoute(segments);
+  if (route._tag === "invalid") return notFoundResponse();
+  if (route._tag === "media") {
+    const { projectSlug, assetSlug, file } = route;
+    if (request.method !== "GET" && request.method !== "HEAD")
+      return new Response("Method Not Allowed", { status: 405 });
+    const result = await loadProjectMedia(env, projectSlug, assetSlug);
+    if (Option.isNone(result)) return notFoundResponse();
+    const { project, asset } = result.value;
+    if (
+      !isProjectAuthorized(
+        parseCookies(request.headers.get("cookie")),
+        projectSlug,
+        project.passwordHash,
+      )
+    )
+      return notFoundResponse();
+    if (isAbsoluteUrl(asset.mediaKey)) return notFoundResponse();
+    const key = `${r2KeyDir(asset.mediaKey)}${file}`;
+    return serveR2Media(
+      env,
+      request,
+      key,
+      projectCacheControl(project.passwordHash, key.endsWith(".m3u8")),
+    );
+  }
+  const { projectSlug, assetSlug } = route;
+  const page = await loadProjectPage(env, projectSlug, assetSlug);
+  if (Option.isNone(page)) return notFoundResponse();
+  if (request.method !== "GET" && request.method !== "POST")
+    return new Response("Method Not Allowed", { status: 405 });
+  const project = page.value.project;
+  if (project.passwordHash) {
+    if (request.method === "POST") {
+      const password = (await request.formData()).get("password");
+      if (typeof password !== "string" || (await sha256(password)) !== project.passwordHash)
+        return new Response(
+          renderProjectGate({
+            title: project.title,
+            action: url.pathname,
+            error: "Incorrect password.",
+            escapeHtml,
+            faviconLinks,
+          }),
+          {
+            status: 403,
+            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+          },
+        );
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: url.toString(),
+          "set-cookie": `${projectCookieName(projectSlug)}=${project.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/p/${encodeURIComponent(projectSlug)}; HttpOnly; SameSite=Lax; Secure`,
+        },
+      });
+    }
+    if (
+      !isProjectAuthorized(
+        parseCookies(request.headers.get("cookie")),
+        projectSlug,
+        project.passwordHash,
+      )
+    )
+      return new Response(
+        renderProjectGate({ title: project.title, action: url.pathname, escapeHtml, faviconLinks }),
+        {
+          status: 401,
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        },
+      );
+  }
+  const selected = page.value.selected;
+  const mediaUrl = projectMediaUrl(
+    projectSlug,
+    selected.slug,
+    selected.mediaKey,
+    project.passwordHash,
+  );
+  return new Response(
+    renderProjectPage({
+      projectSlug,
+      project: page.value.project,
+      assets: page.value.assets,
+      selected,
+      stage: renderStage(selected, mediaUrl, null, null),
+      escapeHtml,
+      faviconLinks,
+      playerCssHref: `/_assets/player.css?v=${assetVersion}`,
+      playerScriptHref: `/_assets/player.js?v=${assetVersion}`,
+    }),
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": project.passwordHash ? "private, no-store" : "no-store",
+      },
+    },
+  );
+};
+
+/**
+ * A legacy direct asset named `p` collides with the project namespace. A resolved project route
+ * wins; a missing root project falls back to that direct asset's media URL.
+ */
+const serveLegacyPAssetMediaWhenProjectMissing = async (
+  projectResponse: Promise<Response>,
+  legacyResponse: () => Promise<Response>,
+) => {
+  const response = await projectResponse;
+  return response.status === 404 ? legacyResponse() : response;
+};
+
+const serveAssetPage = async (env: ViewerEnv, request: Request, url: URL, slug: string) => {
+  if (request.method !== "GET" && request.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
   }
 
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-  headers.set("content-type", object.httpMetadata?.contentType ?? r2ContentType(key));
-  headers.set("cache-control", key.endsWith(".m3u8") ? "no-cache" : assetCacheControl);
+  try {
+    const result = await loadAssetPage(env, slug);
+    if (Option.isNone(result)) {
+      return notFoundResponse();
+    }
 
-  return new Response(request.method === "HEAD" ? null : object.body, { headers });
+    const { asset, chapters } = result.value;
+    if (asset.passwordHash) {
+      if (request.method === "POST") {
+        const formData = await request.formData();
+        const password = formData.get("password");
+        if (typeof password !== "string" || (await sha256(password)) !== asset.passwordHash) {
+          return new Response(passwordPage(slug, asset.title, "Incorrect password."), {
+            status: 403,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+
+        return new Response(null, {
+          status: 303,
+          headers: {
+            location: url.toString(),
+            "set-cookie": `${cookieName(slug)}=${asset.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/${slug}; HttpOnly; SameSite=Lax; Secure`,
+          },
+        });
+      }
+
+      if (!isAuthorized(request, slug, asset.passwordHash)) {
+        return new Response(passwordPage(slug, asset.title), {
+          status: 401,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+    }
+
+    return new Response(viewerPage(url.origin, slug, asset, chapters), {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  } catch {
+    return new Response("Internal Server Error", { status: 500 });
+  }
 };
 
 export default {
@@ -467,59 +666,28 @@ export default {
     }
 
     const segments = pathname.slice(1).split("/");
+    // Project dispatch precedes generic asset dispatch: project grants never reach direct URLs.
+    if (segments[0] === "p") {
+      if (segments.length === 1) return serveAssetPage(env, request, url, "p");
+      try {
+        const projectSegments = segments.slice(1);
+        // A one-segment project path is indistinguishable from a legacy direct-media filename.
+        // A real project response wins; only its ordinary 404 falls back to direct media.
+        if (projectSegments.length === 1)
+          return serveLegacyPAssetMediaWhenProjectMissing(
+            serveProject(env, request, url, projectSegments),
+            () => serveMedia(env, request, "p", projectSegments[0]),
+          );
+        return await serveProject(env, request, url, projectSegments);
+      } catch {
+        return new Response("Internal Server Error", { status: 500 });
+      }
+    }
     const slug = segments[0] ?? "";
-    if (!slug) {
-      return notFoundResponse();
-    }
+    if (!slug) return notFoundResponse();
 
-    if (segments.length > 1) {
-      return serveMedia(env, request, slug, segments.slice(1).join("/"));
-    }
+    if (segments.length > 1) return serveMedia(env, request, slug, segments.slice(1).join("/"));
 
-    if (request.method !== "GET" && request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-
-    try {
-      const result = await loadAssetPage(env, slug);
-      if (Option.isNone(result)) {
-        return notFoundResponse();
-      }
-
-      const { asset, chapters } = result.value;
-      if (asset.passwordHash) {
-        if (request.method === "POST") {
-          const formData = await request.formData();
-          const password = formData.get("password");
-          if (typeof password !== "string" || (await sha256(password)) !== asset.passwordHash) {
-            return new Response(passwordPage(slug, asset.title, "Incorrect password."), {
-              status: 403,
-              headers: { "content-type": "text/html; charset=utf-8" },
-            });
-          }
-
-          return new Response(null, {
-            status: 303,
-            headers: {
-              location: url.toString(),
-              "set-cookie": `${cookieName(slug)}=${asset.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/${slug}; HttpOnly; SameSite=Lax; Secure`,
-            },
-          });
-        }
-
-        if (!isAuthorized(request, slug, asset.passwordHash)) {
-          return new Response(passwordPage(slug, asset.title), {
-            status: 401,
-            headers: { "content-type": "text/html; charset=utf-8" },
-          });
-        }
-      }
-
-      return new Response(viewerPage(url.origin, slug, asset, chapters), {
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    } catch {
-      return new Response("Internal Server Error", { status: 500 });
-    }
+    return serveAssetPage(env, request, url, slug);
   },
 };

@@ -46,6 +46,8 @@ import {
   SaveProject,
   MoveProjectMember,
   DeleteProject,
+  PublishProject,
+  UnpublishProject,
 } from "./commands";
 
 type Cmd = Command.Command<Message>;
@@ -339,6 +341,54 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           projectMembershipOperation: () => ProjectMembershipIdle(),
           errorMessage: () => Option.some(error),
         }),
+      ClickedPublishProject: ({ id }) =>
+        model.isPublishing
+          ? noCmd(model)
+          : withEvo(
+              model,
+              { isPublishing: () => true, errorMessage: () => Option.none() },
+              PublishProject({ id }),
+            ),
+      SucceededPublishProject: ({ id }) =>
+        withEvo(model, {
+          isPublishing: () => false,
+          projects: () =>
+            model.projects.map((project) =>
+              project.id === id ? { ...project, publishedAt: Date.now() } : project,
+            ),
+          editProject: () =>
+            Option.map(model.editProject, (detail) =>
+              detail.project.id === id
+                ? { ...detail, project: { ...detail.project, publishedAt: Date.now() } }
+                : detail,
+            ),
+        }),
+      FailedPublishProject: ({ error }) =>
+        withEvo(model, { isPublishing: () => false, errorMessage: () => Option.some(error) }),
+      ClickedUnpublishProject: ({ id }) =>
+        model.isPublishing
+          ? noCmd(model)
+          : withEvo(
+              model,
+              { isPublishing: () => true, errorMessage: () => Option.none() },
+              UnpublishProject({ id }),
+            ),
+      SucceededUnpublishProject: ({ id }) =>
+        withEvo(model, {
+          isPublishing: () => false,
+          projects: () =>
+            model.projects.map((project) =>
+              project.id === id ? { ...project, publishedAt: null } : project,
+            ),
+          editProject: () =>
+            Option.map(model.editProject, (detail) =>
+              detail.project.id === id
+                ? { ...detail, project: { ...detail.project, publishedAt: null } }
+                : detail,
+            ),
+        }),
+      FailedUnpublishProject: ({ error }) =>
+        withEvo(model, { isPublishing: () => false, errorMessage: () => Option.some(error) }),
       ClickedDeleteProject: ({ id }) => membershipSave(model, DeleteProject({ id })),
       SucceededDeleteProject: ({ id }) =>
         withEvo(model, {

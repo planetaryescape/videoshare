@@ -6,7 +6,7 @@
     "dev:client": "vite",
     "dev:server": "bun --hot --env-file=../../.env ./server.ts",
     "test": "vitest run && bun run test:bun",
-    "test:bun": "bun test ./src/services/MediaProcessor.bun.test.ts",
+    "test:bun": "bun test ./src/services/MediaProcessor.bun.test.ts ./src/services/MediaReplacement.bun.test.ts ./src/services/PublicationGate.bun.test.ts ./src/prod.bun.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

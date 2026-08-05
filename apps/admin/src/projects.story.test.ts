@@ -20,6 +20,14 @@ import {
   ClickedEditProject,
   UpdatedProjectPassword,
   UpdatedProjectTitle,
+  ClickedPublishProject,
+  SucceededPublishProject,
+  FailedPublishProject,
+  ClickedUnpublishProject,
+  SucceededUnpublishProject,
+  FailedUnpublishProject,
+  ClickedCopyLink,
+  CopiedLink,
 } from "./message";
 import {
   EditAsset,
@@ -229,6 +237,58 @@ test("serializes membership commands and applies server-confirmed assignment to 
     projectId: "project-1",
     sortOrder: 0,
   });
+});
+
+test("publishing projects records Foldkit success, failure, and share-link state", () => {
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    projects: [{ ...detail().project, memberCount: 1 }],
+    editProject: Option.some(detail()),
+  };
+  const [publishing, commands] = update(model, ClickedPublishProject({ id: "project-1" }));
+  const [published] = update(publishing, SucceededPublishProject({ id: "project-1" }));
+  const [failed] = update(publishing, FailedPublishProject({ error: "remote unavailable" }));
+  const [copying, copyCommands] = update(
+    model,
+    ClickedCopyLink({ url: "https://example.test/p/project-1" }),
+  );
+  const [copied] = update(copying, CopiedLink());
+
+  expect(publishing.isPublishing).toBe(true);
+  expect(commands).toHaveLength(1);
+  expect(published.isPublishing).toBe(false);
+  expect(published.projects[0]?.publishedAt).not.toBeNull();
+  expect(failed.errorMessage).toEqual(Option.some("remote unavailable"));
+  expect(copyCommands).toHaveLength(1);
+  expect(copied.copiedLink).toBe(true);
+});
+
+test("unpublishing a project removes only its project publication state", () => {
+  const published = {
+    ...detail(),
+    project: { ...detail().project, publishedAt: 10 },
+    assets: [{ ...asset("protected-member", "project-1", 0), publishedAt: 9 }],
+  };
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    projects: [{ ...published.project, memberCount: 1 }],
+    assets: [...published.assets],
+    editProject: Option.some(published),
+  };
+  const [unpublishing, commands] = update(model, ClickedUnpublishProject({ id: "project-1" }));
+  const [unpublished] = update(unpublishing, SucceededUnpublishProject({ id: "project-1" }));
+  const [failed] = update(unpublishing, FailedUnpublishProject({ error: "remote unavailable" }));
+
+  expect(unpublishing.isPublishing).toBe(true);
+  expect(commands).toHaveLength(1);
+  expect(unpublished.projects[0]?.publishedAt).toBeNull();
+  expect(Option.getOrThrow(unpublished.editProject).assets[0]).toMatchObject({
+    projectId: "project-1",
+    publishedAt: 9,
+  });
+  expect(failed.errorMessage).toEqual(Option.some("remote unavailable"));
 });
 
 test("delete responses unfile model assets", () => {

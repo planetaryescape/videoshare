@@ -11,6 +11,9 @@ import {
   ClickedEditProject,
   ClickedMoveProjectMember,
   ClickedRetryLoadProjects,
+  ClickedPublishProject,
+  ClickedUnpublishProject,
+  ClickedCopyLink,
   ClickedUnfileProjectMember,
   SubmittedCreateProject,
   UpdatedProjectDescription,
@@ -383,12 +386,74 @@ export const projectEditView = (h: Html, model: Model) => {
                     ),
                     unfiledAssets(h, model, detail.project.id, isSavingMembership),
                     h.section(
+                      [h.Class(`${panel} p-5`)],
+                      [
+                        h.h2(
+                          [h.Class("text-sm font-medium text-gray-200")],
+                          ["Publish project catalog"],
+                        ),
+                        h.p(
+                          [h.Class("mt-1 text-sm text-gray-400")],
+                          [
+                            "Publishing synchronizes the complete published project catalog. Draft projects are excluded.",
+                          ],
+                        ),
+                        h.div(
+                          [h.Class("mt-4 flex gap-2")],
+                          [
+                            h.button(
+                              [
+                                h.Type("button"),
+                                h.OnClick(ClickedPublishProject({ id: detail.project.id })),
+                                h.Disabled(model.isPublishing || isSavingMembership),
+                                h.Class(
+                                  "rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40",
+                                ),
+                              ],
+                              [detail.project.publishedAt === null ? "Publish" : "Republish"],
+                            ),
+                            ...(detail.project.publishedAt !== null
+                              ? [
+                                  h.button(
+                                    [
+                                      h.Type("button"),
+                                      h.OnClick(ClickedUnpublishProject({ id: detail.project.id })),
+                                      h.Disabled(model.isPublishing || isSavingMembership),
+                                      h.Class(
+                                        "rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-200 disabled:opacity-40",
+                                      ),
+                                    ],
+                                    ["Unpublish"],
+                                  ),
+                                ]
+                              : []),
+                            h.button(
+                              [
+                                h.Type("button"),
+                                h.OnClick(
+                                  ClickedCopyLink({
+                                    url: `https://video.planetaryescape.co.za/p/${detail.project.slug}`,
+                                  }),
+                                ),
+                                h.Class(
+                                  "rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-200",
+                                ),
+                              ],
+                              [model.copiedLink ? "Copied" : "Copy project link"],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    h.section(
                       [h.Class("rounded-xl border border-red-900/70 bg-red-950/20 p-5")],
                       [
                         h.h2([h.Class("text-sm font-medium text-red-200")], ["Danger zone"]),
                         h.p(
                           [h.Class("mt-1 text-sm text-red-200/70")],
-                          ["Deleting this project leaves its assets unfiled."],
+                          [
+                            "Deleting this project removes its publication, leaves assets as direct rows, and unfiles them locally.",
+                          ],
                         ),
                         h.button(
                           [
