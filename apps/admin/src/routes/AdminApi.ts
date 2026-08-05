@@ -1,9 +1,9 @@
 import { HttpApi } from "effect/unstable/httpapi";
-import { ChaptersApi, PublishApi, UploadApi, VideosApi } from "./definitions/ApiGroups.ts";
+import { PublishApi, UploadApi, AssetsApi, ProjectsApi } from "./definitions/ApiGroups.ts";
 
 export class AdminApi extends HttpApi.make("admin")
-  .add(VideosApi)
+  .add(AssetsApi)
+  .add(ProjectsApi)
   .add(UploadApi)
   .add(PublishApi)
-  .add(ChaptersApi)
   .prefix("/api") {}

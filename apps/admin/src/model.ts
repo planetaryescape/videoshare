@@ -2,47 +2,97 @@ import { Schema as S, Option } from "effect";
 import { File as FoldkitFile } from "foldkit";
 import { ts } from "foldkit/schema";
 import { Dialog, FileDrop } from "@foldkit/ui";
+import {
+  BrowserProjectAsset,
+  ProjectDetail as ProjectDetailContract,
+} from "./projects/contracts.ts";
 
-export const VideoSchema = S.Struct({
+export const AssetSchema = BrowserProjectAsset;
+export type Asset = typeof BrowserProjectAsset.Type;
+
+export const ProjectSchema = S.Struct({
   id: S.String,
   slug: S.String,
-  kind: S.Literals(["video", "audio"]),
   title: S.String,
   description: S.NullOr(S.String),
-  posterKey: S.NullOr(S.String),
-  hlsKey: S.String,
-  durationSec: S.Finite,
+  memberCount: S.optional(S.Int.check(S.isGreaterThanOrEqualTo(0))),
   createdAt: S.Finite,
   publishedAt: S.NullOr(S.Finite),
   updatedAt: S.NullOr(S.Finite),
 });
-export type Video = typeof VideoSchema.Type;
+export type Project = typeof ProjectSchema.Type;
+export const ProjectDetailSchema = ProjectDetailContract;
+export type ProjectDetail = ProjectDetailContract;
+export const ProjectsLoading = ts("ProjectsLoading");
+export const ProjectsLoaded = ts("ProjectsLoaded");
+export const ProjectsFailed = ts("ProjectsFailed");
+export const ProjectsLoadState = S.Union([ProjectsLoading, ProjectsLoaded, ProjectsFailed]);
+export type ProjectsLoadState = typeof ProjectsLoadState.Type;
+
+export const ProjectMembershipIdle = ts("ProjectMembershipIdle");
+export const ProjectMembershipSaving = ts("ProjectMembershipSaving");
+export const ProjectMembershipOperation = S.Union([ProjectMembershipIdle, ProjectMembershipSaving]);
+export type ProjectMembershipOperation = typeof ProjectMembershipOperation.Type;
+export const ProjectOperationIdle = ts("ProjectOperationIdle");
+export const ProjectOperationPending = ts("ProjectOperationPending", {
+  kind: S.Literals(["publish", "unpublish", "delete"]),
+  id: S.String,
+});
+export const ProjectOperationFailed = ts("ProjectOperationFailed", {
+  kind: S.Literals(["publish", "unpublish", "delete"]),
+  id: S.String,
+});
+export const ProjectOperation = S.Union([
+  ProjectOperationIdle,
+  ProjectOperationPending,
+  ProjectOperationFailed,
+]);
+export type ProjectOperation = typeof ProjectOperation.Type;
 
 export const ChapterSchema = S.Struct({
   id: S.String,
-  videoId: S.String,
+  assetId: S.String,
   title: S.String,
   startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
   sortOrder: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 });
 export type Chapter = typeof ChapterSchema.Type;
 
-export const ListVideos = ts("ListVideos");
-export const EditVideo = ts("EditVideo", {
-  videoId: S.String.check(S.isMinLength(1)),
+export const ListAssets = ts("ListAssets");
+export const EditAsset = ts("EditAsset", {
+  assetId: S.String.check(S.isMinLength(1)),
 });
-export const Screen = S.Union([ListVideos, EditVideo]);
-export const DeleteVideoConfirmation = ts("DeleteVideoConfirmation", { videoId: S.String });
-export const UnpublishVideoConfirmation = ts("UnpublishVideoConfirmation", { videoId: S.String });
-export const PendingConfirmation = S.Union([DeleteVideoConfirmation, UnpublishVideoConfirmation]);
+export const ProjectList = ts("ProjectList");
+export const ProjectEdit = ts("ProjectEdit", { projectId: S.String.check(S.isMinLength(1)) });
+export const Screen = S.Union([ListAssets, EditAsset, ProjectList, ProjectEdit]);
+export const DeleteAssetConfirmation = ts("DeleteAssetConfirmation", { assetId: S.String });
+export const UnpublishAssetConfirmation = ts("UnpublishAssetConfirmation", { assetId: S.String });
+export const DeleteProjectConfirmation = ts("DeleteProjectConfirmation", { projectId: S.String });
+export const PendingConfirmation = S.Union([
+  DeleteAssetConfirmation,
+  UnpublishAssetConfirmation,
+  DeleteProjectConfirmation,
+]);
 export type PendingConfirmation = typeof PendingConfirmation.Type;
 
 export const Model = S.Struct({
   screen: Screen,
-  videos: S.Array(VideoSchema),
+  assets: S.Array(AssetSchema),
+  projects: S.Array(ProjectSchema),
+  projectsLoadState: ProjectsLoadState,
+  editProject: S.Option(ProjectDetailSchema),
+  projectTitle: S.String,
+  projectDescription: S.String,
+  /** None means untouched; Some("") clears; Some(value) replaces at the HTTP boundary. */
+  projectPassword: S.Option(S.String),
+  /** Monotonically identifies the latest metadata or membership save. */
+  projectSaveRequestId: S.Int,
+  projectMetadataSaveInFlight: S.Boolean,
+  projectMembershipOperation: ProjectMembershipOperation,
+  projectOperation: ProjectOperation,
   editTitle: S.String,
   editDescription: S.String,
-  editVideo: S.Option(VideoSchema),
+  editAsset: S.Option(AssetSchema),
   editChapters: S.Array(ChapterSchema),
   chapterStartDrafts: S.Record(S.String, S.String),
   chapterValidationError: S.Option(S.String),
@@ -56,7 +106,7 @@ export const Model = S.Struct({
   selectedFile: S.Option(FoldkitFile.File),
   selectedPoster: S.Option(FoldkitFile.File),
   isUploading: S.Boolean,
-  uploadingVideoId: S.Option(S.String),
+  uploadingAssetId: S.Option(S.String),
   uploadStage: S.String,
   uploadPct: S.Finite,
   isPublishing: S.Boolean,
@@ -67,11 +117,21 @@ export const Model = S.Struct({
 export type Model = typeof Model.Type;
 
 export const initialModel = (): Model => ({
-  screen: ListVideos(),
-  videos: [],
+  screen: ProjectList(),
+  assets: [],
+  projects: [],
+  projectsLoadState: ProjectsLoading(),
+  editProject: Option.none(),
+  projectTitle: "",
+  projectDescription: "",
+  projectPassword: Option.none(),
+  projectSaveRequestId: 0,
+  projectMetadataSaveInFlight: false,
+  projectMembershipOperation: ProjectMembershipIdle(),
+  projectOperation: ProjectOperationIdle(),
   editTitle: "",
   editDescription: "",
-  editVideo: Option.none(),
+  editAsset: Option.none(),
   editChapters: [],
   chapterStartDrafts: {},
   chapterValidationError: Option.none(),
@@ -85,7 +145,7 @@ export const initialModel = (): Model => ({
   selectedFile: Option.none(),
   selectedPoster: Option.none(),
   isUploading: false,
-  uploadingVideoId: Option.none(),
+  uploadingAssetId: Option.none(),
   uploadStage: "",
   uploadPct: 0,
   isPublishing: false,
@@ -109,11 +169,30 @@ export const formatDuration = (sec: number): string => {
 
 export const formatDate = (ts: number): string => new Date(ts).toLocaleDateString();
 
-export const isPublished = (video: Video): boolean => video.publishedAt !== null;
+export const isPublished = (video: Asset): boolean => video.publishedAt !== null;
 
-export const hasUnpublishedChanges = (video: Video): boolean => {
+export const hasUnpublishedChanges = (video: Asset): boolean => {
   if (video.updatedAt === null) {
     return false;
   }
   return video.publishedAt === null || video.updatedAt > video.publishedAt;
+};
+
+export const hasProjectUnpublishedChanges = (detail: ProjectDetail): boolean => {
+  const { project } = detail;
+  if (project.publishedAt === null) {
+    return project.updatedAt !== null || detail.assets.some(hasUnpublishedChanges);
+  }
+
+  const snapshotAt = project.publishedAt;
+  const metadataDirty = project.updatedAt !== null && project.updatedAt > snapshotAt;
+  return (
+    metadataDirty ||
+    detail.assets.some(
+      (asset) =>
+        asset.publishedAt !== snapshotAt ||
+        asset.createdAt > snapshotAt ||
+        (asset.updatedAt !== null && asset.updatedAt > snapshotAt),
+    )
+  );
 };

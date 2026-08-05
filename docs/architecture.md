@@ -1,99 +1,62 @@
 # Architecture
 
-## Monorepo layout
+## Monorepo and seams
 
-```
-videoshare/
-├─ alchemy.run.ts        Alchemy stack: R2 bucket, D1 database, viewer Worker.
-│                        Lives at root because the Alchemy CLI expects it there.
-├─ infra/                Split-out stack pieces, only if alchemy.run.ts grows too big.
-├─ packages/
-│   └─ shared/           Domain + persistence shared by viewer and admin.
-└─ apps/
-    ├─ viewer/           Cloudflare Worker (public player).
-    └─ admin/            foldkit frontend + local Bun server (private tool).
-```
+VideoShare is a Bun workspace monorepo: `apps/admin` is the local owner tool, `apps/viewer` is the public Cloudflare Worker, and `packages/shared` holds the shared domain and SQL seams. Workspace imports use `@videoshare/shared/*`.
 
-Bun workspaces (`apps/*`, `packages/*`). Bun resolves `@videoshare/shared/*` via the workspace symlink and the package `exports` map, so no TS path aliases or project references are needed.
+The principal seams are:
 
-## The shared package is the keystone
+- `AssetRepository` — local asset metadata, media replacement, and chapters.
+- `ProjectRepository` — local projects, ordered one-project membership, moves, and normalization.
+- `Publisher` — the admin orchestration boundary for direct-asset publication and complete project-catalog publication.
+- `ViewerCatalog` — read-only published projections for direct assets and project pages/media.
+- `MediaProcessor` — kind-aware local ingest: `video`, `audio`, and `image`.
 
-`packages/shared` holds the domain and the repository. The repository is written against the **dialect-agnostic** `SqlClient` tag from `effect/unstable/sql`. That means the exact same query code runs on:
+`AssetRepository`, `ProjectRepository`, and `ViewerCatalog` are built on Effect's `SqlClient`. The admin provides Bun SQLite (`SqliteClient.layer`); the viewer provides D1 (`D1Client.layer`). Local SQLite is the working catalog. Published D1 is the viewer's catalog, not a second editable source.
 
-- **local SQLite** in the admin (via `@effect/sql-sqlite-bun` → `SqliteClient.layer`)
-- **Cloudflare D1** in the viewer (via `@effect/sql-d1` → `D1Client.layer`)
+## Catalog model and compatibility
 
-The dialect is chosen by which client layer each app provides. `VideoRepository.layerNoDeps` requires `SqlClient`; each app satisfies it differently.
+The conceptual schema is:
 
-Contents:
+- **assets** — unguessable slug, kind, title/description, optional poster, required `media_key`, timing or image dimensions, optional password, publication timestamps, and optional project membership/order.
+- **projects** — unguessable slug, title/description, optional password, and publication timestamps.
+- **chapters** — ordered timed-media markers belonging to an asset. Images cannot have chapters; images have zero duration and positive dimensions, while timed assets have no dimensions.
 
-- `Video.ts` — `Video` and `Chapter` as `Schema.Class`, branded `VideoId` / `ChapterId` / `Slug`.
-- `VideoErrors.ts` — `TaggedErrorClass` domain errors plus a tag→HTTP-status map (`statusForError`). We map status at the route edge since we are not using the full HttpApi framework.
-- `VideoRepository.ts` — `Context.Service` with `findBySlug`, `list`, `create`, `update`, `listChapters`, `replaceChapters`. Built on `SqlClient`.
-- `Migrations.ts` — `CREATE TABLE` statements for `videos` and `chapters`. Plain `IF NOT EXISTS` DDL that runs on both SQLite and D1.
-- `Slug.ts` — unguessable slug generator (CSPRNG, 16 chars default).
+Persistence uses snake_case and domain values use camelCase. `migrate` retains compatibility with the earlier catalog: it renames `videos` to `assets`, `hls_key` to `media_key`, and `chapters.video_id` to `chapters.asset_id`, then adds the asset kind, project/order, dimensions, and update fields as needed. Existing video rows become `kind = 'video'`.
 
-Database is snake_case; TypeScript is camelCase. The SQLite/D1 clients support `transformResultNames` / `transformQueryNames` to bridge the two automatically; currently the repository maps row objects by hand for clarity.
+## Publication
 
-## Data model
+`MediaProcessor` stores images as their original supported JPEG, PNG, or WebP; it processes video and audio into HLS (`master.m3u8`), generates a video poster, and uses MediaBunny rather than an ffmpeg-only workflow.
 
-`videos`
+`Publisher` uploads an asset's R2 media prefix before publishing its D1 metadata. It writes `media/<assetId>/.complete` only after every object uploads; an absent marker makes a partial upload retryable and prevents it being treated as published media.
 
-| column        | type    | notes                          |
-| ------------- | ------- | ------------------------------ |
-| id            | TEXT PK | uuid                           |
-| slug          | TEXT    | unique, unguessable            |
-| title         | TEXT    |                                |
-| description   | TEXT    | nullable                       |
-| poster_key    | TEXT    | nullable, R2 key for poster    |
-| hls_key       | TEXT    | R2 key/path to HLS master.m3u8 |
-| duration_sec  | REAL    |                                |
-| password_hash | TEXT    | nullable                       |
-| created_at    | INTEGER | epoch millis                   |
-| published_at  | INTEGER | nullable, epoch millis         |
+Direct assets publish independently. Project publication is intentionally different: it builds a **complete published project catalog snapshot**, not a selected-project-only snapshot. Each idempotent replacement includes every published project, its ordered member assets, and those members' chapters. It clears stale project memberships while retaining direct asset rows. There is no membership fingerprint or affected-project graph bookkeeping.
 
-`chapters`
+The D1 REST batch used for that replacement is atomic in deployed verification: against the isolated `dev_guidefari` database, a two-statement REST `/query` batch with a valid insert followed by an invalid insert returned an error and left zero rows, confirming rollback. A Worker/D1/R2 smoke-test gap remains: production deployment should prove that the Worker reads the published catalog and serves completed private R2 media end to end.
 
-| column     | type    | notes                       |
-| ---------- | ------- | --------------------------- |
-| id         | TEXT PK | uuid                        |
-| video_id   | TEXT    | FK → videos.id, cascade     |
-| title      | TEXT    |                             |
-| start_sec  | REAL    |                             |
-| sort_order | INTEGER |                             |
+## Viewer
 
-## Viewer (apps/viewer) — live
+The Worker serves direct assets at `/<assetSlug>` and their same-origin media beneath that URL. It uses `ViewerCatalog` to expose only published rows, serves video/audio/image stages, and proxies private R2 objects; HLS manifests are not publicly hosted by R2.
 
-Cloudflare Worker on `video.planetaryescape.co.za`. Bound to D1 (read) and R2 (private). Serves both the player page and media files.
+Projects use:
 
-Flow:
+- `/p/<projectSlug>` — first ordered member
+- `/p/<projectSlug>/<assetSlug>` — a member
+- `/p/<projectSlug>/summary` — completion summary
+- `/p/<projectSlug>/media/<assetSlug>/…` — project-granted media
 
-1. Request `GET /<slug>`.
-2. Worker provides `D1Client.layer({ db: env.DB })`, runs `VideoRepository.findBySlug`.
-3. Not found → 404.
-4. Has password and not yet authorized → render password prompt; `POST` checks the hash, sets a short cookie/token, re-renders.
-5. Authorized (or no password) → render the Vidstack player page. The `hls_key` value (absolute URL or relative R2 key) becomes the player `src`.
-6. Relative R2 keys resolve to `/<slug>/<filename>`. When the player requests a segment, the Worker looks up the video's `hls_key` directory, appends the requested file, and fetches the object from the bound R2 bucket. Auth cookie is checked on media requests too.
+Project pages are server-rendered with the full published member catalog. The project controller swaps pre-rendered stages, manages previous/next/restart and timed-media completion, and uses browser history for member and summary navigation without client catalog reads.
 
-HLS delivery: **Worker-proxied from private R2.** The R2 bucket has no public custom domain. All media flows through the Worker on the same domain as the page, so the password gate covers both.
+Direct-asset and project access grants remain separate. A direct password cookie is scoped to `/<assetSlug>`; a project password cookie is scoped to `/p/<projectSlug>`. Project media checks the project grant and does not grant access through a direct URL (or vice versa). Existing direct URLs and cookie behavior are preserved.
 
-Player: **Vidstack** (custom controls, chapters, poster, keyboard built in). Player assets (`player.js`, `player.css`) are bundled locally and served same-origin by the Worker at `/_assets/*`.
+## Admin
 
-## Admin (apps/admin) — planned
+The live local admin is a Foldkit/Vite client with a Bun server, local SQLite, local media storage, upload progress over WebSocket, and Effect HTTP routes. It supports asset ingest/editing, chapters where applicable, project creation and ordered grouping, direct publishing, and project publication/unpublication.
 
-Two parts on the laptop:
+## Infrastructure
 
-- **foldkit frontend** (Vite dev server): upload UI, metadata/chapter editor, publish button. Elm-style Model/update/message, every app is an Effect program. Same Effect v4 beta as the backend.
-- **local Bun server**: holds the local SQLite DB via `@effect/sql-sqlite-bun`, runs ffmpeg to transcode uploaded mp4 → HLS, and on publish uploads HLS + poster to R2 and writes the video row to D1.
+`alchemy.run.ts` defines the live Cloudflare resources:
 
-Transcode: ffmpeg locally produces an HLS rendition set. (Adaptive bitrate is the goal; exact ladder TBD when we build it.)
-
-Publish = upload media to R2 + insert/update row in D1. Local SQLite stays the working source; cloud is the published mirror the viewer reads.
-
-## Infra (alchemy.run.ts)
-
-Alchemy v2 (Effect-style `Stack`), Cloudflare provider.
-
-- `R2Bucket("VideoBucket")` — live. Private, no public domain. Holds HLS segments + posters.
-- `D1Database("VideoDatabase")` — live. Viewer reads it; admin writes to it on publish. Migrations from `packages/shared/migrations/`.
-- `Worker("ViewerWorker")` — live on `video.planetaryescape.co.za`. Bound to D1 + R2. Serves player page, password gate, same-origin player assets, and proxies media from private R2.
+- `R2.Bucket("VideoBucket")` — private media storage.
+- `D1.Database("VideoDatabase")` — deployed database, with migrations from `packages/shared/migrations` and the demo seed import.
+- `Worker("ViewerWorker")` — `apps/viewer/src/worker.ts`, bound to `DB` and `BUCKET`, deployed at `video.planetaryescape.co.za`.

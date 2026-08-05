@@ -13,7 +13,7 @@ import type { Chapter } from "./model";
 
 const chapter = (id: string, startSec: number, title = "Titled"): Chapter => ({
   id,
-  videoId: "video-1",
+  assetId: "video-1",
   title,
   startSec,
   sortOrder: 0,

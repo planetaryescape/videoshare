@@ -10,12 +10,12 @@ const ProgressFrame = S.Struct({
 
 const decodeFrame = S.decodeUnknownOption(S.fromJsonString(ProgressFrame));
 
-const uploadProgressStream = (videoId: string): Stream.Stream<Message> =>
+const uploadProgressStream = (assetId: string): Stream.Stream<Message> =>
   Stream.callback<Message>((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
         const socket = new WebSocket(
-          `ws://${location.hostname}:3001/ws?videoId=${encodeURIComponent(videoId)}`,
+          `ws://${location.hostname}:3001/ws?assetId=${encodeURIComponent(assetId)}`,
         );
         let isTerminated = false;
 
@@ -61,13 +61,13 @@ const uploadProgressStream = (videoId: string): Stream.Stream<Message> =>
 
 export const subscriptions = Subscription.make<Model, Message>()((entry) => ({
   uploadProgress: entry(
-    { maybeUploadingVideoId: S.Option(S.String) },
+    { maybeUploadingAssetId: S.Option(S.String) },
     {
       modelToDependencies: (model) => ({
-        maybeUploadingVideoId: model.uploadingVideoId,
+        maybeUploadingAssetId: model.uploadingAssetId,
       }),
-      dependenciesToStream: ({ maybeUploadingVideoId }) =>
-        Option.match(maybeUploadingVideoId, {
+      dependenciesToStream: ({ maybeUploadingAssetId }) =>
+        Option.match(maybeUploadingAssetId, {
           onNone: () => Stream.empty,
           onSome: uploadProgressStream,
         }),

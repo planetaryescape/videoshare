@@ -3,46 +3,53 @@ import { Story } from "foldkit";
 import { expect, test } from "vitest";
 import {
   CopyLinkCmd,
-  LoadVideoDetail,
-  PublishVideoCmd,
+  LoadAssetDetail,
+  LoadProjects,
+  PublishAssetCmd,
   SaveChaptersCmd,
-  SaveVideoCmd,
-  UploadVideoCmd,
+  SaveAssetCmd,
+  UploadAssetCmd,
 } from "./commands";
 import {
   BlurredChapterField,
   BlurredEditField,
+  ClickedBack,
   ClickedCopyLink,
-  ClickedEditVideo,
+  ClickedEditAsset,
   ClickedPublish,
   CopiedLink,
   FailedCopyLink,
-  FailedLoadVideoDetail,
+  FailedLoadAssetDetail,
   FailedPublish,
   FailedSaveChapters,
-  FailedSaveVideo,
+  FailedSaveAsset,
   FailedUpload,
   SubmittedUpload,
-  SucceededLoadVideoDetail,
+  SucceededLoadAssetDetail,
+  SucceededLoadProjects,
   SucceededPublish,
   SucceededSaveChapters,
-  SucceededSaveVideo,
+  SucceededSaveAsset,
   SucceededUpload,
   UpdatedChapterTitle,
   UpdatedTitle,
 } from "./message";
-import { EditVideo, initialModel, type Chapter, type Model, type Video } from "./model";
+import { EditAsset, initialModel, type Chapter, type Model, type Asset } from "./model";
 import { update } from "./update";
 
-const video: Video = {
+const video: Asset = {
   id: "video-1",
   slug: "fixture-video",
   kind: "video",
-  title: "Fixture Video",
+  title: "Fixture Asset",
   description: "Fixture description",
   posterKey: null,
-  hlsKey: "videos/video-1/master.m3u8",
+  mediaKey: "assets/video-1/master.m3u8",
   durationSec: 125,
+  width: null,
+  height: null,
+  projectId: null,
+  sortOrder: null,
   createdAt: 1_750_000_000_000,
   publishedAt: null,
   updatedAt: 1_750_000_001_000,
@@ -50,7 +57,7 @@ const video: Video = {
 
 const chapter: Chapter = {
   id: "chapter-1",
-  videoId: video.id,
+  assetId: video.id,
   title: "Introduction",
   startSec: 0,
   sortOrder: 0,
@@ -58,26 +65,26 @@ const chapter: Chapter = {
 
 const editModel = (patch: Partial<Model> = {}): Model => ({
   ...initialModel(),
-  screen: EditVideo({ videoId: video.id }),
-  videos: [video],
-  editVideo: Option.some(video),
+  screen: EditAsset({ assetId: video.id }),
+  assets: [video],
+  editAsset: Option.some(video),
   editTitle: video.title,
   editDescription: video.description ?? "",
   ...patch,
 });
 
 test("saves metadata and surfaces save failure", () => {
-  const savedVideo = { ...video, title: "Updated title" };
+  const savedAsset = { ...video, title: "Updated title" };
 
   Story.story(
     update,
     Story.with(editModel()),
-    Story.message(UpdatedTitle({ title: savedVideo.title })),
+    Story.message(UpdatedTitle({ title: savedAsset.title })),
     Story.message(BlurredEditField()),
-    Story.Command.resolve(SaveVideoCmd, SucceededSaveVideo({ video: savedVideo })),
+    Story.Command.resolve(SaveAssetCmd, SucceededSaveAsset({ video: savedAsset })),
     Story.message(UpdatedTitle({ title: "Another title" })),
     Story.message(BlurredEditField()),
-    Story.Command.resolve(SaveVideoCmd, FailedSaveVideo({ error: "Save failed" })),
+    Story.Command.resolve(SaveAssetCmd, FailedSaveAsset({ error: "Save failed" })),
     Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Save failed"))),
   );
 });
@@ -86,15 +93,57 @@ test("loads video detail and surfaces load failure", () => {
   Story.story(
     update,
     Story.with(initialModel()),
-    Story.message(ClickedEditVideo({ id: video.id })),
+    Story.message(ClickedEditAsset({ id: video.id })),
     Story.Command.resolve(
-      LoadVideoDetail,
-      SucceededLoadVideoDetail({ video, chapters: [chapter] }),
+      LoadAssetDetail,
+      SucceededLoadAssetDetail({ id: video.id, video, chapters: [chapter] }),
     ),
-    Story.message(ClickedEditVideo({ id: "video-2" })),
-    Story.Command.resolve(LoadVideoDetail, FailedLoadVideoDetail({ error: "Detail unavailable" })),
+    Story.Command.resolve(LoadProjects, SucceededLoadProjects({ projects: [] })),
+    Story.message(ClickedEditAsset({ id: "video-2" })),
+    Story.Command.resolve(
+      LoadAssetDetail,
+      FailedLoadAssetDetail({ id: "video-2", error: "Detail unavailable" }),
+    ),
+    Story.Command.resolve(LoadProjects, SucceededLoadProjects({ projects: [] })),
     Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Detail unavailable"))),
   );
+});
+
+test("ignores stale asset detail responses after switching assets or navigating away", () => {
+  const secondVideo = { ...video, id: "video-2", title: "Second asset" };
+
+  const [loadingFirst] = update(initialModel(), ClickedEditAsset({ id: video.id }));
+  const [loadingSecond] = update(loadingFirst, ClickedEditAsset({ id: secondVideo.id }));
+  const [afterStaleSuccess] = update(
+    loadingSecond,
+    SucceededLoadAssetDetail({ id: video.id, video, chapters: [chapter] }),
+  );
+
+  expect(afterStaleSuccess.screen).toEqual(EditAsset({ assetId: secondVideo.id }));
+  expect(afterStaleSuccess.editAsset).toEqual(Option.none());
+  expect(afterStaleSuccess.editTitle).toBe("");
+
+  const [loadedSecond] = update(
+    afterStaleSuccess,
+    SucceededLoadAssetDetail({ id: secondVideo.id, video: secondVideo, chapters: [] }),
+  );
+  expect(loadedSecond.editAsset).toEqual(Option.some(secondVideo));
+  expect(loadedSecond.editTitle).toBe(secondVideo.title);
+
+  const [afterStaleFailureForFirst] = update(
+    loadedSecond,
+    FailedLoadAssetDetail({ id: video.id, error: "Detail unavailable" }),
+  );
+  expect(afterStaleFailureForFirst.errorMessage).toEqual(Option.none());
+
+  const [navigatedAway] = update(afterStaleFailureForFirst, ClickedBack());
+  const [afterStaleFailure] = update(
+    navigatedAway,
+    FailedLoadAssetDetail({ id: secondVideo.id, error: "Detail unavailable" }),
+  );
+
+  expect(afterStaleFailure.screen).toEqual({ _tag: "ListAssets" });
+  expect(afterStaleFailure.errorMessage).toEqual(Option.none());
 });
 
 test("saves chapters and surfaces save failure", () => {
@@ -119,7 +168,7 @@ test("uploads media and handles upload failure", () => {
     update,
     Story.with(editModel({ selectedFile: Option.some(file) })),
     Story.message(SubmittedUpload()),
-    Story.Command.resolve(UploadVideoCmd, SucceededUpload({ video })),
+    Story.Command.resolve(UploadAssetCmd, SucceededUpload({ video })),
     Story.model((model) => expect(model.isUploading).toBe(false)),
   );
 
@@ -127,13 +176,13 @@ test("uploads media and handles upload failure", () => {
     update,
     Story.with(editModel({ selectedFile: Option.some(file) })),
     Story.message(SubmittedUpload()),
-    Story.Command.resolve(UploadVideoCmd, FailedUpload({ error: "Upload failed" })),
+    Story.Command.resolve(UploadAssetCmd, FailedUpload({ error: "Upload failed" })),
     Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Upload failed"))),
   );
 });
 
 test("publishes media and surfaces publish failure", () => {
-  const publishedVideo = {
+  const publishedAsset = {
     ...video,
     publishedAt: 1_750_000_002_000,
     updatedAt: 1_750_000_002_000,
@@ -143,9 +192,9 @@ test("publishes media and surfaces publish failure", () => {
     update,
     Story.with(editModel()),
     Story.message(ClickedPublish({ id: video.id })),
-    Story.Command.resolve(PublishVideoCmd, SucceededPublish({ video: publishedVideo })),
+    Story.Command.resolve(PublishAssetCmd, SucceededPublish({ video: publishedAsset })),
     Story.message(ClickedPublish({ id: video.id })),
-    Story.Command.resolve(PublishVideoCmd, FailedPublish({ error: "Publish failed" })),
+    Story.Command.resolve(PublishAssetCmd, FailedPublish({ error: "Publish failed" })),
     Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Publish failed"))),
   );
 });

@@ -5,35 +5,53 @@ import { makeConstrainedEvo } from "foldkit/struct";
 import { currentChapterStartSec } from "./chapterPlayback";
 import { chaptersValidationError, clampToDuration, parseTimestamp, sortChapters } from "./chapters";
 import {
-  DeleteVideoConfirmation,
-  EditVideo,
+  DeleteAssetConfirmation,
+  DeleteProjectConfirmation,
+  EditAsset,
+  ProjectEdit,
+  ProjectList,
+  ProjectsFailed,
+  ProjectsLoaded,
+  ProjectsLoading,
+  ProjectMembershipIdle,
+  ProjectMembershipSaving,
+  ProjectOperationFailed,
+  ProjectOperationIdle,
+  ProjectOperationPending,
   initialModel,
-  ListVideos,
-  UnpublishVideoConfirmation,
+  ListAssets,
+  UnpublishAssetConfirmation,
   type Chapter,
   type Model,
   type PendingConfirmation,
-  type Video,
+  type Asset,
 } from "./model";
 import {
   GotConfirmationDialogMessage,
   GotPosterFileDropMessage,
-  GotVideoFileDropMessage,
+  GotAssetFileDropMessage,
   type Message,
 } from "./message";
 import {
   CopyLinkCmd,
-  CreateVideoCmd,
-  DeleteVideoCmd,
+  CreateAssetCmd,
+  DeleteAssetCmd,
   FocusChapterTitle,
   GenerateChapterId,
-  LoadVideoDetail,
-  LoadVideos,
-  PublishVideoCmd,
+  LoadAssetDetail,
+  LoadAssets,
+  PublishAssetCmd,
   SaveChaptersCmd,
-  SaveVideoCmd,
-  UnpublishVideoCmd,
-  UploadVideoCmd,
+  SaveAssetCmd,
+  UnpublishAssetCmd,
+  UploadAssetCmd,
+  LoadProjects,
+  LoadProject,
+  SaveProject,
+  MoveProjectMember,
+  DeleteProject,
+  PublishProject,
+  UnpublishProject,
 } from "./commands";
 
 type Cmd = Command.Command<Message>;
@@ -52,7 +70,78 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
   cmds,
 ];
 
-export const init = (): Update => [initialModel(), [LoadVideos()]];
+const isProjectOperationPending = (model: Model) =>
+  model.projectOperation._tag === "ProjectOperationPending";
+
+const activeProjectId = (model: Model): string | undefined =>
+  model.screen._tag === "ProjectEdit" && model.screen.projectId !== "new"
+    ? model.screen.projectId
+    : undefined;
+
+const isActiveAsset = (model: Model, assetId: string): boolean =>
+  model.screen._tag === "EditAsset" && model.screen.assetId === assetId;
+
+const isActiveProjectOperation = (model: Model): boolean =>
+  model.projectOperation._tag !== "ProjectOperationIdle" &&
+  model.projectOperation.id === activeProjectId(model);
+
+const membershipSave = (model: Model, command: (requestId: number) => Cmd): Update =>
+  model.projectMetadataSaveInFlight ||
+  model.projectMembershipOperation._tag === "ProjectMembershipSaving" ||
+  isProjectOperationPending(model)
+    ? noCmd(model)
+    : (() => {
+        const requestId = model.projectSaveRequestId + 1;
+        return withEvo(
+          model,
+          {
+            projectSaveRequestId: () => requestId,
+            projectMembershipOperation: () => ProjectMembershipSaving(),
+          },
+          command(requestId),
+        );
+      })();
+
+const projectCommand = (
+  model: Model,
+  kind: "publish" | "unpublish" | "delete",
+  id: string,
+): Update =>
+  model.projectMetadataSaveInFlight ||
+  isProjectOperationPending(model) ||
+  model.projectMembershipOperation._tag === "ProjectMembershipSaving"
+    ? noCmd(model)
+    : kind === "publish"
+      ? withEvo(
+          model,
+          {
+            isPublishing: () => true,
+            projectOperation: () => ProjectOperationPending({ kind, id }),
+            errorMessage: () => Option.none(),
+          },
+          PublishProject({ id }),
+        )
+      : kind === "unpublish"
+        ? withEvo(
+            model,
+            {
+              isPublishing: () => true,
+              projectOperation: () => ProjectOperationPending({ kind, id }),
+              errorMessage: () => Option.none(),
+            },
+            UnpublishProject({ id }),
+          )
+        : withEvo(
+            model,
+            {
+              projectMembershipOperation: () => ProjectMembershipSaving(),
+              projectOperation: () => ProjectOperationPending({ kind, id }),
+              errorMessage: () => Option.none(),
+            },
+            DeleteProject({ id }),
+          );
+
+export const init = (): Update => [initialModel(), [LoadAssets(), LoadProjects()]];
 
 const sameChapters = (left: ReadonlyArray<Chapter>, right: ReadonlyArray<Chapter>): boolean =>
   left.length === right.length &&
@@ -61,7 +150,7 @@ const sameChapters = (left: ReadonlyArray<Chapter>, right: ReadonlyArray<Chapter
     return (
       other !== undefined &&
       chapter.id === other.id &&
-      chapter.videoId === other.videoId &&
+      chapter.assetId === other.assetId &&
       chapter.title === other.title &&
       chapter.startSec === other.startSec &&
       chapter.sortOrder === other.sortOrder
@@ -73,7 +162,7 @@ const validationErrorWithDrafts = (
   chapters: ReadonlyArray<Chapter>,
   drafts: Readonly<Record<string, string>> = model.chapterStartDrafts,
 ): Option.Option<string> => {
-  const durationSec = Option.isSome(model.editVideo) ? model.editVideo.value.durationSec : 0;
+  const durationSec = Option.isSome(model.editAsset) ? model.editAsset.value.durationSec : 0;
   if (Object.values(drafts).some((draft) => Option.isNone(parseTimestamp(draft)))) {
     return Option.some("Timestamp must look like 0:45, 1:02:30, or a number of seconds");
   }
@@ -91,7 +180,7 @@ const validationErrorWithDrafts = (
 };
 
 const startChapterSave = (model: Model): Update => {
-  if (Option.isNone(model.editVideo)) {
+  if (Option.isNone(model.editAsset)) {
     return noCmd(model);
   }
   const validationError = validationErrorWithDrafts(model, model.editChapters);
@@ -110,7 +199,7 @@ const startChapterSave = (model: Model): Update => {
       chapterSaveSnapshot: () => model.editChapters,
       chapterValidationError: () => Option.none(),
     },
-    SaveChaptersCmd({ id: model.editVideo.value.id, chapters: model.editChapters }),
+    SaveChaptersCmd({ id: model.editAsset.value.id, chapters: model.editChapters }),
   );
 };
 
@@ -180,36 +269,355 @@ export const update: (model: Model, message: Message) => Update = (model, messag
   M.value(message).pipe(
     M.withReturnType<Update>(),
     M.tagsExhaustive({
-      ClickedEditVideo: (msg: { id: string }) =>
+      ClickedProjects: () =>
+        withEvo(
+          model,
+          {
+            screen: () => ProjectList(),
+            projectsLoadState: () => ProjectsLoading(),
+            projectOperation: () => ProjectOperationIdle(),
+            projectMetadataSaveInFlight: () => false,
+            projectMembershipOperation: () => ProjectMembershipIdle(),
+            isPublishing: () => false,
+            copiedLink: () => false,
+            errorMessage: () => Option.none(),
+          },
+          LoadProjects(),
+        ),
+      ClickedAssets: () =>
+        withEvo(
+          model,
+          {
+            screen: () => ListAssets(),
+            projectsLoadState: () => ProjectsLoading(),
+            projectOperation: () => ProjectOperationIdle(),
+            projectMetadataSaveInFlight: () => false,
+            projectMembershipOperation: () => ProjectMembershipIdle(),
+            isPublishing: () => false,
+            copiedLink: () => false,
+            errorMessage: () => Option.none(),
+          },
+          LoadAssets(),
+          LoadProjects(),
+        ),
+      SubmittedCreateProject: () =>
+        withEvo(model, {
+          screen: () => ProjectEdit({ projectId: "new" }),
+          editProject: () => Option.none(),
+          projectTitle: () => "Untitled project",
+          projectDescription: () => "",
+          projectPassword: () => Option.none(),
+          projectOperation: () => ProjectOperationIdle(),
+          projectMetadataSaveInFlight: () => false,
+          projectMembershipOperation: () => ProjectMembershipIdle(),
+          isPublishing: () => false,
+          copiedLink: () => false,
+        }),
+      ClickedEditProject: ({ id }) =>
+        withEvo(
+          model,
+          {
+            screen: () => ProjectEdit({ projectId: id }),
+            editProject: () => Option.none(),
+            projectTitle: () => "",
+            projectDescription: () => "",
+            projectPassword: () => Option.none(),
+            projectOperation: () => ProjectOperationIdle(),
+            projectMetadataSaveInFlight: () => false,
+            projectMembershipOperation: () => ProjectMembershipIdle(),
+            isPublishing: () => false,
+            copiedLink: () => false,
+            errorMessage: () => Option.none(),
+          },
+          LoadProject({ id }),
+          LoadAssets(),
+        ),
+      UpdatedProjectTitle: ({ title }) => withEvo(model, { projectTitle: () => title }),
+      UpdatedProjectDescription: ({ description }) =>
+        withEvo(model, { projectDescription: () => description }),
+      UpdatedProjectPassword: ({ password }) =>
+        withEvo(model, { projectPassword: () => Option.some(password) }),
+      BlurredProjectField: () => {
+        if (model.projectMetadataSaveInFlight || model.projectTitle.trim() === "")
+          return noCmd(model);
+        const existing =
+          model.screen._tag === "ProjectEdit" && model.screen.projectId !== "new"
+            ? model.editProject
+            : Option.none();
+        if (
+          Option.isSome(existing) &&
+          model.projectTitle === existing.value.project.title &&
+          model.projectDescription === (existing.value.project.description ?? "") &&
+          Option.isNone(model.projectPassword)
+        ) {
+          return noCmd(model);
+        }
+        const requestId = model.projectSaveRequestId + 1;
+        return withEvo(
+          model,
+          { projectSaveRequestId: () => requestId, projectMetadataSaveInFlight: () => true },
+          SaveProject({
+            requestId,
+            id: Option.isSome(existing) ? existing.value.project.id : undefined,
+            title: model.projectTitle,
+            description: model.projectDescription,
+            password: model.projectPassword,
+          }),
+        );
+      },
+      ClickedRetryLoadProjects: () =>
+        withEvo(
+          model,
+          { projectsLoadState: () => ProjectsLoading(), errorMessage: () => Option.none() },
+          LoadProjects(),
+        ),
+      SucceededLoadProjects: ({ projects }) =>
+        withEvo(model, { projects: () => projects, projectsLoadState: () => ProjectsLoaded() }),
+      FailedLoadProjects: ({ error }) =>
+        withEvo(model, {
+          projectsLoadState: () => ProjectsFailed(),
+          errorMessage: () => Option.some(error),
+        }),
+      SucceededLoadProject: ({ detail }) =>
+        model.screen._tag !== "ProjectEdit" || model.screen.projectId !== detail.project.id
+          ? noCmd(model)
+          : withEvo(model, {
+              editProject: () => Option.some(detail),
+              projectTitle: () => detail.project.title,
+              projectDescription: () => detail.project.description ?? "",
+              projectPassword: () => Option.none(),
+              isPublishing: () => false,
+            }),
+      FailedLoadProject: ({ id, error }) =>
+        model.screen._tag !== "ProjectEdit" || model.screen.projectId !== id
+          ? noCmd(model)
+          : withEvo(model, { errorMessage: () => Option.some(error) }),
+      SucceededSaveProject: ({ requestId, detail }) =>
+        model.projectSaveRequestId !== requestId ||
+        (!model.projectMetadataSaveInFlight &&
+          model.projectMembershipOperation._tag !== "ProjectMembershipSaving")
+          ? noCmd(model)
+          : withEvo(
+              model,
+              {
+                editProject: () => Option.some(detail),
+                projects: () => [
+                  { ...detail.project, memberCount: detail.assets.length },
+                  ...model.projects.filter((project) => project.id !== detail.project.id),
+                ],
+                screen: () =>
+                  model.screen._tag === "EditAsset"
+                    ? model.screen
+                    : ProjectEdit({ projectId: detail.project.id }),
+                projectPassword: () => Option.none(),
+                projectMetadataSaveInFlight: () => false,
+                projectMembershipOperation: () => ProjectMembershipIdle(),
+                assets: () =>
+                  model.assets.map((asset) => {
+                    const returned = detail.assets.find((member) => member.id === asset.id);
+                    return (
+                      returned ??
+                      (asset.projectId === detail.project.id
+                        ? { ...asset, projectId: null, sortOrder: null }
+                        : asset)
+                    );
+                  }),
+                editAsset: () =>
+                  Option.map(model.editAsset, (asset) => {
+                    const returned = detail.assets.find((member) => member.id === asset.id);
+                    return (
+                      returned ??
+                      (asset.projectId === detail.project.id
+                        ? { ...asset, projectId: null, sortOrder: null }
+                        : asset)
+                    );
+                  }),
+              },
+              LoadProjects(),
+              LoadAssets(),
+            ),
+      FailedSaveProject: ({ requestId, error }) =>
+        model.projectSaveRequestId !== requestId ||
+        (!model.projectMetadataSaveInFlight &&
+          model.projectMembershipOperation._tag !== "ProjectMembershipSaving")
+          ? noCmd(model)
+          : withEvo(model, {
+              projectMetadataSaveInFlight: () => false,
+              projectMembershipOperation: () => ProjectMembershipIdle(),
+              errorMessage: () => Option.some(error),
+            }),
+      ClickedPublishProject: ({ id }) =>
+        model.projectMetadataSaveInFlight || model.isPublishing || isProjectOperationPending(model)
+          ? noCmd(model)
+          : projectCommand(model, "publish", id),
+      ClickedRetryProjectOperation: () =>
+        model.projectOperation._tag === "ProjectOperationFailed" && isActiveProjectOperation(model)
+          ? projectCommand(model, model.projectOperation.kind, model.projectOperation.id)
+          : noCmd(model),
+      SucceededPublishProject: ({ id }) =>
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "publish" ||
+        model.projectOperation.id !== id ||
+        activeProjectId(model) !== id
+          ? noCmd(model)
+          : withEvo(
+              model,
+              { projectOperation: () => ProjectOperationIdle() },
+              LoadProject({ id }),
+              LoadAssets(),
+              LoadProjects(),
+            ),
+      FailedPublishProject: ({ id, error }) =>
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "publish" ||
+        model.projectOperation.id !== id ||
+        !isActiveProjectOperation(model)
+          ? noCmd(model)
+          : withEvo(model, {
+              isPublishing: () => false,
+              projectOperation: () =>
+                ProjectOperationFailed({ kind: "publish", id: activeProjectId(model) ?? "" }),
+              errorMessage: () => Option.some(error),
+            }),
+      ClickedUnpublishProject: ({ id }) =>
+        model.projectMetadataSaveInFlight || model.isPublishing || isProjectOperationPending(model)
+          ? noCmd(model)
+          : projectCommand(model, "unpublish", id),
+      SucceededUnpublishProject: ({ id }) =>
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "unpublish" ||
+        model.projectOperation.id !== id ||
+        activeProjectId(model) !== id
+          ? noCmd(model)
+          : withEvo(
+              model,
+              { projectOperation: () => ProjectOperationIdle() },
+              LoadProject({ id }),
+              LoadAssets(),
+              LoadProjects(),
+            ),
+      FailedUnpublishProject: ({ id, error }) =>
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "unpublish" ||
+        model.projectOperation.id !== id ||
+        !isActiveProjectOperation(model)
+          ? noCmd(model)
+          : withEvo(model, {
+              isPublishing: () => false,
+              projectOperation: () =>
+                ProjectOperationFailed({ kind: "unpublish", id: activeProjectId(model) ?? "" }),
+              errorMessage: () => Option.some(error),
+            }),
+      ClickedDeleteProject: ({ id }) =>
+        model.projectMetadataSaveInFlight ||
+        isProjectOperationPending(model) ||
+        model.projectMembershipOperation._tag === "ProjectMembershipSaving"
+          ? noCmd(model)
+          : openConfirmation(model, DeleteProjectConfirmation({ projectId: id })),
+
+      SucceededDeleteProject: ({ id }) =>
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "delete" ||
+        model.projectOperation.id !== id ||
+        activeProjectId(model) !== id
+          ? noCmd(model)
+          : withEvo(model, {
+              projects: () => model.projects.filter((project) => project.id !== id),
+              projectMembershipOperation: () => ProjectMembershipIdle(),
+              projectOperation: () => ProjectOperationIdle(),
+              screen: () => ProjectList(),
+              copiedLink: () => false,
+              assets: () =>
+                model.assets.map((asset) =>
+                  asset.projectId === id ? { ...asset, projectId: null, sortOrder: null } : asset,
+                ),
+            }),
+      FailedDeleteProject: ({ id, error }) =>
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "delete" ||
+        model.projectOperation.id !== id ||
+        !isActiveProjectOperation(model)
+          ? noCmd(model)
+          : withEvo(model, {
+              projectMembershipOperation: () => ProjectMembershipIdle(),
+              projectOperation: () =>
+                ProjectOperationFailed({ kind: "delete", id: activeProjectId(model) ?? "" }),
+              errorMessage: () => Option.some(error),
+            }),
+      ClickedMoveProjectMember: ({ assetId, direction }) => {
+        if (Option.isNone(model.editProject)) return noCmd(model);
+        const projectId = model.editProject.value.project.id;
+        const members = model.editProject.value.assets;
+        const index = members.findIndex((asset) => asset.id === assetId);
+        if (index < 0) return noCmd(model);
+        return membershipSave(model, (requestId) =>
+          MoveProjectMember({
+            requestId,
+            projectId,
+            assetId,
+            position: direction === "up" ? index - 1 : index + 1,
+            unfile: false,
+          }),
+        );
+      },
+      ClickedUnfileProjectMember: ({ assetId }) => {
+        if (Option.isNone(model.editProject)) return noCmd(model);
+        const projectId = model.editProject.value.project.id;
+        return membershipSave(model, (requestId) =>
+          MoveProjectMember({ requestId, projectId, assetId, unfile: true }),
+        );
+      },
+      ClickedAssignAssetToProject: ({ assetId, projectId }) =>
+        projectId === ""
+          ? (() => {
+              if (Option.isNone(model.editAsset) || model.editAsset.value.id !== assetId) {
+                return noCmd(model);
+              }
+              const source = model.editAsset.value.projectId;
+              return source === null
+                ? noCmd(model)
+                : membershipSave(model, (requestId) =>
+                    MoveProjectMember({ requestId, projectId: source, assetId, unfile: true }),
+                  );
+            })()
+          : membershipSave(model, (requestId) =>
+              MoveProjectMember({ requestId, projectId, assetId, unfile: false }),
+            ),
+      ClickedEditAsset: (msg: { id: string }) =>
         model.isUploading
           ? noCmd(model)
           : withEvo(
               model,
               {
-                screen: () => EditVideo({ videoId: msg.id }),
+                screen: () => EditAsset({ assetId: msg.id }),
                 editTitle: () => "",
                 editDescription: () => "",
-                editVideo: () => Option.none(),
+                editAsset: () => Option.none(),
                 editChapters: () => [],
                 chapterStartDrafts: () => ({}),
                 chapterValidationError: () => Option.none(),
                 chapterSaveInFlight: () => false,
                 chapterSaveQueued: () => false,
                 chapterSaveSnapshot: () => [],
+                projectOperation: () => ProjectOperationIdle(),
+                projectMembershipOperation: () => ProjectMembershipIdle(),
+                isPublishing: () => false,
                 copiedLink: () => false,
                 errorMessage: () => Option.none(),
+                projectsLoadState: () => ProjectsLoading(),
               },
-              LoadVideoDetail({ id: msg.id }),
+              LoadAssetDetail({ id: msg.id }),
+              LoadProjects(),
             ),
       ClickedBack: () => {
         if (model.isUploading) {
           return noCmd(model);
         }
         return withEvo(model, {
-          screen: () => ListVideos(),
+          screen: () => ListAssets(),
           editTitle: () => "",
           editDescription: () => "",
-          editVideo: () => Option.none(),
+          editAsset: () => Option.none(),
           editChapters: () => [],
           chapterStartDrafts: () => ({}),
           chapterValidationError: () => Option.none(),
@@ -226,10 +634,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       UpdatedDescription: (msg: { description: string }) =>
         withEvo(model, { editDescription: () => msg.description }),
       BlurredEditField: () => {
-        if (Option.isNone(model.editVideo)) {
+        if (Option.isNone(model.editAsset)) {
           return noCmd(model);
         }
-        const video = model.editVideo.value;
+        const video = model.editAsset.value;
         const unchanged =
           model.editTitle === video.title && model.editDescription === (video.description ?? "");
         if (unchanged || model.editTitle.trim() === "") {
@@ -237,36 +645,36 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         }
         return withCmds(
           model,
-          SaveVideoCmd({
+          SaveAssetCmd({
             id: video.id,
             title: model.editTitle,
             description: model.editDescription,
           }),
         );
       },
-      SucceededSaveVideo: (msg: { video: Video }) =>
+      SucceededSaveAsset: (msg: { video: Asset }) =>
         withEvo(model, {
-          editVideo: () => Option.some(msg.video),
-          videos: () => model.videos.map((v) => (v.id === msg.video.id ? msg.video : v)),
+          editAsset: () => Option.some(msg.video),
+          assets: () => model.assets.map((v) => (v.id === msg.video.id ? msg.video : v)),
         }),
-      FailedSaveVideo: (msg: { error: string }) =>
+      FailedSaveAsset: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SubmittedCreateVideo: () =>
-        withEvo(model, { errorMessage: () => Option.none() }, CreateVideoCmd()),
-      SucceededCreateVideo: (msg: { video: Video }) =>
+      SubmittedCreateAsset: () =>
+        withEvo(model, { errorMessage: () => Option.none() }, CreateAssetCmd()),
+      SucceededCreateAsset: (msg: { video: Asset }) =>
         withEvo(model, {
-          videos: () => [msg.video, ...model.videos],
-          screen: () => EditVideo({ videoId: msg.video.id }),
+          assets: () => [msg.video, ...model.assets],
+          screen: () => EditAsset({ assetId: msg.video.id }),
           editTitle: () => msg.video.title,
           editDescription: () => msg.video.description ?? "",
-          editVideo: () => Option.some(msg.video),
+          editAsset: () => Option.some(msg.video),
         }),
-      FailedCreateVideo: (msg: { error: string }) =>
+      FailedCreateAsset: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SucceededLoadVideos: (msg) => withEvo(model, { videos: () => msg.videos }),
-      FailedLoadVideos: (msg: { error: string }) =>
+      SucceededLoadAssets: (msg) => withEvo(model, { assets: () => msg.assets }),
+      FailedLoadAssets: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      GotVideoFileDropMessage: ({ message }) => {
+      GotAssetFileDropMessage: ({ message }) => {
         const [videoFileDrop, commands, maybeOutMessage] = FileDrop.update(
           model.videoFileDrop,
           message,
@@ -282,7 +690,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           onNone: () => model.errorMessage,
           onSome: (outMessage) =>
             outMessage._tag === "RejectedNonFiles"
-              ? Option.some("Please select a video or audio file")
+              ? Option.some("Please select a video, audio, or image file")
               : Option.none(),
         });
         return withEvo(
@@ -290,9 +698,13 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           {
             videoFileDrop: () => videoFileDrop,
             selectedFile: () => selectedFile,
+            selectedPoster: () =>
+              Option.isSome(selectedFile) && selectedFile.value.type.startsWith("image/")
+                ? Option.none()
+                : model.selectedPoster,
             errorMessage: () => errorMessage,
           },
-          ...Command.mapMessages(commands, (message) => GotVideoFileDropMessage({ message })),
+          ...Command.mapMessages(commands, (message) => GotAssetFileDropMessage({ message })),
         );
       },
       GotPosterFileDropMessage: ({ message }) => {
@@ -331,24 +743,24 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             errorMessage: () => Option.some("Please select a file first"),
           });
         }
-        if (model.screen._tag !== "EditVideo") {
+        if (model.screen._tag !== "EditAsset") {
           return withEvo(model, {
             errorMessage: () =>
-              Option.some("Save the video before uploading to create a stable identifier"),
+              Option.some("Save the asset before uploading to create a stable identifier"),
           });
         }
-        const videoId = model.screen.videoId;
+        const assetId = model.screen.assetId;
         return withEvo(
           model,
           {
             isUploading: () => true,
-            uploadingVideoId: () => Option.some(videoId),
+            uploadingAssetId: () => Option.some(assetId),
             uploadStage: () => "uploading",
             uploadPct: () => 0,
             errorMessage: () => Option.none(),
           },
-          UploadVideoCmd({
-            videoId,
+          UploadAssetCmd({
+            assetId,
             file: model.selectedFile.value,
             poster: model.selectedPoster,
           }),
@@ -359,13 +771,15 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           uploadStage: () => msg.stage,
           uploadPct: () => msg.pct,
         }),
-      SucceededUpload: (msg: { video: Video }) => {
+      SucceededUpload: (msg: { video: Asset }) => {
         return withEvo(model, {
           isUploading: () => false,
-          uploadingVideoId: () => Option.none(),
+          uploadingAssetId: () => Option.none(),
           uploadStage: () => "done",
           uploadPct: () => 100,
-          editVideo: () => Option.some(msg.video),
+          editAsset: () => Option.some(msg.video),
+          assets: () =>
+            model.assets.map((asset) => (asset.id === msg.video.id ? msg.video : asset)),
           selectedFile: () => Option.none(),
           selectedPoster: () => Option.none(),
         });
@@ -373,7 +787,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       FailedUpload: (msg: { error: string }) => {
         return withEvo(model, {
           isUploading: () => false,
-          uploadingVideoId: () => Option.none(),
+          uploadingAssetId: () => Option.none(),
           uploadStage: () => "",
           uploadPct: () => 0,
           errorMessage: () => Option.some(msg.error),
@@ -388,13 +802,13 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             isPublishing: () => true,
             errorMessage: () => Option.none(),
           },
-          PublishVideoCmd({ id: msg.id }),
+          PublishAssetCmd({ id: msg.id }),
         ),
-      SucceededPublish: (msg: { video: Video }) =>
+      SucceededPublish: (msg: { video: Asset }) =>
         withEvo(model, {
           isPublishing: () => false,
-          editVideo: () => Option.some(msg.video),
-          videos: () => model.videos.map((v) => (v.id === msg.video.id ? msg.video : v)),
+          editAsset: () => Option.some(msg.video),
+          assets: () => model.assets.map((v) => (v.id === msg.video.id ? msg.video : v)),
         }),
       FailedPublish: (msg: { error: string }) =>
         withEvo(model, {
@@ -402,7 +816,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           errorMessage: () => Option.some(msg.error),
         }),
       ClickedUnpublish: ({ id }) =>
-        openConfirmation(model, UnpublishVideoConfirmation({ videoId: id })),
+        openConfirmation(model, UnpublishAssetConfirmation({ assetId: id })),
       GotConfirmationDialogMessage: ({ message }) => {
         const [confirmationDialog, commands, maybeOutMessage] = Dialog.update(
           model.confirmationDialog,
@@ -425,11 +839,29 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           return noCmd(model);
         }
         const pendingConfirmation = model.pendingConfirmation.value;
+        if (
+          pendingConfirmation._tag === "DeleteProjectConfirmation" &&
+          (model.projectMetadataSaveInFlight ||
+            model.projectMembershipOperation._tag === "ProjectMembershipSaving")
+        ) {
+          return noCmd(model);
+        }
         const [confirmationDialog, dialogCommands] = Dialog.close(model.confirmationDialog);
         const commands = Command.mapMessages(dialogCommands, (message) =>
           GotConfirmationDialogMessage({ message }),
         );
-        if (pendingConfirmation._tag === "DeleteVideoConfirmation") {
+        if (pendingConfirmation._tag === "DeleteProjectConfirmation") {
+          const [nextModel, projectCommands] = projectCommand(
+            evoModel(model, {
+              confirmationDialog: () => confirmationDialog,
+              pendingConfirmation: () => Option.none(),
+            }),
+            "delete",
+            pendingConfirmation.projectId,
+          );
+          return [nextModel, [...commands, ...projectCommands]];
+        }
+        if (pendingConfirmation._tag === "DeleteAssetConfirmation") {
           return withEvo(
             model,
             {
@@ -437,7 +869,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               pendingConfirmation: () => Option.none(),
             },
             ...commands,
-            DeleteVideoCmd({ id: pendingConfirmation.videoId }),
+            DeleteAssetCmd({ id: pendingConfirmation.assetId }),
           );
         }
         return withEvo(
@@ -449,72 +881,80 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             errorMessage: () => Option.none(),
           },
           ...commands,
-          UnpublishVideoCmd({ id: pendingConfirmation.videoId }),
+          UnpublishAssetCmd({ id: pendingConfirmation.assetId }),
         );
       },
-      SucceededUnpublish: (msg: { video: Video }) =>
+      SucceededUnpublish: (msg: { video: Asset }) =>
         withEvo(model, {
           isUnpublishing: () => false,
-          editVideo: () => Option.some(msg.video),
-          videos: () => model.videos.map((v) => (v.id === msg.video.id ? msg.video : v)),
+          editAsset: () => Option.some(msg.video),
+          assets: () => model.assets.map((v) => (v.id === msg.video.id ? msg.video : v)),
         }),
       FailedUnpublish: (msg: { error: string }) =>
         withEvo(model, {
           isUnpublishing: () => false,
           errorMessage: () => Option.some(msg.error),
         }),
-      ClickedDeleteVideo: ({ id }) =>
-        openConfirmation(model, DeleteVideoConfirmation({ videoId: id })),
-      SucceededDeleteVideo: (msg: { id: string }) => {
-        const removed = model.videos.find((v) => v.id === msg.id);
+      ClickedDeleteAsset: ({ id }) =>
+        openConfirmation(model, DeleteAssetConfirmation({ assetId: id })),
+      SucceededDeleteAsset: (msg: { id: string }) => {
+        const removed = model.assets.find((v) => v.id === msg.id);
         const nextScreen =
-          model.screen._tag === "EditVideo" && model.screen.videoId === msg.id
-            ? ListVideos()
+          model.screen._tag === "EditAsset" && model.screen.assetId === msg.id
+            ? ListAssets()
             : model.screen;
-        const videos = removed ? model.videos.filter((v) => v.id !== msg.id) : model.videos;
+        const assets = removed ? model.assets.filter((v) => v.id !== msg.id) : model.assets;
         const next =
           removed || nextScreen !== model.screen
-            ? withEvo(model, { videos: () => videos, screen: () => nextScreen })
+            ? withEvo(model, { assets: () => assets, screen: () => nextScreen })
             : noCmd(model);
         return next;
       },
-      FailedDeleteVideo: (msg: { error: string }) =>
+      FailedDeleteAsset: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SucceededLoadVideoDetail: (msg: { video: Video; chapters: ReadonlyArray<Chapter> }) =>
-        withEvo(model, {
-          editVideo: () => Option.some(msg.video),
-          editTitle: () => msg.video.title,
-          editDescription: () => msg.video.description ?? "",
-          editChapters: () => sortChapters(msg.chapters),
-          chapterStartDrafts: () => ({}),
-          chapterValidationError: () => Option.none(),
-          chapterSaveInFlight: () => false,
-          chapterSaveQueued: () => false,
-          chapterSaveSnapshot: () => [],
-        }),
-      FailedLoadVideoDetail: (msg: { error: string }) =>
-        withEvo(model, { errorMessage: () => Option.some(msg.error) }),
+      SucceededLoadAssetDetail: (msg: {
+        id: string;
+        video: Asset;
+        chapters: ReadonlyArray<Chapter>;
+      }) =>
+        isActiveAsset(model, msg.id)
+          ? withEvo(model, {
+              editAsset: () => Option.some(msg.video),
+              editTitle: () => msg.video.title,
+              editDescription: () => msg.video.description ?? "",
+              editChapters: () => sortChapters(msg.chapters),
+              chapterStartDrafts: () => ({}),
+              chapterValidationError: () => Option.none(),
+              chapterSaveInFlight: () => false,
+              chapterSaveQueued: () => false,
+              chapterSaveSnapshot: () => [],
+            })
+          : noCmd(model),
+      FailedLoadAssetDetail: (msg: { id: string; error: string }) =>
+        isActiveAsset(model, msg.id)
+          ? withEvo(model, { errorMessage: () => Option.some(msg.error) })
+          : noCmd(model),
       ClickedAddChapter: () => {
-        if (Option.isNone(model.editVideo) || model.editVideo.value.hlsKey === "") {
+        if (Option.isNone(model.editAsset) || model.editAsset.value.mediaKey === "") {
           return noCmd(model);
         }
         return withCmds(
           model,
           GenerateChapterId({
-            videoId: model.editVideo.value.id,
+            assetId: model.editAsset.value.id,
             startSec: currentChapterStartSec(),
           }),
         );
       },
-      GeneratedChapterId: ({ chapterId, videoId, startSec }) => {
-        if (Option.isNone(model.editVideo) || model.editVideo.value.id !== videoId) {
+      GeneratedChapterId: ({ chapterId, assetId, startSec }) => {
+        if (Option.isNone(model.editAsset) || model.editAsset.value.id !== assetId) {
           return noCmd(model);
         }
         const newChapter: Chapter = {
           id: chapterId,
-          videoId,
+          assetId,
           title: "",
-          startSec: clampToDuration(startSec, model.editVideo.value.durationSec),
+          startSec: clampToDuration(startSec, model.editAsset.value.durationSec),
           sortOrder: model.editChapters.length,
         };
         return withEvo(
@@ -553,7 +993,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         }),
       CommittedChapterStart: (msg: { id: string }) => {
         const draft = model.chapterStartDrafts[msg.id];
-        if (draft === undefined || Option.isNone(model.editVideo)) {
+        if (draft === undefined || Option.isNone(model.editAsset)) {
           return noCmd(model);
         }
         const parsed = parseTimestamp(draft);
@@ -566,17 +1006,17 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         return commitChapterStart(
           model,
           msg.id,
-          clampToDuration(parsed.value, model.editVideo.value.durationSec),
+          clampToDuration(parsed.value, model.editAsset.value.durationSec),
         );
       },
       ClickedSetChapterToPlayhead: (msg: { id: string }) => {
-        if (Option.isNone(model.editVideo)) {
+        if (Option.isNone(model.editAsset)) {
           return noCmd(model);
         }
         return commitChapterStart(
           model,
           msg.id,
-          clampToDuration(currentChapterStartSec(), model.editVideo.value.durationSec),
+          clampToDuration(currentChapterStartSec(), model.editAsset.value.durationSec),
         );
       },
       BlurredChapterField: () => saveChapters(model, model.editChapters),

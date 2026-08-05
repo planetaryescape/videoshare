@@ -1,5 +1,6 @@
 import { Context, Effect, FileSystem, Layer, Path } from "effect";
 import type { PlatformError } from "effect/PlatformError";
+import { mediaContentType } from "@videoshare/shared/MediaContentType";
 import { StorageError } from "../errors/StorageErrors.ts";
 
 const liftPlatformError =
@@ -7,15 +8,15 @@ const liftPlatformError =
   <A, R>(effect: Effect.Effect<A, PlatformError, R>): Effect.Effect<A, StorageError, R> =>
     Effect.mapError(effect, (cause) => new StorageError({ operation, cause }));
 
-const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const ASSET_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export interface StorageService {
   readonly rootDir: string;
-  readonly videoDir: (videoId: string) => string;
+  readonly assetDir: (assetId: string) => string;
   readonly mediaPath: (relative: string) => string;
-  readonly ensureVideoDir: (videoId: string) => Effect.Effect<void, StorageError, never>;
-  readonly resetVideoDir: (videoId: string) => Effect.Effect<void, StorageError, never>;
-  readonly removeVideoDir: (videoId: string) => Effect.Effect<void, StorageError, never>;
+  readonly ensureAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
+  readonly resetAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
+  readonly removeAssetDir: (assetId: string) => Effect.Effect<void, StorageError, never>;
   readonly exists: (relative: string) => Effect.Effect<boolean, StorageError, never>;
   readonly readFile: (relative: string) => Effect.Effect<Uint8Array, StorageError, never>;
   readonly writeFile: (
@@ -30,14 +31,6 @@ export interface StorageService {
     never
   >;
 }
-
-const inferContentType = (key: string): string => {
-  if (key.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
-  if (key.endsWith(".ts")) return "video/mp2t";
-  if (key.endsWith(".jpg") || key.endsWith(".jpeg")) return "image/jpeg";
-  if (key.endsWith(".vtt")) return "text/vtt";
-  return "application/octet-stream";
-};
 
 class PathTraversalError extends Error {
   readonly _tag = "PathTraversalError";
@@ -55,9 +48,9 @@ const resolveSafe = (path: Path.Path, root: string, relative: string): string =>
   return resolved;
 };
 
-const validateVideoId = (videoId: string): void => {
-  if (!VIDEO_ID_PATTERN.test(videoId)) {
-    throw new PathTraversalError(`Invalid videoId: ${videoId}`);
+const validateAssetId = (assetId: string): void => {
+  if (!ASSET_ID_PATTERN.test(assetId)) {
+    throw new PathTraversalError(`Invalid assetId: ${assetId}`);
   }
 };
 
@@ -91,45 +84,45 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
 
         return Storage.of({
           rootDir: root,
-          videoDir: (videoId) => {
-            validateVideoId(videoId);
-            return path.join(root, videoId);
+          assetDir: (assetId) => {
+            validateAssetId(assetId);
+            return path.join(root, assetId);
           },
           mediaPath: (relative) => resolveSafe(path, root, relative),
-          ensureVideoDir: (videoId) =>
+          ensureAssetDir: (assetId) =>
             Effect.try({
-              try: () => validateVideoId(videoId),
-              catch: toStorageError("ensureVideoDir"),
+              try: () => validateAssetId(assetId),
+              catch: toStorageError("ensureAssetDir"),
             }).pipe(
               Effect.flatMap(() =>
                 fs
-                  .makeDirectory(path.join(root, videoId), { recursive: true })
-                  .pipe(Effect.asVoid, liftPlatformError("ensureVideoDir")),
+                  .makeDirectory(path.join(root, assetId), { recursive: true })
+                  .pipe(Effect.asVoid, liftPlatformError("ensureAssetDir")),
               ),
             ),
-          resetVideoDir: (videoId) =>
+          resetAssetDir: (assetId) =>
             Effect.gen(function* () {
               yield* Effect.try({
-                try: () => validateVideoId(videoId),
-                catch: toStorageError("resetVideoDir"),
+                try: () => validateAssetId(assetId),
+                catch: toStorageError("resetAssetDir"),
               });
-              const dir = path.join(root, videoId);
+              const dir = path.join(root, assetId);
               yield* fs
                 .remove(dir, { recursive: true, force: true })
-                .pipe(liftPlatformError("removeVideoDir"));
+                .pipe(liftPlatformError("removeAssetDir"));
               yield* fs
                 .makeDirectory(dir, { recursive: true })
-                .pipe(Effect.asVoid, liftPlatformError("ensureVideoDir"));
+                .pipe(Effect.asVoid, liftPlatformError("ensureAssetDir"));
             }),
-          removeVideoDir: (videoId) =>
+          removeAssetDir: (assetId) =>
             Effect.gen(function* () {
               yield* Effect.try({
-                try: () => validateVideoId(videoId),
-                catch: toStorageError("removeVideoDir"),
+                try: () => validateAssetId(assetId),
+                catch: toStorageError("removeAssetDir"),
               });
               yield* fs
-                .remove(path.join(root, videoId), { recursive: true, force: true })
-                .pipe(Effect.asVoid, liftPlatformError("removeVideoDir"));
+                .remove(path.join(root, assetId), { recursive: true, force: true })
+                .pipe(Effect.asVoid, liftPlatformError("removeAssetDir"));
             }),
           exists: (relative) =>
             Effect.try({
@@ -157,7 +150,7 @@ export class Storage extends Context.Service<Storage, StorageService>()("admin/S
                 catch: toStorageError("serveFile"),
               });
               const body = yield* fs.readFile(p).pipe(liftPlatformError("readFile"));
-              return { body, contentType: inferContentType(relative) };
+              return { body, contentType: mediaContentType(relative) };
             }),
         });
       }),

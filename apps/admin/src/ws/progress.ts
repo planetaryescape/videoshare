@@ -4,7 +4,7 @@ import type { ManagedRuntime } from "effect";
 import { ProgressBus } from "../services/ProgressBus.ts";
 
 export interface ProgressSocketData {
-  readonly videoId: string;
+  readonly assetId: string;
   fiber: Fiber.Fiber<void, never> | null;
 }
 
@@ -14,7 +14,7 @@ export const makeProgressHandler = (
   open(ws: ServerWebSocket<ProgressSocketData>) {
     const program = Effect.gen(function* () {
       const progress = yield* ProgressBus;
-      yield* progress.subscribe(ws.data.videoId).pipe(
+      yield* progress.subscribe(ws.data.assetId).pipe(
         Stream.runForEach((event) =>
           Effect.try({
             try: () => ws.send(JSON.stringify(event)),

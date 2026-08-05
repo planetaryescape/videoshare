@@ -1,10 +1,26 @@
 import { D1Client } from "@effect/sql-d1";
-import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import type { Chapter, Video } from "@videoshare/shared/Video";
+import { ViewerCatalog } from "@videoshare/shared/ViewerCatalog";
+import { r2KeyDir } from "@videoshare/shared/MediaKey";
+import { sha256Hex } from "@videoshare/shared/Sha256";
+import { verifyProjectPassword } from "@videoshare/shared/ProjectPassword";
+import type { Chapter, Asset } from "@videoshare/shared/Asset";
 import { Effect, Layer, Option } from "effect";
 import playerCss from "../generated/player.css?raw";
 import playerScript from "../generated/player.js?raw";
+import projectCss from "../generated/project.css?raw";
+import projectScript from "../generated/project.js?raw";
 import { appleTouchIconBase64, favicon16Base64, favicon32Base64 } from "../generated/favicons";
+import { escapeHtml } from "./escapeHtml.ts";
+import { renderStage } from "./stage.ts";
+import {
+  isProjectAuthorized,
+  parseProjectRoute,
+  projectCookieName,
+  projectCacheControl,
+  projectMediaUrl,
+  renderProjectGate,
+  renderProjectPage,
+} from "./project-route.ts";
 
 interface R2ObjectBody {
   readonly body: ReadableStream | null;
@@ -36,48 +52,54 @@ const hashString = (value: string) => {
 };
 
 const assetVersion = hashString(playerCss + playerScript);
+const projectVersion = hashString(projectCss + projectScript);
 
 const faviconLinks = `<link rel="icon" type="image/png" sizes="32x32" href="/_assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/_assets/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/_assets/apple-touch-icon.png">`;
 
-const repositoryLayer = (env: ViewerEnv) =>
-  VideoRepository.layerNoDeps.pipe(Layer.provide(D1Client.layer({ db: env.DB })));
+const catalogLayer = (env: ViewerEnv) =>
+  ViewerCatalog.layerNoDeps.pipe(Layer.provide(D1Client.layer({ db: env.DB })));
 
-const runRepository = <A>(env: ViewerEnv, effect: Effect.Effect<A, unknown, VideoRepository>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(repositoryLayer(env))));
+const runCatalog = <A>(env: ViewerEnv, effect: Effect.Effect<A, unknown, ViewerCatalog>) =>
+  Effect.runPromise(effect.pipe(Effect.provide(catalogLayer(env))));
 
-const loadVideo = (env: ViewerEnv, slug: string) =>
-  runRepository(
+const loadAssetPage = (env: ViewerEnv, slug: string) =>
+  runCatalog(
     env,
     Effect.gen(function* () {
-      const repository = yield* VideoRepository;
-      const videoOption = yield* repository.findBySlug(slug);
-      if (Option.isNone(videoOption)) {
-        return Option.none<{ readonly video: Video; readonly chapters: ReadonlyArray<Chapter> }>();
-      }
-      const video = videoOption.value;
-      if (video.publishedAt === null) {
-        return Option.none<{ readonly video: Video; readonly chapters: ReadonlyArray<Chapter> }>();
-      }
-      const chapters = yield* repository.listChapters(video.id);
-      return Option.some({ video, chapters });
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findAssetPage(slug);
     }),
   );
 
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-
-const toHex = (bytes: ArrayBuffer) =>
-  Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
+const loadAssetMedia = (env: ViewerEnv, slug: string) =>
+  runCatalog(
+    env,
+    Effect.gen(function* () {
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findAssetMedia(slug);
+    }),
+  );
+const loadProjectPage = (env: ViewerEnv, projectSlug: string, assetSlug: string | null) =>
+  runCatalog(
+    env,
+    Effect.gen(function* () {
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findProjectPage(projectSlug, assetSlug);
+    }),
+  );
+const loadProjectMedia = (env: ViewerEnv, projectSlug: string, assetSlug: string) =>
+  runCatalog(
+    env,
+    Effect.gen(function* () {
+      const catalog = yield* ViewerCatalog;
+      return yield* catalog.findProjectMedia(projectSlug, assetSlug);
+    }),
+  );
 
 const sha256 = async (value: string) =>
-  toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  sha256Hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
 
 const parseCookies = (header: string | null) => {
   const cookies = new Map<string, string>();
@@ -115,11 +137,6 @@ const isAbsoluteUrl = (value: string) => {
 };
 
 const mediaPrefix = (slug: string) => `/${encodeURIComponent(slug)}/`;
-
-const r2KeyDir = (key: string) => {
-  const slash = key.lastIndexOf("/");
-  return slash === -1 ? "" : key.slice(0, slash + 1);
-};
 
 const r2ContentType = (key: string) => {
   if (key.endsWith(".m3u8")) {
@@ -242,17 +259,21 @@ const absoluteUrl = (origin: string, value: string | null) => {
   return `${origin}${value.startsWith("/") ? value : `/${value}`}`;
 };
 
-const ogTags = (origin: string, slug: string, video: Video) => {
+/** Renders safe Open Graph and Twitter metadata for a published asset page. */
+export const renderOpenGraphTags = (origin: string, slug: string, asset: Asset) => {
   const pageUrl = `${origin}${mediaPrefix(slug).replace(/\/$/, "")}`;
-  const imageUrl = absoluteUrl(origin, resolveMediaUrl(slug, video.posterKey));
-  const description = video.description ?? "";
+  const imageUrl = absoluteUrl(
+    origin,
+    resolveMediaUrl(slug, asset.posterKey ?? (asset.kind === "image" ? asset.mediaKey : null)),
+  );
+  const description = asset.description ?? "";
   const tags = [
-    `<meta property="og:type" content="${video.kind === "audio" ? "music.song" : "video.other"}">`,
-    `<meta property="og:title" content="${escapeHtml(video.title)}">`,
+    `<meta property="og:type" content="${asset.kind === "audio" ? "music.song" : asset.kind === "image" ? "website" : "video.other"}">`,
+    `<meta property="og:title" content="${escapeHtml(asset.title)}">`,
     `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
     `<meta property="og:site_name" content="VideoShare">`,
     `<meta name="twitter:card" content="${imageUrl ? "summary_large_image" : "summary"}">`,
-    `<meta name="twitter:title" content="${escapeHtml(video.title)}">`,
+    `<meta name="twitter:title" content="${escapeHtml(asset.title)}">`,
   ];
   if (description) {
     tags.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
@@ -269,14 +290,15 @@ const ogTags = (origin: string, slug: string, video: Video) => {
 const viewerPage = (
   origin: string,
   slug: string,
-  video: Video,
+  asset: Asset,
   chapters: ReadonlyArray<Chapter>,
 ) => {
-  const isAudio = video.kind === "audio";
-  const chaptersTrack = chaptersTrackFor(chapters);
-  const posterUrl = resolveMediaUrl(slug, video.posterKey);
-  const manifestUrl = resolveMediaUrl(slug, video.hlsKey);
-  const chapterItems = chapters
+  const isAudio = asset.kind === "audio";
+  const isImage = asset.kind === "image";
+  const chaptersTrack = isImage ? null : chaptersTrackFor(chapters);
+  const posterUrl = resolveMediaUrl(slug, asset.posterKey);
+  const manifestUrl = resolveMediaUrl(slug, asset.mediaKey);
+  const chapterItems = (isImage ? [] : chapters)
     .map(
       (chapter) => `<li>
         <button type="button" data-chapter-start="${chapter.startSec}" aria-label="Seek to ${escapeHtml(chapter.title)} at ${chapter.startSec} seconds">
@@ -292,9 +314,9 @@ const viewerPage = (
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHtml(video.title)}</title>
+    <title>${escapeHtml(asset.title)}</title>
     ${faviconLinks}
-    ${ogTags(origin, slug, video)}
+    ${renderOpenGraphTags(origin, slug, asset)}
     <link rel="stylesheet" href="/_assets/player.css?v=${assetVersion}">
     <style>
       :root { color-scheme: dark; }
@@ -303,7 +325,9 @@ const viewerPage = (
       h1 { margin: 24px 0 8px; font-size: clamp(2rem, 4vw, 3rem); }
       p { margin: 0; color: #b8c0d0; line-height: 1.6; }
       .player-shell { overflow: hidden; border-radius: 24px; background: #000; box-shadow: 0 24px 80px rgba(0,0,0,0.45); }
-      media-player { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+      media-player, .image-stage { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+      .image-stage { display: grid; place-items: center; }
+      .image-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
       media-player[view-type="audio"],
       media-player[data-view-type="audio"] { aspect-ratio: auto; background: transparent; }
       .player-shell.is-audio { background: transparent; box-shadow: none; border-radius: 0; }
@@ -318,30 +342,17 @@ const viewerPage = (
       .chapter-time { color: #b8c0d0; }
       .slug { margin-top: 20px; font-size: 0.85rem; color: #8e98ab; }
     </style>
-    <script type="module" src="/_assets/player.js?v=${assetVersion}"></script>
+    ${isImage ? "" : `<script type="module" src="/_assets/player.js?v=${assetVersion}"></script>`}
   </head>
   <body>
     <main>
       <div class="player-shell${isAudio ? " is-audio" : ""}">
-        <media-player
-          title="${escapeHtml(video.title)}"
-          src="${escapeHtml(manifestUrl ?? video.hlsKey)}"
-          view-type="${isAudio ? "audio" : "video"}"
-          stream-type="on-demand"
-          playsinline
-          crossorigin
-          ${posterUrl ? `poster="${escapeHtml(posterUrl)}"` : ""}
-        >
-          <media-outlet>
-            ${chaptersTrack ? `<track kind="chapters" src="${chaptersTrack}" default>` : ""}
-          </media-outlet>
-          <media-community-skin></media-community-skin>
-        </media-player>
+        ${renderStage(asset, manifestUrl ?? asset.mediaKey, posterUrl, chaptersTrack)}
       </div>
       <div class="meta">
         <div>
-          <h1>${escapeHtml(video.title)}</h1>
-          <p>${escapeHtml(video.description ?? "")}</p>
+          <h1>${escapeHtml(asset.title)}</h1>
+          <p>${escapeHtml(asset.description ?? "")}</p>
           <div class="slug">/${escapeHtml(slug)}</div>
         </div>
         ${chapterItems ? `<ul class="chapters">${chapterItems}</ul>` : ""}
@@ -406,6 +417,22 @@ const homePage = `<!doctype html>
   </body>
 </html>`;
 
+const serveR2Media = async (
+  env: ViewerEnv,
+  request: Request,
+  key: string,
+  cacheControl: string,
+): Promise<Response> => {
+  const object = await env.BUCKET.get(key);
+  if (!object) return notFoundResponse();
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("content-type", object.httpMetadata?.contentType ?? r2ContentType(key));
+  headers.set("cache-control", cacheControl);
+  return new Response(request.method === "HEAD" ? null : object.body, { headers });
+};
+
 const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: string) => {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -414,33 +441,205 @@ const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: 
     return notFoundResponse();
   }
 
-  const result = await loadVideo(env, slug);
+  const result = await loadAssetMedia(env, slug);
   if (Option.isNone(result)) {
     return notFoundResponse();
   }
 
-  const { video } = result.value;
-  if (video.passwordHash && !isAuthorized(request, slug, video.passwordHash)) {
+  const asset = result.value;
+  if (asset.passwordHash && !isAuthorized(request, slug, asset.passwordHash)) {
     return new Response("Forbidden", { status: 403 });
   }
 
-  if (isAbsoluteUrl(video.hlsKey)) {
+  if (isAbsoluteUrl(asset.mediaKey)) {
     return notFoundResponse();
   }
 
-  const key = `${r2KeyDir(video.hlsKey)}${file}`;
-  const object = await env.BUCKET.get(key);
-  if (!object) {
-    return notFoundResponse();
+  const key = `${r2KeyDir(asset.mediaKey)}${file}`;
+  return serveR2Media(
+    env,
+    request,
+    key,
+    asset.passwordHash
+      ? "private, no-store"
+      : key.endsWith(".m3u8")
+        ? "no-cache"
+        : assetCacheControl,
+  );
+};
+
+const serveProject = async (
+  env: ViewerEnv,
+  request: Request,
+  url: URL,
+  segments: ReadonlyArray<string>,
+): Promise<Response> => {
+  const route = parseProjectRoute(segments);
+  if (route._tag === "invalid") return notFoundResponse();
+  if (route._tag === "media") {
+    const { projectSlug, assetSlug, file } = route;
+    if (request.method !== "GET" && request.method !== "HEAD")
+      return new Response("Method Not Allowed", { status: 405 });
+    const result = await loadProjectMedia(env, projectSlug, assetSlug);
+    if (Option.isNone(result)) return notFoundResponse();
+    const { project, asset } = result.value;
+    if (
+      !isProjectAuthorized(
+        parseCookies(request.headers.get("cookie")),
+        projectSlug,
+        project.passwordHash,
+      )
+    )
+      return notFoundResponse();
+    if (isAbsoluteUrl(asset.mediaKey)) return notFoundResponse();
+    const key = `${r2KeyDir(asset.mediaKey)}${file}`;
+    return serveR2Media(
+      env,
+      request,
+      key,
+      projectCacheControl(project.passwordHash, key.endsWith(".m3u8")),
+    );
+  }
+  const { projectSlug, assetSlug } = route;
+  // Summary is a project state, not a member lookup. Unknown member slugs still get the catalog's
+  // non-disclosing 404 response.
+  const page = await loadProjectPage(env, projectSlug, assetSlug === "summary" ? null : assetSlug);
+  if (Option.isNone(page)) return notFoundResponse();
+  if (request.method !== "GET" && request.method !== "POST")
+    return new Response("Method Not Allowed", { status: 405 });
+  const project = page.value.project;
+  if (project.passwordHash) {
+    if (request.method === "POST") {
+      const password = (await request.formData()).get("password");
+      if (
+        typeof password !== "string" ||
+        !(await verifyProjectPassword(password, project.passwordHash))
+      )
+        return new Response(
+          renderProjectGate({
+            title: project.title,
+            action: url.pathname,
+            error: "Incorrect password.",
+            escapeHtml,
+            faviconLinks,
+          }),
+          {
+            status: 403,
+            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+          },
+        );
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: url.toString(),
+          "set-cookie": `${projectCookieName(projectSlug)}=${project.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/p/${encodeURIComponent(projectSlug)}; HttpOnly; SameSite=Lax; Secure`,
+        },
+      });
+    }
+    if (
+      !isProjectAuthorized(
+        parseCookies(request.headers.get("cookie")),
+        projectSlug,
+        project.passwordHash,
+      )
+    )
+      return new Response(
+        renderProjectGate({ title: project.title, action: url.pathname, escapeHtml, faviconLinks }),
+        {
+          status: 401,
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        },
+      );
+  }
+  const selected = assetSlug === "summary" ? null : page.value.selected;
+  const stages = page.value.assets.map((asset) =>
+    renderStage(
+      asset,
+      projectMediaUrl(projectSlug, asset.slug, asset.mediaKey, project.passwordHash),
+      null,
+      null,
+    ),
+  );
+  return new Response(
+    renderProjectPage({
+      projectSlug,
+      project: page.value.project,
+      assets: page.value.assets,
+      selected,
+      stages,
+      escapeHtml,
+      faviconLinks,
+      playerCssHref: `/_assets/player.css?v=${assetVersion}`,
+      projectCssHref: `/_assets/project.css?v=${projectVersion}`,
+      projectScriptHref: `/_assets/project.js?v=${projectVersion}`,
+    }),
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": project.passwordHash ? "private, no-store" : "no-store",
+      },
+    },
+  );
+};
+
+/**
+ * A legacy direct asset named `p` collides with the project namespace. A resolved project route
+ * wins; a missing root project falls back to that direct asset's media URL.
+ */
+const serveLegacyPAssetMediaWhenProjectMissing = async (
+  projectResponse: Promise<Response>,
+  legacyResponse: () => Promise<Response>,
+) => {
+  const response = await projectResponse;
+  return response.status === 404 ? legacyResponse() : response;
+};
+
+const serveAssetPage = async (env: ViewerEnv, request: Request, url: URL, slug: string) => {
+  if (request.method !== "GET" && request.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
   }
 
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-  headers.set("content-type", object.httpMetadata?.contentType ?? r2ContentType(key));
-  headers.set("cache-control", key.endsWith(".m3u8") ? "no-cache" : assetCacheControl);
+  try {
+    const result = await loadAssetPage(env, slug);
+    if (Option.isNone(result)) {
+      return notFoundResponse();
+    }
 
-  return new Response(request.method === "HEAD" ? null : object.body, { headers });
+    const { asset, chapters } = result.value;
+    if (asset.passwordHash) {
+      if (request.method === "POST") {
+        const formData = await request.formData();
+        const password = formData.get("password");
+        if (typeof password !== "string" || (await sha256(password)) !== asset.passwordHash) {
+          return new Response(passwordPage(slug, asset.title, "Incorrect password."), {
+            status: 403,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          });
+        }
+
+        return new Response(null, {
+          status: 303,
+          headers: {
+            location: url.toString(),
+            "set-cookie": `${cookieName(slug)}=${asset.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/${slug}; HttpOnly; SameSite=Lax; Secure`,
+          },
+        });
+      }
+
+      if (!isAuthorized(request, slug, asset.passwordHash)) {
+        return new Response(passwordPage(slug, asset.title), {
+          status: 401,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+    }
+
+    return new Response(viewerPage(url.origin, slug, asset, chapters), {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  } catch {
+    return new Response("Internal Server Error", { status: 500 });
+  }
 };
 
 export default {
@@ -454,6 +653,14 @@ export default {
 
     if (pathname === "/_assets/player.css") {
       return assetResponse(playerCss, "text/css; charset=utf-8");
+    }
+
+    if (pathname === "/_assets/project.js") {
+      return assetResponse(projectScript, "text/javascript; charset=utf-8");
+    }
+
+    if (pathname === "/_assets/project.css") {
+      return assetResponse(projectCss, "text/css; charset=utf-8");
     }
 
     if (pathname === "/_assets/favicon-32x32.png") {
@@ -479,59 +686,28 @@ export default {
     }
 
     const segments = pathname.slice(1).split("/");
+    // Project dispatch precedes generic asset dispatch: project grants never reach direct URLs.
+    if (segments[0] === "p") {
+      if (segments.length === 1) return serveAssetPage(env, request, url, "p");
+      try {
+        const projectSegments = segments.slice(1);
+        // A one-segment project path is indistinguishable from a legacy direct-media filename.
+        // A real project response wins; only its ordinary 404 falls back to direct media.
+        if (projectSegments.length === 1)
+          return serveLegacyPAssetMediaWhenProjectMissing(
+            serveProject(env, request, url, projectSegments),
+            () => serveMedia(env, request, "p", projectSegments[0]),
+          );
+        return await serveProject(env, request, url, projectSegments);
+      } catch {
+        return new Response("Internal Server Error", { status: 500 });
+      }
+    }
     const slug = segments[0] ?? "";
-    if (!slug) {
-      return notFoundResponse();
-    }
+    if (!slug) return notFoundResponse();
 
-    if (segments.length > 1) {
-      return serveMedia(env, request, slug, segments.slice(1).join("/"));
-    }
+    if (segments.length > 1) return serveMedia(env, request, slug, segments.slice(1).join("/"));
 
-    if (request.method !== "GET" && request.method !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
-
-    try {
-      const result = await loadVideo(env, slug);
-      if (Option.isNone(result)) {
-        return notFoundResponse();
-      }
-
-      const { video, chapters } = result.value;
-      if (video.passwordHash) {
-        if (request.method === "POST") {
-          const formData = await request.formData();
-          const password = formData.get("password");
-          if (typeof password !== "string" || (await sha256(password)) !== video.passwordHash) {
-            return new Response(passwordPage(slug, video.title, "Incorrect password."), {
-              status: 403,
-              headers: { "content-type": "text/html; charset=utf-8" },
-            });
-          }
-
-          return new Response(null, {
-            status: 303,
-            headers: {
-              location: url.toString(),
-              "set-cookie": `${cookieName(slug)}=${video.passwordHash}; Max-Age=${cookieMaxAgeSeconds}; Path=/${slug}; HttpOnly; SameSite=Lax; Secure`,
-            },
-          });
-        }
-
-        if (!isAuthorized(request, slug, video.passwordHash)) {
-          return new Response(passwordPage(slug, video.title), {
-            status: 401,
-            headers: { "content-type": "text/html; charset=utf-8" },
-          });
-        }
-      }
-
-      return new Response(viewerPage(url.origin, slug, video, chapters), {
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    } catch {
-      return new Response("Internal Server Error", { status: 500 });
-    }
+    return serveAssetPage(env, request, url, slug);
   },
 };

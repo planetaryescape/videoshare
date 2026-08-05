@@ -1,56 +1,54 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { Effect, Option } from "effect";
-import { VideoRepository } from "@videoshare/shared/VideoRepository";
-import { Video, VideoId } from "@videoshare/shared/Video";
-import { VideoNotFoundError } from "@videoshare/shared/VideoErrors";
-import { Storage } from "../../services/Storage.ts";
-import { ProdSync } from "../../prod.ts";
+import { AssetRepository } from "@videoshare/shared/AssetRepository";
+import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
+import { Asset, AssetId } from "@videoshare/shared/Asset";
+import { AssetNotFoundError } from "@videoshare/shared/AssetErrors";
+import { ProdSync, Publisher } from "../../prod.ts";
 import { NotTranscodedError } from "../../errors/UploadErrors.ts";
 import { AdminApi } from "../AdminApi.ts";
+import {
+  assertDirectAssetMutationAllowed,
+  PublicationGate,
+} from "../../services/PublicationGate.ts";
 
 export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handlers) =>
   Effect.gen(function* () {
-    const repo = yield* VideoRepository;
+    const repo = yield* AssetRepository;
+    const projects = yield* ProjectRepository;
     const prod = yield* ProdSync;
-    const storage = yield* Storage;
+    const publisher = yield* Publisher;
+    const gate = yield* PublicationGate;
 
     return handlers
       .handle("publish", ({ params }) =>
-        Effect.gen(function* () {
-          const found = yield* repo.findById(VideoId.make(params.id));
-          if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ id: params.id });
-          }
-          if (!found.value.hlsKey) {
-            return yield* new NotTranscodedError({ videoId: found.value.id });
-          }
-
-          const chapters = yield* repo.listChapters(found.value.id);
-          const publishedVideo = new Video({
-            ...found.value,
-            publishedAt: Date.now(),
-          });
-
-          const hasMedia = yield* prod.mediaExists(publishedVideo.id);
-          if (!hasMedia) {
-            yield* prod.uploadMedia(publishedVideo.id, storage.videoDir(publishedVideo.id));
-          }
-          yield* prod.syncMetadata(publishedVideo, chapters);
-
-          return yield* repo.update(publishedVideo);
-        }),
+        gate.serialize(
+          Effect.gen(function* () {
+            const found = yield* repo.findById(AssetId.make(params.id));
+            if (Option.isNone(found)) {
+              return yield* new AssetNotFoundError({ id: params.id });
+            }
+            if (!found.value.mediaKey)
+              return yield* new NotTranscodedError({ assetId: found.value.id });
+            yield* assertDirectAssetMutationAllowed(found.value, "publish", projects);
+            return yield* publisher.publishAsset(found.value.id);
+          }),
+        ),
       )
       .handle("unpublish", ({ params }) =>
-        Effect.gen(function* () {
-          const found = yield* repo.findById(VideoId.make(params.id));
-          if (Option.isNone(found)) {
-            return yield* new VideoNotFoundError({ id: params.id });
-          }
-          yield* prod.removeMedia(found.value.id);
-          yield* prod.unpublish(found.value.id);
-          const unpublished = new Video({ ...found.value, publishedAt: null });
-          return yield* repo.update(unpublished);
-        }),
+        gate.serialize(
+          Effect.gen(function* () {
+            const found = yield* repo.findById(AssetId.make(params.id));
+            if (Option.isNone(found)) {
+              return yield* new AssetNotFoundError({ id: params.id });
+            }
+            yield* assertDirectAssetMutationAllowed(found.value, "unpublish", projects);
+            yield* prod.removeMedia(found.value.mediaKey);
+            yield* prod.unpublish(found.value.id);
+            const unpublished = new Asset({ ...found.value, publishedAt: null });
+            return yield* repo.update(unpublished);
+          }),
+        ),
       );
   }),
 );

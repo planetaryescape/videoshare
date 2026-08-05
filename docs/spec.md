@@ -8,8 +8,8 @@ A tool to share videos with clients, friends, and collaborators. The owner recor
 
 ### Viewer (public)
 
-- A single, polished video player page.
-- Reached by an unguessable URL: `https://<host>/<slug>`.
+- Polished direct-asset and mixed-media project player pages.
+- Direct assets use `https://<host>/<slug>`; ordered projects use `https://<host>/p/<projectSlug>` with stable member and summary URLs.
 - No accounts, no login. The link is the access.
 - Optionally protected by a password for sensitive client work.
 - The player itself is where we spend our effort. It should feel good.
@@ -25,8 +25,9 @@ Player features wanted:
 
 - Used only by the owner, only on their laptop.
 - No auth on purpose. It is local-first; it never needs to be reachable by anyone else.
-- Workflow: upload an mp4, transcode it to HLS, set title / description / chapters / poster / optional password, then publish.
-- Publishing pushes the video files to cloud storage and the metadata to the cloud database that the viewer reads.
+- Workflow: upload a video, audio file, or image; process it for sharing; set title / description / optional password and, for timed media, chapters and a poster; then publish.
+- Assets can also be ordered into projects, which are published as shareable mixed-media groups.
+- Publishing pushes media to cloud storage before the published metadata/catalog reaches the cloud database the viewer reads.
 
 ## Constraints and principles
 
@@ -38,7 +39,7 @@ Player features wanted:
 ## Access model
 
 - Slug is the secret. It is long and random (16+ chars), so links are effectively unguessable.
-- Optional per-video password gates both the page and the media, since all requests flow through the Worker on a single domain.
+- Optional per-asset and per-project passwords gate their respective page and media namespaces. Direct-asset and project grants are deliberately independent.
 - Links could later support expiry; not built yet (YAGNI).
 
 ## Explicitly out of scope (for now)

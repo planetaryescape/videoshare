@@ -1,15 +1,10 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { migrate } from "@videoshare/shared/Migrations";
 import { Effect, Layer, ManagedRuntime } from "effect";
-import { HttpRouter, HttpServer } from "effect/unstable/http";
-import { BunFileSystem } from "@effect/platform-bun";
+import { HttpRouter } from "effect/unstable/http";
 import { registerMediabunnyServer } from "@mediabunny/server";
 import { AdminApiLive, handlersLayer } from "./src/routes/AdminApiLive.ts";
-import { ProgressBus } from "./src/services/ProgressBus.ts";
-import { Transcoder } from "./src/services/Transcoder.ts";
-import { Storage } from "./src/services/Storage.ts";
-import { ProdSync } from "./src/prod.ts";
-import { VideoRepository } from "@videoshare/shared/VideoRepository";
+import { makeAppLayer } from "./src/services/AppLayer.ts";
 import { makeProgressHandler, type ProgressSocketData } from "./src/ws/progress.ts";
 import { corsMiddleware, mediaRouter } from "./src/routes/media.ts";
 
@@ -20,35 +15,16 @@ registerMediabunnyServer();
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)));
 
-// `Storage.layer` needs `FileSystem | Path`. `HttpServer.layerServices`
-// provides `Path` and a no-op `FileSystem`; merge with the real
-// `BunFileSystem.layer` so the platform services carry the Bun
-// filesystem (right-most `FileSystem` wins in `Context.mergeAll`).
-const platformLayer = Layer.merge(HttpServer.layerServices, BunFileSystem.layer);
+const appLayer = makeAppLayer(sqlLayer);
 
-const providedStorage = Storage.layer.pipe(Layer.provide(platformLayer));
-
-const appLayer = Layer.mergeAll(
-  sqlLayer,
-  platformLayer,
-  ProgressBus.layer,
-  providedStorage,
-  ProdSync.layer,
-  VideoRepository.layerNoDeps.pipe(Layer.provide(sqlLayer)),
-  Transcoder.layer.pipe(Layer.provide(ProgressBus.layer), Layer.provide(providedStorage)),
-);
-
-// Build `appLayer` once via a `ManagedRuntime` so its resources (in
-// particular the `SqliteClient` connection) stay alive for the lifetime
-// of the server. Reuse `appContext` for the WebSocket progress handler
-// so transcode progress events published via the `ProgressBus` reach
-// subscribed sockets (the `ProgressBus` instance is shared with the
-// HTTP `Transcoder`).
+// Build `appLayer` once via a `ManagedRuntime` so its resources stay alive for
+// the server lifetime. Reuse its context for the WebSocket progress handler.
 const appRuntime = ManagedRuntime.make(appLayer);
 const appContext = await appRuntime.context();
 const appContextLayer = Layer.succeedContext(appContext);
 
-const fullLayer = Layer.mergeAll(handlersLayer, AdminApiLive, mediaRouter, corsMiddleware).pipe(
+const apiLayer = AdminApiLive.pipe(Layer.provide(handlersLayer));
+const fullLayer = Layer.mergeAll(apiLayer, mediaRouter, corsMiddleware).pipe(
   Layer.provide(appContextLayer),
 );
 
@@ -61,12 +37,14 @@ const progressHandler = makeProgressHandler(progressRuntime);
 
 Bun.serve<ProgressSocketData>({
   port: 3001,
+  // Project publication uploads media and can exceed Bun's short default idle timeout.
+  idleTimeout: 120,
   maxRequestBodySize: 1024 * 1024 * 1024 * 5,
   fetch(req, server) {
     if (new URL(req.url).pathname === "/ws") {
-      const videoId = new URL(req.url).searchParams.get("videoId");
-      if (!videoId) return new Response("videoId required", { status: 400 });
-      if (server.upgrade(req, { data: { videoId, fiber: null } })) return undefined;
+      const assetId = new URL(req.url).searchParams.get("assetId");
+      if (!assetId) return new Response("assetId required", { status: 400 });
+      if (server.upgrade(req, { data: { assetId, fiber: null } })) return undefined;
       return new Response("Upgrade failed", { status: 400 });
     }
     return handler(req, appContext);

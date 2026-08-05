@@ -1,33 +1,52 @@
 import { BrowserCrypto } from "@effect/platform-browser";
 import { Crypto, Effect, Option, Schema as S } from "effect";
 import { Command, Dom, File as FoldkitFile } from "foldkit";
-import { ChapterSchema, errMsg, type Chapter, VideoSchema } from "./model";
+import {
+  ChapterSchema,
+  errMsg,
+  type Chapter,
+  AssetSchema,
+  ProjectDetailSchema,
+  ProjectSchema,
+} from "./model";
 import {
   CopiedLink,
   FailedCopyLink,
-  FailedCreateVideo,
-  FailedDeleteVideo,
-  FailedLoadVideoDetail,
-  FailedLoadVideos,
+  FailedCreateAsset,
+  FailedDeleteAsset,
+  FailedLoadAssetDetail,
+  FailedLoadAssets,
   FailedPublish,
   FailedSaveChapters,
-  FailedSaveVideo,
+  FailedSaveAsset,
   FailedUnpublish,
   FailedUpload,
   FocusedChapterTitle,
   GeneratedChapterId,
-  SucceededCreateVideo,
-  SucceededDeleteVideo,
-  SucceededLoadVideoDetail,
-  SucceededLoadVideos,
+  SucceededCreateAsset,
+  SucceededDeleteAsset,
+  SucceededLoadAssetDetail,
+  SucceededLoadAssets,
   SucceededPublish,
   SucceededSaveChapters,
-  SucceededSaveVideo,
+  SucceededSaveAsset,
   SucceededUnpublish,
   SucceededUpload,
+  SucceededLoadProjects,
+  FailedLoadProjects,
+  SucceededLoadProject,
+  FailedLoadProject,
+  SucceededSaveProject,
+  FailedSaveProject,
+  SucceededDeleteProject,
+  FailedDeleteProject,
+  SucceededPublishProject,
+  FailedPublishProject,
+  SucceededUnpublishProject,
+  FailedUnpublishProject,
 } from "./message";
 
-const SERVER_ORIGIN = `http://${location.hostname}:3001`;
+const SERVER_ORIGIN = `http://${typeof location === "undefined" ? "localhost" : location.hostname}:3001`;
 
 class HttpError extends S.TaggedErrorClass<HttpError>()("HttpError", {
   status: S.Finite,
@@ -38,8 +57,8 @@ class HttpError extends S.TaggedErrorClass<HttpError>()("HttpError", {
   }
 }
 
-const VideoDetailResponse = S.Struct({
-  video: VideoSchema,
+const AssetDetailResponse = S.Struct({
+  video: AssetSchema,
   chapters: S.Array(ChapterSchema),
 });
 const ChaptersResponse = S.Struct({ chapters: S.Array(ChapterSchema) });
@@ -54,14 +73,16 @@ const decodeResponse = <A>(schema: S.Codec<A>) => {
     });
 };
 
-const VideoWrappedResponse = S.Struct({ video: VideoSchema });
-const VideoListResponse = S.Array(VideoSchema);
+const AssetWrappedResponse = S.Struct({ video: AssetSchema });
+const AssetListResponse = S.Array(AssetSchema);
 
-const decodeVideoDetail = decodeResponse(VideoDetailResponse);
+const decodeAssetDetail = decodeResponse(AssetDetailResponse);
 const decodeChapters = decodeResponse(ChaptersResponse);
-const decodeVideo = decodeResponse(VideoSchema);
-const decodeVideoWrapped = decodeResponse(VideoWrappedResponse);
-const decodeVideoList = decodeResponse(VideoListResponse);
+const decodeAsset = decodeResponse(AssetSchema);
+const decodeAssetWrapped = decodeResponse(AssetWrappedResponse);
+const decodeAssetList = decodeResponse(AssetListResponse);
+const decodeProjectList = decodeResponse(S.Array(ProjectSchema));
+const decodeProjectDetail = decodeResponse(ProjectDetailSchema);
 
 const tryFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   Effect.tryPromise({
@@ -77,13 +98,13 @@ const tryJson = (response: Response) =>
 
 export const GenerateChapterId = Command.define(
   "GenerateChapterId",
-  { videoId: S.String, startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)) },
+  { assetId: S.String, startSec: S.Finite.check(S.isGreaterThanOrEqualTo(0)) },
   GeneratedChapterId,
-)(({ videoId, startSec }) =>
+)(({ assetId, startSec }) =>
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
     const chapterId = yield* Effect.orDie(crypto.randomUUIDv4);
-    return GeneratedChapterId({ chapterId, videoId, startSec });
+    return GeneratedChapterId({ chapterId, assetId, startSec });
   }).pipe(Effect.provide(BrowserCrypto.layer)),
 );
 
@@ -98,29 +119,173 @@ export const FocusChapterTitle = Command.define(
   ),
 );
 
-export const LoadVideos = Command.define(
-  "LoadVideos",
-  SucceededLoadVideos,
-  FailedLoadVideos,
+export const LoadAssets = Command.define(
+  "LoadAssets",
+  SucceededLoadAssets,
+  FailedLoadAssets,
 )(
   Effect.gen(function* () {
-    const response = yield* tryFetch("/api/videos");
+    const response = yield* tryFetch("/api/assets");
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* tryJson(response);
-    const data = yield* decodeVideoList(raw);
-    return SucceededLoadVideos({ videos: data });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadVideos({ error: errMsg(error) })))),
+    const data = yield* decodeAssetList(raw);
+    return SucceededLoadAssets({ assets: data });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadAssets({ error: errMsg(error) })))),
 );
 
-export const CreateVideoCmd = Command.define(
-  "CreateVideo",
-  SucceededCreateVideo,
-  FailedCreateVideo,
+export const LoadProjects = Command.define(
+  "LoadProjects",
+  SucceededLoadProjects,
+  FailedLoadProjects,
 )(
   Effect.gen(function* () {
-    const response = yield* tryFetch("/api/videos", {
+    const response = yield* tryFetch("/api/projects");
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededLoadProjects({ projects: yield* decodeProjectList(yield* tryJson(response)) });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadProjects({ error: errMsg(error) })))),
+);
+export const LoadProject = Command.define(
+  "LoadProject",
+  { id: S.String },
+  SucceededLoadProject,
+  FailedLoadProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}`);
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededLoadProject({ detail: yield* decodeProjectDetail(yield* tryJson(response)) });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadProject({ id, error: errMsg(error) })))),
+);
+export const SaveProject = Command.define(
+  "SaveProject",
+  {
+    requestId: S.Int,
+    id: S.optional(S.String),
+    title: S.String,
+    description: S.String,
+    password: S.Option(S.String),
+  },
+  SucceededSaveProject,
+  FailedSaveProject,
+)((input) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(input.id ? `/api/projects/${input.id}` : "/api/projects", {
+      method: input.id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: input.title,
+        description: input.description,
+        ...(Option.isSome(input.password) ? { password: input.password.value } : {}),
+      }),
+    });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededSaveProject({
+      requestId: input.requestId,
+      detail: yield* decodeProjectDetail(yield* tryJson(response)),
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(FailedSaveProject({ requestId: input.requestId, error: errMsg(error) })),
+    ),
+  ),
+);
+export const MoveProjectMember = Command.define(
+  "MoveProjectMember",
+  {
+    requestId: S.Int,
+    projectId: S.String,
+    assetId: S.String,
+    position: S.optional(S.Int),
+    unfile: S.Boolean,
+  },
+  SucceededSaveProject,
+  FailedSaveProject,
+)((input) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(
+      input.unfile
+        ? `/api/projects/${input.projectId}/members/${input.assetId}`
+        : `/api/projects/${input.projectId}/members`,
+      {
+        method: input.unfile ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        ...(input.unfile
+          ? {}
+          : { body: JSON.stringify({ assetId: input.assetId, position: input.position }) }),
+      },
+    );
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededSaveProject({
+      requestId: input.requestId,
+      detail: yield* decodeProjectDetail(yield* tryJson(response)),
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(FailedSaveProject({ requestId: input.requestId, error: errMsg(error) })),
+    ),
+  ),
+);
+export const PublishProject = Command.define(
+  "PublishProject",
+  { id: S.String },
+  SucceededPublishProject,
+  FailedPublishProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}/publish`, { method: "POST" });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededPublishProject({ id });
+  }).pipe(
+    Effect.catch((error) => Effect.succeed(FailedPublishProject({ id, error: errMsg(error) }))),
+  ),
+);
+
+export const UnpublishProject = Command.define(
+  "UnpublishProject",
+  { id: S.String },
+  SucceededUnpublishProject,
+  FailedUnpublishProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}/publish`, { method: "DELETE" });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededUnpublishProject({ id });
+  }).pipe(
+    Effect.catch((error) => Effect.succeed(FailedUnpublishProject({ id, error: errMsg(error) }))),
+  ),
+);
+
+export const DeleteProject = Command.define(
+  "DeleteProject",
+  { id: S.String },
+  SucceededDeleteProject,
+  FailedDeleteProject,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/projects/${id}`, { method: "DELETE" });
+    if (!response.ok)
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    return SucceededDeleteProject({ id });
+  }).pipe(
+    Effect.catch((error) => Effect.succeed(FailedDeleteProject({ id, error: errMsg(error) }))),
+  ),
+);
+
+export const CreateAssetCmd = Command.define(
+  "CreateAsset",
+  SucceededCreateAsset,
+  FailedCreateAsset,
+)(
+  Effect.gen(function* () {
+    const response = yield* tryFetch("/api/assets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Untitled", description: "" }),
@@ -129,19 +294,19 @@ export const CreateVideoCmd = Command.define(
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* tryJson(response);
-    const data = yield* decodeVideo(raw);
-    return SucceededCreateVideo({ video: data });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedCreateVideo({ error: errMsg(error) })))),
+    const data = yield* decodeAsset(raw);
+    return SucceededCreateAsset({ video: data });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedCreateAsset({ error: errMsg(error) })))),
 );
 
-export const SaveVideoCmd = Command.define(
-  "SaveVideo",
+export const SaveAssetCmd = Command.define(
+  "SaveAsset",
   { id: S.String, title: S.String, description: S.String },
-  SucceededSaveVideo,
-  FailedSaveVideo,
+  SucceededSaveAsset,
+  FailedSaveAsset,
 )((input: { id: string; title: string; description: string }) =>
   Effect.gen(function* () {
-    const response = yield* tryFetch(`/api/videos/${input.id}`, {
+    const response = yield* tryFetch(`/api/assets/${input.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: input.title, description: input.description }),
@@ -150,26 +315,30 @@ export const SaveVideoCmd = Command.define(
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* tryJson(response);
-    const data = yield* decodeVideoWrapped(raw);
-    return SucceededSaveVideo({ video: data.video });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveVideo({ error: errMsg(error) })))),
+    const data = yield* decodeAssetWrapped(raw);
+    return SucceededSaveAsset({ video: data.video });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveAsset({ error: errMsg(error) })))),
 );
 
-export const LoadVideoDetail = Command.define(
-  "LoadVideoDetail",
+export const LoadAssetDetail = Command.define(
+  "LoadAssetDetail",
   { id: S.String },
-  SucceededLoadVideoDetail,
-  FailedLoadVideoDetail,
+  SucceededLoadAssetDetail,
+  FailedLoadAssetDetail,
 )((input: { id: string }) =>
   Effect.gen(function* () {
-    const response = yield* tryFetch(`/api/videos/${input.id}`);
+    const response = yield* tryFetch(`/api/assets/${input.id}`);
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* tryJson(response);
-    const data = yield* decodeVideoDetail(raw);
-    return SucceededLoadVideoDetail({ video: data.video, chapters: data.chapters });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadVideoDetail({ error: errMsg(error) })))),
+    const data = yield* decodeAssetDetail(raw);
+    return SucceededLoadAssetDetail({ id: input.id, video: data.video, chapters: data.chapters });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(FailedLoadAssetDetail({ id: input.id, error: errMsg(error) })),
+    ),
+  ),
 );
 
 export const SaveChaptersCmd = Command.define(
@@ -179,7 +348,7 @@ export const SaveChaptersCmd = Command.define(
   FailedSaveChapters,
 )((input: { id: string; chapters: ReadonlyArray<Chapter> }) =>
   Effect.gen(function* () {
-    const response = yield* tryFetch(`/api/videos/${input.id}`, {
+    const response = yield* tryFetch(`/api/assets/${input.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chapters: input.chapters }),
@@ -193,10 +362,10 @@ export const SaveChaptersCmd = Command.define(
   }).pipe(Effect.catch((error) => Effect.succeed(FailedSaveChapters({ error: errMsg(error) })))),
 );
 
-export const UploadVideoCmd = Command.define(
-  "UploadVideo",
+export const UploadAssetCmd = Command.define(
+  "UploadAsset",
   {
-    videoId: S.String,
+    assetId: S.String,
     file: FoldkitFile.File,
     poster: S.Option(FoldkitFile.File),
   },
@@ -205,7 +374,7 @@ export const UploadVideoCmd = Command.define(
 )((input) =>
   Effect.gen(function* () {
     const formData = new FormData();
-    formData.append("videoId", input.videoId);
+    formData.append("assetId", input.assetId);
     formData.append("file", input.file);
     if (Option.isSome(input.poster)) {
       formData.append("poster", input.poster.value);
@@ -218,7 +387,7 @@ export const UploadVideoCmd = Command.define(
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* tryJson(response);
-    const data = yield* decodeVideo(raw);
+    const data = yield* decodeAsset(raw);
     return SucceededUpload({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedUpload({ error: errMsg(error) })))),
 );
@@ -238,8 +407,8 @@ export const CopyLinkCmd = Command.define(
   }).pipe(Effect.catch((error) => Effect.succeed(FailedCopyLink({ error })))),
 );
 
-export const PublishVideoCmd = Command.define(
-  "PublishVideo",
+export const PublishAssetCmd = Command.define(
+  "PublishAsset",
   { id: S.String },
   SucceededPublish,
   FailedPublish,
@@ -250,13 +419,13 @@ export const PublishVideoCmd = Command.define(
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* tryJson(response);
-    const data = yield* decodeVideo(raw);
+    const data = yield* decodeAsset(raw);
     return SucceededPublish({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedPublish({ error: errMsg(error) })))),
 );
 
-export const UnpublishVideoCmd = Command.define(
-  "UnpublishVideo",
+export const UnpublishAssetCmd = Command.define(
+  "UnpublishAsset",
   { id: S.String },
   SucceededUnpublish,
   FailedUnpublish,
@@ -267,22 +436,22 @@ export const UnpublishVideoCmd = Command.define(
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
     const raw = yield* tryJson(response);
-    const data = yield* decodeVideo(raw);
+    const data = yield* decodeAsset(raw);
     return SucceededUnpublish({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedUnpublish({ error: errMsg(error) })))),
 );
 
-export const DeleteVideoCmd = Command.define(
-  "DeleteVideo",
+export const DeleteAssetCmd = Command.define(
+  "DeleteAsset",
   { id: S.String },
-  SucceededDeleteVideo,
-  FailedDeleteVideo,
+  SucceededDeleteAsset,
+  FailedDeleteAsset,
 )((input: { id: string }) =>
   Effect.gen(function* () {
-    const response = yield* tryFetch(`/api/videos/${input.id}`, { method: "DELETE" });
+    const response = yield* tryFetch(`/api/assets/${input.id}`, { method: "DELETE" });
     if (!response.ok) {
       return yield* new HttpError({ status: response.status, statusText: response.statusText });
     }
-    return SucceededDeleteVideo({ id: input.id });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedDeleteVideo({ error: errMsg(error) })))),
+    return SucceededDeleteAsset({ id: input.id });
+  }).pipe(Effect.catch((error) => Effect.succeed(FailedDeleteAsset({ error: errMsg(error) })))),
 );
