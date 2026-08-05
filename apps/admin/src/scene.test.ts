@@ -4,12 +4,18 @@ import { Scene } from "foldkit";
 import { describe, test } from "vitest";
 import {
   DeleteAssetConfirmation,
+  DeleteProjectConfirmation,
   EditAsset,
+  ProjectEdit,
   ProjectList,
   ProjectsFailed,
+  ProjectMembershipSaving,
+  ProjectOperationFailed,
+  ProjectOperationPending,
   initialModel,
   type Chapter,
   type Asset,
+  type ProjectDetail,
 } from "./model";
 import { update } from "./update";
 import { view } from "./view";
@@ -51,6 +57,28 @@ const chapter: Chapter = {
   startSec: 0,
   sortOrder: 0,
 };
+
+const projectDetail = (overrides: Partial<ProjectDetail> = {}): ProjectDetail => ({
+  project: {
+    id: "project-1",
+    slug: "client-project",
+    title: "Client project",
+    description: null,
+    createdAt: 1_750_000_000_000,
+    publishedAt: null,
+    updatedAt: null,
+  },
+  assets: [
+    {
+      ...video,
+      id: "project-member-1",
+      title: "Project member",
+      projectId: "project-1",
+      sortOrder: 0,
+    },
+  ],
+  ...overrides,
+});
 
 describe("admin scenes", () => {
   test("renders an empty video list", () => {
@@ -282,6 +310,171 @@ describe("admin scenes", () => {
       Scene.expect(Scene.role("dialog")).toExist(),
       Scene.expect(Scene.role("heading", { name: "Delete video?" })).toExist(),
       Scene.expect(Scene.role("button", { name: "Cancel" })).toExist(),
+      Scene.expect(Scene.role("button", { name: "Delete" })).toExist(),
+    );
+  });
+
+  test("renders the complete-catalog Republish warning for a dirty published project", () => {
+    const detail = projectDetail({
+      project: {
+        ...projectDetail().project,
+        publishedAt: 1_750_000_001_000,
+        updatedAt: 1_750_000_002_000,
+      },
+    });
+
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectEdit({ projectId: detail.project.id }),
+        editProject: Option.some(detail),
+      }),
+      Scene.expect(Scene.role("button", { name: "Republish" })).toExist(),
+      Scene.expect(
+        Scene.text(
+          "This published project has local changes. Reorder, membership, metadata, and member changes remain local until you Republish the complete catalog.",
+        ),
+      ).toExist(),
+    );
+  });
+
+  test("renders a copyable link only for published projects", () => {
+    const published = projectDetail({
+      project: { ...projectDetail().project, publishedAt: 1_750_000_001_000 },
+    });
+
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectEdit({ projectId: published.project.id }),
+        editProject: Option.some(published),
+      }),
+      Scene.expect(Scene.role("button", { name: "Copy project link" })).toExist(),
+    );
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectEdit({ projectId: "project-1" }),
+        editProject: Option.some(projectDetail()),
+      }),
+      Scene.expect(Scene.role("button", { name: "Copy project link" })).not.toExist(),
+    );
+  });
+
+  test("renders pending project publication and disables conflicting controls", () => {
+    const detail = projectDetail({
+      project: { ...projectDetail().project, publishedAt: 1_750_000_001_000 },
+    });
+
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectEdit({ projectId: detail.project.id }),
+        editProject: Option.some(detail),
+        projectOperation: ProjectOperationPending({ kind: "publish", id: detail.project.id }),
+      }),
+      Scene.expect(Scene.role("status")).toHaveText("Publishing project…"),
+      Scene.expect(Scene.role("button", { name: "Move Project member down" })).toBeDisabled(),
+      Scene.expect(Scene.role("button", { name: "Delete project" })).toBeDisabled(),
+      Scene.expect(Scene.role("button", { name: "Publishing…" })).toBeDisabled(),
+      Scene.expect(Scene.role("button", { name: "Unpublish" })).toBeDisabled(),
+      Scene.expect(Scene.role("button", { name: "Copy project link" })).toBeDisabled(),
+      Scene.expect(Scene.label("Title")).toBeDisabled(),
+      Scene.expect(Scene.label("Description")).toBeDisabled(),
+      Scene.expect(Scene.label("Password")).toBeDisabled(),
+    );
+  });
+
+  test("disables metadata and project controls while metadata saves", () => {
+    const detail = projectDetail();
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectEdit({ projectId: detail.project.id }),
+        editProject: Option.some(detail),
+        projectMetadataSaveInFlight: true,
+      }),
+      Scene.expect(Scene.label("Title")).toBeDisabled(),
+      Scene.expect(Scene.label("Description")).toBeDisabled(),
+      Scene.expect(Scene.label("Password")).toBeDisabled(),
+      Scene.expect(Scene.role("button", { name: "Publish" })).toBeDisabled(),
+      Scene.expect(Scene.role("button", { name: "Delete project" })).toBeDisabled(),
+    );
+  });
+
+  test("does not render a stale project-operation retry", () => {
+    const detail = projectDetail();
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectEdit({ projectId: detail.project.id }),
+        editProject: Option.some(detail),
+        projectOperation: ProjectOperationFailed({ kind: "delete", id: "another-project" }),
+      }),
+      Scene.expect(Scene.role("button", { name: "Retry delete" })).not.toExist(),
+    );
+  });
+
+  test("disables a typed project-operation retry while membership is saving", () => {
+    const detail = projectDetail();
+
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        screen: ProjectEdit({ projectId: detail.project.id }),
+        editProject: Option.some(detail),
+        projectMembershipOperation: ProjectMembershipSaving(),
+        projectOperation: ProjectOperationFailed({ kind: "publish", id: detail.project.id }),
+      }),
+      Scene.expect(Scene.role("button", { name: "Retry publish" })).toBeDisabled(),
+    );
+  });
+
+  test("renders published project deletion preservation copy", () => {
+    const detail = projectDetail({
+      project: { ...projectDetail().project, publishedAt: 1_750_000_001_000 },
+    });
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        confirmationDialog: Dialog.init({ id: "video-action-confirmation", isOpen: true }),
+        pendingConfirmation: Option.some(DeleteProjectConfirmation({ projectId: "project-1" })),
+        editProject: Option.some(detail),
+      }),
+      Scene.expect(
+        Scene.text(
+          "This removes the published project. Assets, media, and direct links remain; local assets become unfiled.",
+          { exact: true },
+        ),
+      ).toExist(),
+    );
+  });
+
+  test("renders draft project deletion preservation copy", () => {
+    Scene.scene(
+      { update, view },
+      Scene.with({
+        ...initialModel(),
+        confirmationDialog: Dialog.init({ id: "video-action-confirmation", isOpen: true }),
+        pendingConfirmation: Option.some(DeleteProjectConfirmation({ projectId: "project-1" })),
+        editProject: Option.some(projectDetail()),
+      }),
+      Scene.expect(Scene.role("dialog")).toExist(),
+      Scene.expect(Scene.role("heading", { name: "Delete project?" })).toExist(),
+      Scene.expect(
+        Scene.text(
+          "This deletes the draft project. Assets, media, and direct links remain; local assets become unfiled.",
+          { exact: true },
+        ),
+      ).toExist(),
       Scene.expect(Scene.role("button", { name: "Delete" })).toExist(),
     );
   });

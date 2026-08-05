@@ -308,8 +308,12 @@ export const LoadAssetDetail = Command.define(
     }
     const raw = yield* tryJson(response);
     const data = yield* decodeAssetDetail(raw);
-    return SucceededLoadAssetDetail({ video: data.video, chapters: data.chapters });
-  }).pipe(Effect.catch((error) => Effect.succeed(FailedLoadAssetDetail({ error: errMsg(error) })))),
+    return SucceededLoadAssetDetail({ id: input.id, video: data.video, chapters: data.chapters });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(FailedLoadAssetDetail({ id: input.id, error: errMsg(error) })),
+    ),
+  ),
 );
 
 export const SaveChaptersCmd = Command.define(

@@ -1,12 +1,13 @@
 import { Option } from "effect";
 import { Story } from "foldkit";
 import { expect, test } from "vitest";
-import { LoadAssets, LoadProjects, MoveProjectMember, SaveProject } from "./commands";
+import { LoadAssets, LoadProject, LoadProjects, MoveProjectMember, SaveProject } from "./commands";
 import {
   BlurredProjectField,
   ClickedAssignAssetToProject,
   ClickedMoveProjectMember,
   ClickedProjects,
+  ClickedAssets,
   ClickedRetryLoadProjects,
   ClickedUnfileProjectMember,
   SubmittedCreateProject,
@@ -28,12 +29,17 @@ import {
   FailedUnpublishProject,
   ClickedCopyLink,
   CopiedLink,
+  ClickedDeleteProject,
+  ClickedConfirmPendingAction,
+  ClickedRetryProjectOperation,
 } from "./message";
 import {
   EditAsset,
   initialModel,
   ProjectEdit,
   ProjectList,
+  ProjectMembershipSaving,
+  ProjectOperationFailed,
   type Asset,
   type ProjectDetail,
 } from "./model";
@@ -161,6 +167,48 @@ test("preserves an untouched password and represents an explicit clear", () => {
   });
 });
 
+test("blocks project operations until an in-flight metadata save completes", () => {
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    editProject: Option.some(detail()),
+    projectTitle: "Renamed project",
+  };
+  const [saving] = update(model, BlurredProjectField());
+  const [blocked, commands] = update(saving, ClickedPublishProject({ id: "project-1" }));
+  const [saved] = update(saving, SucceededSaveProject({ detail: detail() }));
+
+  expect(saving.projectMetadataSaveInFlight).toBe(true);
+  expect(blocked).toEqual(saving);
+  expect(commands).toEqual([]);
+  expect(saved.projectMetadataSaveInFlight).toBe(false);
+});
+
+test("resets copied project links when changing project screens", () => {
+  const copied = { ...initialModel(), copiedLink: true };
+  const [opened] = update(copied, ClickedEditProject({ id: "project-2" }));
+  const [listed] = update(copied, ClickedProjects());
+  const [assets] = update(copied, ClickedAssets());
+
+  expect(opened.copiedLink).toBe(false);
+  expect(listed.copiedLink).toBe(false);
+  expect(assets.copiedLink).toBe(false);
+});
+
+test("clears and refuses stale project-operation retries after navigation", () => {
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    editProject: Option.some(detail()),
+    projectOperation: ProjectOperationFailed({ kind: "delete", id: "project-1" }),
+  };
+  const [navigated] = update(model, ClickedEditProject({ id: "project-2" }));
+  const [, commands] = update(navigated, ClickedRetryProjectOperation());
+
+  expect(navigated.projectOperation._tag).toBe("ProjectOperationIdle");
+  expect(commands).toEqual([]);
+});
+
 test("rejects a late project detail for a route that is no longer active", () => {
   const [opened] = update(initialModel(), ClickedEditProject({ id: "project-2" }));
   const [next, commands] = update(opened, SucceededLoadProject({ detail: detail() }));
@@ -239,12 +287,26 @@ test("serializes membership commands and applies server-confirmed assignment to 
   });
 });
 
+test("blocks project publication while a membership save is pending", () => {
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    projectMembershipOperation: ProjectMembershipSaving(),
+    editProject: Option.some(detail([asset("member", "project-1", 0)])),
+  };
+
+  const [next, commands] = update(model, ClickedPublishProject({ id: "project-1" }));
+
+  expect(commands).toEqual([]);
+  expect(next).toEqual(model);
+});
+
 test("publishing projects records Foldkit success, failure, and share-link state", () => {
   const model = {
     ...initialModel(),
     screen: ProjectEdit({ projectId: "project-1" }),
     projects: [{ ...detail().project, memberCount: 1 }],
-    editProject: Option.some(detail()),
+    editProject: Option.some(detail([asset("member", "project-1", 0)])),
   };
   const [publishing, commands] = update(model, ClickedPublishProject({ id: "project-1" }));
   const [published] = update(publishing, SucceededPublishProject({ id: "project-1" }));
@@ -258,7 +320,17 @@ test("publishing projects records Foldkit success, failure, and share-link state
   expect(publishing.isPublishing).toBe(true);
   expect(commands).toHaveLength(1);
   expect(published.isPublishing).toBe(false);
-  expect(published.projects[0]?.publishedAt).not.toBeNull();
+  expect(published.projectOperation._tag).toBe("ProjectOperationIdle");
+  expect(published.projects[0]?.publishedAt).toBeNull();
+  expect(published.editProject).toEqual(model.editProject);
+  const [, reloads] = update(publishing, SucceededPublishProject({ id: "project-1" }));
+  expect(reloads).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: LoadProject.name, args: { id: "project-1" } }),
+      expect.objectContaining({ name: LoadAssets.name }),
+      expect.objectContaining({ name: LoadProjects.name }),
+    ]),
+  );
   expect(failed.errorMessage).toEqual(Option.some("remote unavailable"));
   expect(copyCommands).toHaveLength(1);
   expect(copied.copiedLink).toBe(true);
@@ -283,12 +355,92 @@ test("unpublishing a project removes only its project publication state", () => 
 
   expect(unpublishing.isPublishing).toBe(true);
   expect(commands).toHaveLength(1);
-  expect(unpublished.projects[0]?.publishedAt).toBeNull();
-  expect(Option.getOrThrow(unpublished.editProject).assets[0]).toMatchObject({
-    projectId: "project-1",
-    publishedAt: 9,
-  });
+  expect(unpublished.projectOperation._tag).toBe("ProjectOperationIdle");
+  expect(unpublished.projects[0]?.publishedAt).toBe(10);
+  expect(unpublished.editProject).toEqual(model.editProject);
+  const [, reloads] = update(unpublishing, SucceededUnpublishProject({ id: "project-1" }));
+  expect(reloads).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: LoadProject.name, args: { id: "project-1" } }),
+      expect.objectContaining({ name: LoadAssets.name }),
+      expect.objectContaining({ name: LoadProjects.name }),
+    ]),
+  );
   expect(failed.errorMessage).toEqual(Option.some("remote unavailable"));
+});
+
+test("project deletion requires confirmation before the remote delete and preserves modeled direct assets", () => {
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    projects: [{ ...detail().project, memberCount: 1, publishedAt: 10 }],
+    assets: [{ ...asset("a", "project-1", 0), publishedAt: 9 }],
+    editProject: Option.some(detail([asset("a", "project-1", 0)])),
+  };
+  const [confirming, beforeConfirm] = update(model, ClickedDeleteProject({ id: "project-1" }));
+  const [, afterConfirm] = update(confirming, ClickedConfirmPendingAction());
+
+  expect(confirming.pendingConfirmation).toMatchObject({
+    _tag: "Some",
+    value: { _tag: "DeleteProjectConfirmation", projectId: "project-1" },
+  });
+  expect(beforeConfirm).not.toContainEqual(expect.objectContaining({ name: "DeleteProject" }));
+  expect(afterConfirm).toContainEqual(
+    expect.objectContaining({ name: "DeleteProject", args: { id: "project-1" } }),
+  );
+  expect(afterConfirm).toContainEqual(expect.objectContaining({ name: "CloseDialog" }));
+});
+
+test("navigation clears membership saving so a late response cannot reopen the prior project", () => {
+  const members = [asset("a", "project-1", 0), asset("b", "project-1", 1)];
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    assets: members,
+    editProject: Option.some(detail(members)),
+  };
+  const [saving] = update(model, ClickedMoveProjectMember({ assetId: "b", direction: "up" }));
+  const [navigated] = update(saving, ClickedEditProject({ id: "project-2" }));
+  const [afterLateResponse, commands] = update(
+    navigated,
+    SucceededSaveProject({ detail: detail(members) }),
+  );
+
+  expect(navigated.projectMembershipOperation._tag).toBe("ProjectMembershipIdle");
+  expect(afterLateResponse).toEqual(navigated);
+  expect(commands).toEqual([]);
+});
+
+test("failed project operation retains its typed retry", () => {
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    editProject: Option.some(detail([asset("a", "project-1", 0)])),
+  };
+  const [publishing] = update(model, ClickedPublishProject({ id: "project-1" }));
+  const [failed] = update(publishing, FailedPublishProject({ error: "remote unavailable" }));
+  const [, retry] = update(failed, ClickedRetryProjectOperation());
+
+  expect(failed.projectOperation).toMatchObject({
+    _tag: "ProjectOperationFailed",
+    kind: "publish",
+    id: "project-1",
+  });
+  expect(retry[0]).toMatchObject({ name: "PublishProject", args: { id: "project-1" } });
+});
+
+test("retries a confirmed delete failure only for its active project", () => {
+  const model = {
+    ...initialModel(),
+    screen: ProjectEdit({ projectId: "project-1" }),
+    editProject: Option.some(detail()),
+    projectOperation: ProjectOperationFailed({ kind: "delete", id: "project-1" }),
+  };
+  const [, commands] = update(model, ClickedRetryProjectOperation());
+
+  expect(commands).toContainEqual(
+    expect.objectContaining({ name: "DeleteProject", args: { id: "project-1" } }),
+  );
 });
 
 test("delete responses unfile model assets", () => {
@@ -298,7 +450,14 @@ test("delete responses unfile model assets", () => {
     projects: [{ ...detail().project, memberCount: 1 }],
     assets: [asset("a", "project-1", 0)],
   };
-  const [next] = update(model, SucceededDeleteProject({ id: "project-1" }));
+  const [deleting] = update(model, ClickedPublishProject({ id: "project-1" }));
+  const [next] = update(
+    {
+      ...deleting,
+      projectOperation: { _tag: "ProjectOperationPending", kind: "delete", id: "project-1" },
+    },
+    SucceededDeleteProject({ id: "project-1" }),
+  );
 
   expect(next.screen).toEqual(ProjectList());
   expect(next.assets[0]).toMatchObject({ projectId: null, sortOrder: null });

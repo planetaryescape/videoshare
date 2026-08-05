@@ -6,6 +6,8 @@ import type { Chapter, Asset } from "@videoshare/shared/Asset";
 import { Effect, Layer, Option } from "effect";
 import playerCss from "../generated/player.css?raw";
 import playerScript from "../generated/player.js?raw";
+import projectCss from "../generated/project.css?raw";
+import projectScript from "../generated/project.js?raw";
 import { appleTouchIconBase64, favicon16Base64, favicon32Base64 } from "../generated/favicons";
 import { escapeHtml } from "./escapeHtml.ts";
 import { renderStage } from "./stage.ts";
@@ -48,6 +50,7 @@ const hashString = (value: string) => {
 };
 
 const assetVersion = hashString(playerCss + playerScript);
+const projectVersion = hashString(projectCss + projectScript);
 
 const faviconLinks = `<link rel="icon" type="image/png" sizes="32x32" href="/_assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/_assets/favicon-16x16.png">
@@ -497,7 +500,9 @@ const serveProject = async (
     );
   }
   const { projectSlug, assetSlug } = route;
-  const page = await loadProjectPage(env, projectSlug, assetSlug);
+  // Summary is a project state, not a member lookup. Unknown member slugs still get the catalog's
+  // non-disclosing 404 response.
+  const page = await loadProjectPage(env, projectSlug, assetSlug === "summary" ? null : assetSlug);
   if (Option.isNone(page)) return notFoundResponse();
   if (request.method !== "GET" && request.method !== "POST")
     return new Response("Method Not Allowed", { status: 405 });
@@ -542,12 +547,14 @@ const serveProject = async (
         },
       );
   }
-  const selected = page.value.selected;
-  const mediaUrl = projectMediaUrl(
-    projectSlug,
-    selected.slug,
-    selected.mediaKey,
-    project.passwordHash,
+  const selected = assetSlug === "summary" ? null : page.value.selected;
+  const stages = page.value.assets.map((asset) =>
+    renderStage(
+      asset,
+      projectMediaUrl(projectSlug, asset.slug, asset.mediaKey, project.passwordHash),
+      null,
+      null,
+    ),
   );
   return new Response(
     renderProjectPage({
@@ -555,11 +562,12 @@ const serveProject = async (
       project: page.value.project,
       assets: page.value.assets,
       selected,
-      stage: renderStage(selected, mediaUrl, null, null),
+      stages,
       escapeHtml,
       faviconLinks,
       playerCssHref: `/_assets/player.css?v=${assetVersion}`,
-      playerScriptHref: `/_assets/player.js?v=${assetVersion}`,
+      projectCssHref: `/_assets/project.css?v=${projectVersion}`,
+      projectScriptHref: `/_assets/project.js?v=${projectVersion}`,
     }),
     {
       headers: {
@@ -641,6 +649,14 @@ export default {
 
     if (pathname === "/_assets/player.css") {
       return assetResponse(playerCss, "text/css; charset=utf-8");
+    }
+
+    if (pathname === "/_assets/project.js") {
+      return assetResponse(projectScript, "text/javascript; charset=utf-8");
+    }
+
+    if (pathname === "/_assets/project.css") {
+      return assetResponse(projectCss, "text/css; charset=utf-8");
     }
 
     if (pathname === "/_assets/favicon-32x32.png") {

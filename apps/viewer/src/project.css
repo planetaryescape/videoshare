@@ -1,0 +1,221 @@
+:root {
+  color-scheme: dark;
+}
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #1a1630, #09090f 52%);
+  color: #f5f7fb;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.project {
+  width: min(1240px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 64px;
+}
+.project-header {
+  margin-bottom: 20px;
+}
+.project-header h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+}
+.project-header p {
+  color: #b8c0d0;
+  line-height: 1.5;
+}
+.project-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  align-items: start;
+}
+.project-stage {
+  overflow: hidden;
+  border-radius: 20px;
+  background: #000;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+.project-stage media-player,
+.project-stage .image-stage {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #000;
+}
+.project-stage .image-stage {
+  display: grid;
+  place-items: center;
+}
+.project-stage .image-stage img {
+  max-width: 100%;
+  max-height: min(75vh, 900px);
+  object-fit: contain;
+}
+.project-stage media-player[view-type="audio"] {
+  aspect-ratio: auto;
+}
+.project-stage media-video-layout {
+  --media-brand: #7c5cff;
+  --media-focus-ring-color: #9b87ff;
+}
+.project-meta {
+  display: grid;
+  gap: 5px;
+  margin-top: 18px;
+}
+.project-meta h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 2rem);
+}
+.project-meta p {
+  margin: 0;
+  color: #b8c0d0;
+  line-height: 1.55;
+}
+.project-position {
+  color: #c9beff;
+  font-size: 0.9rem;
+}
+.project-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+}
+.project-control,
+.project-rail a {
+  min-height: 44px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid #45415f;
+  color: #f5f7fb;
+  background: #171526;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.project-control {
+  padding: 0 16px;
+  display: inline-grid;
+  place-items: center;
+}
+.project-control:hover,
+.project-rail a:hover {
+  background: #2b2744;
+}
+.project-control.is-disabled,
+.project-control[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.4;
+  pointer-events: none;
+}
+.project-control:focus-visible,
+.project-rail a:focus-visible {
+  outline: 3px solid #a995ff;
+  outline-offset: 3px;
+}
+.project-rail {
+  border: 1px solid #302d43;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+.project-rail h2 {
+  margin: 0;
+  padding: 14px 15px;
+  font-size: 0.9rem;
+  color: #c9beff;
+}
+.project-rail ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.project-rail li + li {
+  border-top: 1px solid #302d43;
+}
+.project-rail a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+}
+.project-rail a.is-active,
+.project-rail a[aria-current] {
+  background: #4d3f8c;
+  font-weight: 700;
+}
+.project-rail .rail-number {
+  color: #c9beff;
+  font-variant-numeric: tabular-nums;
+}
+.project-summary {
+  padding: clamp(24px, 6vw, 64px);
+  background: #12111b;
+}
+.project-summary h2 {
+  margin-top: 0;
+}
+.project-summary ul {
+  padding-left: 20px;
+  line-height: 1.8;
+}
+.project-summary a {
+  color: #c9beff;
+}
+.project-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .project {
+    width: min(100%, calc(100vw - 20px));
+    padding-top: 16px;
+  }
+  .project-layout {
+    grid-template-columns: 1fr;
+  }
+  .project-rail {
+    order: -1;
+    overflow-x: auto;
+  }
+  .project-rail h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+  }
+  .project-rail ol {
+    display: flex;
+    min-width: max-content;
+  }
+  .project-rail li + li {
+    border-top: 0;
+    border-left: 1px solid #302d43;
+  }
+  .project-rail a {
+    min-width: 120px;
+    border-radius: 0;
+  }
+  .project-stage {
+    border-radius: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}

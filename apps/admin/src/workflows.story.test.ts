@@ -13,6 +13,7 @@ import {
 import {
   BlurredChapterField,
   BlurredEditField,
+  ClickedBack,
   ClickedCopyLink,
   ClickedEditAsset,
   ClickedPublish,
@@ -95,14 +96,54 @@ test("loads video detail and surfaces load failure", () => {
     Story.message(ClickedEditAsset({ id: video.id })),
     Story.Command.resolve(
       LoadAssetDetail,
-      SucceededLoadAssetDetail({ video, chapters: [chapter] }),
+      SucceededLoadAssetDetail({ id: video.id, video, chapters: [chapter] }),
     ),
     Story.Command.resolve(LoadProjects, SucceededLoadProjects({ projects: [] })),
     Story.message(ClickedEditAsset({ id: "video-2" })),
-    Story.Command.resolve(LoadAssetDetail, FailedLoadAssetDetail({ error: "Detail unavailable" })),
+    Story.Command.resolve(
+      LoadAssetDetail,
+      FailedLoadAssetDetail({ id: "video-2", error: "Detail unavailable" }),
+    ),
     Story.Command.resolve(LoadProjects, SucceededLoadProjects({ projects: [] })),
     Story.model((model) => expect(model.errorMessage).toEqual(Option.some("Detail unavailable"))),
   );
+});
+
+test("ignores stale asset detail responses after switching assets or navigating away", () => {
+  const secondVideo = { ...video, id: "video-2", title: "Second asset" };
+
+  const [loadingFirst] = update(initialModel(), ClickedEditAsset({ id: video.id }));
+  const [loadingSecond] = update(loadingFirst, ClickedEditAsset({ id: secondVideo.id }));
+  const [afterStaleSuccess] = update(
+    loadingSecond,
+    SucceededLoadAssetDetail({ id: video.id, video, chapters: [chapter] }),
+  );
+
+  expect(afterStaleSuccess.screen).toEqual(EditAsset({ assetId: secondVideo.id }));
+  expect(afterStaleSuccess.editAsset).toEqual(Option.none());
+  expect(afterStaleSuccess.editTitle).toBe("");
+
+  const [loadedSecond] = update(
+    afterStaleSuccess,
+    SucceededLoadAssetDetail({ id: secondVideo.id, video: secondVideo, chapters: [] }),
+  );
+  expect(loadedSecond.editAsset).toEqual(Option.some(secondVideo));
+  expect(loadedSecond.editTitle).toBe(secondVideo.title);
+
+  const [afterStaleFailureForFirst] = update(
+    loadedSecond,
+    FailedLoadAssetDetail({ id: video.id, error: "Detail unavailable" }),
+  );
+  expect(afterStaleFailureForFirst.errorMessage).toEqual(Option.none());
+
+  const [navigatedAway] = update(afterStaleFailureForFirst, ClickedBack());
+  const [afterStaleFailure] = update(
+    navigatedAway,
+    FailedLoadAssetDetail({ id: secondVideo.id, error: "Detail unavailable" }),
+  );
+
+  expect(afterStaleFailure.screen).toEqual({ _tag: "ListAssets" });
+  expect(afterStaleFailure.errorMessage).toEqual(Option.none());
 });
 
 test("saves chapters and surfaces save failure", () => {

@@ -38,6 +38,7 @@ test("parses root, member deep-link, and project media routes while rejecting tr
     projectSlug: "show",
     assetSlug: "media",
   });
+  expect(parseProjectRoute(["show", "media", "member"])).toEqual({ _tag: "invalid" });
   expect(parseProjectRoute(["show", "media", "member", "..", "secret"])).toEqual({
     _tag: "invalid",
   });
@@ -98,14 +99,80 @@ test("project page emits stable project-member links", () => {
     project: { title: "Show", description: null },
     assets: [member],
     selected: member,
-    stage: "<img>",
+    stages: ["<img>"],
     escapeHtml: (value) => value,
     faviconLinks: "",
     playerCssHref: "/css",
-    playerScriptHref: "/js",
+    projectCssHref: "/project.css",
+    projectScriptHref: "/project.js",
   });
   expect(page).toContain('href="/p/show/member"');
+  expect(page).toContain('id="project-member-0" data-member-kind="image"');
+  expect(page).toContain('data-member-kinds="image"');
+  expect(page).toContain('id="project-summary"');
+  expect(page).toContain('href="/p/show/summary"');
+  expect(page).toContain(
+    'data-project-action="previous" href="/p/show/member" aria-disabled="true" tabindex="-1"',
+  );
+  expect(page).toContain('aria-live="polite"');
+  expect(page).toContain(
+    '<nav class="project-controls" data-project-controls aria-label="Project playback">',
+  );
+  expect(page).not.toContain(
+    'data-project-action="next" href="/p/show/summary" aria-disabled="false" tabindex',
+  );
+  expect(page).not.toContain('src="/js"');
   expect(page).not.toContain('rel="preload"');
+});
+
+test("summary renders member links, restart, and coherent non-JS controls", () => {
+  const member = new Asset({
+    id: AssetId.make("member"),
+    slug: Slug.make("member"),
+    kind: "audio",
+    title: '<script>alert("x")</script>',
+    description: null,
+    posterKey: null,
+    mediaKey: "media/member/audio.mp3",
+    durationSec: 1,
+    width: null,
+    height: null,
+    passwordHash: null,
+    projectId: null,
+    sortOrder: null,
+    createdAt: 1,
+    publishedAt: 1,
+    updatedAt: null,
+  });
+  const escapeHtml = (value: string) =>
+    value.replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  const page = renderProjectPage({
+    projectSlug: "show",
+    project: { title: "Show", description: null },
+    assets: [member],
+    selected: null,
+    stages: ["<media-player>"],
+    escapeHtml,
+    faviconLinks: "",
+    playerCssHref: "/css",
+    projectCssHref: "/project.css",
+    projectScriptHref: "/project.js",
+  });
+
+  expect(page).toContain('data-member-kinds="audio"');
+  expect(page).toContain('href="/p/show/member" data-project-member="member"');
+  expect(page).toContain("Restart project");
+  expect(page).toContain(
+    '<nav class="project-controls" data-project-controls aria-label="Project playback">',
+  );
+  expect(page).toContain(
+    'data-project-action="previous" href="/p/show/member" aria-disabled="false"',
+  );
+  expect(page).toContain(
+    'data-project-action="restart" href="/p/show/member" aria-disabled="false"',
+  );
+  expect(page).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
+  expect(page).not.toContain('<script>alert("x")</script>');
 });
 
 test("project gate preserves the requested safe action and has no member artwork", () => {

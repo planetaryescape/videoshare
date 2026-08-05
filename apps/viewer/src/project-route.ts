@@ -1,5 +1,3 @@
-import type { Asset } from "@videoshare/shared/Asset";
-
 export type ProjectRoute =
   | { readonly _tag: "page"; readonly projectSlug: string; readonly assetSlug: string | null }
   | {
@@ -10,25 +8,21 @@ export type ProjectRoute =
     }
   | { readonly _tag: "invalid" };
 
-/** Parses safe project paths. Page routes have exactly project or project/member arity. */
+/** `summary` is reserved; `media` is a media prefix only when asset and file follow it. */
 export const parseProjectRoute = (segments: ReadonlyArray<string>): ProjectRoute => {
   const [projectSlug, second, ...rest] = segments;
   if (!projectSlug || projectSlug.includes("..")) return { _tag: "invalid" };
-  // A member can legitimately be named `media`; reserve it only for a route with a media suffix.
-  if (second !== "media" || rest.length === 0) {
-    if (rest.length > 0) return { _tag: "invalid" };
-    return { _tag: "page", projectSlug, assetSlug: second ?? null };
+  if (second === "media" && rest.length >= 2) {
+    const [assetSlug, ...fileSegments] = rest;
+    const file = fileSegments.join("/");
+    return !assetSlug || !file || file.includes("..")
+      ? { _tag: "invalid" }
+      : { _tag: "media", projectSlug, assetSlug, file };
   }
-  const [assetSlug, ...fileSegments] = rest;
-  const file = fileSegments.join("/");
-  if (!assetSlug || !file || file.includes("..")) return { _tag: "invalid" };
-  return { _tag: "media", projectSlug, assetSlug, file };
+  if (rest.length > 0) return { _tag: "invalid" };
+  return { _tag: "page", projectSlug, assetSlug: second ?? null };
 };
 
-/**
- * Project routes intentionally authorize only against the project grant. That grant supersedes a
- * member asset password here; direct asset URLs continue to use their independent asset cookie.
- */
 export const isProjectAuthorized = (
   cookies: ReadonlyMap<string, string>,
   projectSlug: string,
@@ -63,40 +57,73 @@ export const projectMediaUrl = (
   return `/p/${encodeURIComponent(projectSlug)}/media/${encodeURIComponent(assetSlug)}/${encodeURIComponent(file)}`;
 };
 
-/** Renders a generic project gate; it deliberately includes no selected-member metadata or artwork. */
 export const renderProjectGate = (input: {
   readonly title: string;
   readonly action: string;
   readonly error?: string;
   readonly escapeHtml: (value: string) => string;
   readonly faviconLinks: string;
-}) => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${input.escapeHtml(input.title)}</title>${input.faviconLinks}</head>
-<body><main><h1>${input.escapeHtml(input.title)}</h1><p>This project is password protected.</p>${input.error ? `<div role="alert">${input.escapeHtml(input.error)}</div>` : ""}<form method="post" action="${input.escapeHtml(input.action)}"><label for="password">Password</label><input id="password" name="password" type="password" required autofocus><button type="submit">Open project</button></form></main></body></html>`;
+}) =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${input.escapeHtml(input.title)}</title>${input.faviconLinks}</head><body><main><h1>${input.escapeHtml(input.title)}</h1><p>This project is password protected.</p>${input.error ? `<div role="alert">${input.escapeHtml(input.error)}</div>` : ""}<form method="post" action="${input.escapeHtml(input.action)}"><label for="password">Password</label><input id="password" name="password" type="password" required autofocus><button type="submit">Open project</button></form></main></body></html>`;
 
-/** Renders the simple ordered project page and stable member links. */
+/** Server-rendered selected page, with inert escaped stage fragments for in-place enhancement. */
 export const renderProjectPage = (input: {
   readonly projectSlug: string;
   readonly project: { readonly title: string; readonly description: string | null };
   readonly assets: ReadonlyArray<Asset>;
-  readonly selected: Asset;
-  readonly stage: string;
+  readonly selected: Asset | null;
+  readonly stages: ReadonlyArray<string>;
   readonly escapeHtml: (value: string) => string;
   readonly faviconLinks: string;
   readonly playerCssHref: string;
-  readonly playerScriptHref: string;
+  readonly projectCssHref: string;
+  readonly projectScriptHref: string;
 }) => {
-  const { projectSlug, project, assets, selected, stage, escapeHtml } = input;
+  const { projectSlug, project, assets, selected, stages, escapeHtml } = input;
   const memberPath = (slug: string) =>
     `/p/${encodeURIComponent(projectSlug)}/${encodeURIComponent(slug)}`;
+  const summaryPath = `/p/${encodeURIComponent(projectSlug)}/summary`;
+  const control = (
+    action: "previous" | "next" | "restart",
+    label: string,
+    href: string,
+    disabled = false,
+  ) =>
+    `<a class="project-control${disabled ? " is-disabled" : ""}" data-project-action="${action}" href="${href}" aria-disabled="${disabled}"${disabled ? ' tabindex="-1"' : ""}>${label}</a>`;
+  const selectedSlug = selected?.slug ?? "summary";
+  const selectedIndex = selected ? assets.findIndex((asset) => asset.slug === selected.slug) : -1;
+  const metadata = (asset: Asset | null, index: number) =>
+    asset
+      ? `<div data-member-meta data-title="${escapeHtml(asset.title)}" data-description="${escapeHtml(asset.description ?? "")}" data-position="${index + 1} of ${assets.length} · ${asset.kind}"></div>`
+      : `<div data-member-meta data-title="Project complete" data-description="You have reached the end of this project." data-position="${assets.length} members"></div>`;
+  const fragment = (asset: Asset, index: number) =>
+    `<template id="project-member-${index}" data-member-kind="${escapeHtml(asset.kind)}"><div>${stages[index] ?? ""}</div>${metadata(asset, index)}</template>`;
+  const summaryContent = `<section class="project-summary">${metadata(null, -1)}<h2>Project complete</h2><p>You have reached the end of this project.</p><ul>${assets.map((asset, index) => `<li><a href="${memberPath(asset.slug)}" data-project-member="${escapeHtml(asset.slug)}" data-project-index="${index}">${index + 1}. ${escapeHtml(asset.title)}</a></li>`).join("")}</ul>${control("restart", "Restart project", memberPath(assets[0]?.slug ?? "summary"), assets.length === 0)}</section>`;
+  const summary = `<template id="project-summary">${summaryContent}</template>`;
+  const initialStage = selected
+    ? `${stages[selectedIndex] ?? ""}${metadata(selected, selectedIndex)}`
+    : summaryContent;
   const links = assets
     .map(
       (asset, index) =>
-        `<li${asset.slug === selected.slug ? ' aria-current="page"' : ""}><a href="${memberPath(asset.slug)}">${index + 1}. ${escapeHtml(asset.title)}</a></li>`,
+        `<li><a href="${memberPath(asset.slug)}" data-project-member="${escapeHtml(asset.slug)}" data-project-index="${index}"${asset.slug === selectedSlug ? ' aria-current="page" class="is-active"' : ""}><span class="rail-number">${index + 1}</span><span>${escapeHtml(asset.title)}</span></a></li>`,
     )
     .join("");
-  const index = assets.findIndex((asset) => asset.slug === selected.slug);
-  const previous = assets[index - 1];
-  const next = assets[index + 1];
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(project.title)}</title>${input.faviconLinks}<link rel="stylesheet" href="${input.playerCssHref}">${selected.kind === "image" ? "" : `<script type="module" src="${input.playerScriptHref}"></script>`}<style>body{margin:0;background:#09090f;color:#f5f7fb;font-family:system-ui}main{max-width:1080px;margin:auto;padding:24px}.stage{background:#000;border-radius:16px;overflow:hidden}nav a{color:#c9beff}li[aria-current=page] a{color:#fff;font-weight:bold}.pager{display:flex;justify-content:space-between;margin:20px 0}</style></head><body><main><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.description ?? "")}</p><div class="stage">${stage}</div><div class="pager">${previous ? `<a href="${memberPath(previous.slug)}">Previous</a>` : "<span></span>"}${next ? `<a href="${memberPath(next.slug)}">Next</a>` : "<span></span>"}</div><ol>${links}</ol></main></body></html>`;
+  const isSummary = selected === null;
+  const previous = isSummary
+    ? assets.length > 0
+      ? memberPath(assets[assets.length - 1]?.slug ?? "")
+      : summaryPath
+    : selectedIndex > 0
+      ? memberPath(assets[selectedIndex - 1]?.slug ?? "")
+      : memberPath(assets[0]?.slug ?? "summary");
+  const previousDisabled = !isSummary && selectedIndex === 0;
+  const next = isSummary
+    ? memberPath(assets[0]?.slug ?? "summary")
+    : selectedIndex + 1 < assets.length
+      ? memberPath(assets[selectedIndex + 1]?.slug ?? "")
+      : summaryPath;
+  const nextLabel = isSummary ? "Restart" : "Next";
+  const nextAction = isSummary ? "restart" : "next";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(project.title)}</title>${input.faviconLinks}<link rel="stylesheet" href="${input.playerCssHref}"><link rel="stylesheet" href="${input.projectCssHref}"><script type="module" src="${input.projectScriptHref}"></script></head><body><main class="project" data-project-player data-project-slug="${escapeHtml(projectSlug)}" data-member-slugs="${assets.map((asset) => escapeHtml(asset.slug)).join(",")}" data-member-kinds="${assets.map((asset) => escapeHtml(asset.kind)).join(",")}" data-selected="${escapeHtml(selectedSlug)}"><header class="project-header"><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.description ?? "")}</p></header><p class="project-status" aria-live="polite" data-project-status></p><div class="project-layout"><section><div class="project-stage" data-project-stage>${initialStage}</div><div class="project-meta"><span class="project-position" data-project-position>${selected ? `${selectedIndex + 1} of ${assets.length} · ${escapeHtml(selected.kind)}` : `${assets.length} members`}</span><h2 data-project-title>${escapeHtml(selected?.title ?? "Project complete")}</h2><p data-project-description>${escapeHtml(selected?.description ?? "You have reached the end of this project.")}</p></div><nav class="project-controls" data-project-controls aria-label="Project playback">${control("previous", "Previous", previous, previousDisabled)}${control(nextAction, nextLabel, next)}</nav></section><nav class="project-rail" aria-label="Project members"><h2>In this project</h2><ol>${links}</ol></nav></div>${assets.map(fragment).join("")}${summary}</main></body></html>`;
 };

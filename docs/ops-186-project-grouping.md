@@ -1,72 +1,24 @@
 # Shareable project sequences and assets
 
-Status: **five-slice implementation plan**
+Status: **shipped**
 
-A project is both an owner's grouping and its viewer-facing ordered sequence. There is no playlist model.
+A project is an owner-managed ordered sequence of zero or more mixed-media assets. It is not a separate playlist model.
 
-## Product shape
+## Shipped architecture
 
-- An asset is a video, audio recording, or static image with its own slug, publication state, and optional password.
-- A project owns an ordered sequence of zero or more assets. An asset belongs to zero or one project.
-- Direct asset links remain `/{assetSlug}` and use only the asset grant.
-- Project links will be namespaced under `/p/{projectSlug}` and use only the project grant.
-- Timed assets advance on `ended`; images advance only through explicit controls.
+- Assets are video, audio, or images. Each keeps its direct `/{assetSlug}` URL, publication state, and independent password grant.
+- Projects use `/p/{projectSlug}` (first member), `/p/{projectSlug}/{assetSlug}`, and `/p/{projectSlug}/summary`. `summary` is reserved; `media` acts as the media prefix only when an asset slug and file path follow it, so a legacy member slugged `media` remains addressable. Generated asset slugs are 16 characters.
+- Project access uses only the project cookie. It never grants a direct asset URL. A project grant can therefore show a protected member without changing its direct-link behavior.
+- `ViewerCatalog` provides narrow published D1 projections for pages and one joined project-media lookup. Project media remains Worker-proxied from private R2 at `/p/{projectSlug}/media/{assetSlug}/…`, preserving relative HLS manifest/segment requests after client-side stage changes.
+- The viewer server-renders the chosen member or summary, then progressively enhances it with a separate project controller. The controller is driven by the pure `ProjectPlayer` state machine (`Viewing(index)` / `Summary`), uses pushState/popstate, and swaps server-rendered inert stage templates. It makes no catalog requests from the browser.
+- Timed video/audio advance only on `ended`; pause, seek, and time updates do not advance. Images never auto-advance. Ended on the final timed member and Next on the final member reach Summary.
 
-## Persistence direction
+## Admin lifecycle
 
-`assets` replaces `videos`; `media_key` replaces `hls_key`; and `chapters.asset_id` replaces `chapters.video_id`. The asset table is prepared now with nullable `project_id`, `sort_order`, `width`, and `height` columns. This slice does not implement image or project behavior.
+Local SQLite is the editable catalog; D1 is the published catalog. Publishing uploads required media and replaces the complete published project catalog snapshot. Project metadata, ordering, filing, and member asset edits after publication are local changes until **Republish**.
 
-Local SQLite is the editable catalog. D1 is the published viewer catalog. Local startup migration handles both a fresh database and an existing video catalog. D1 uses ordered SQL migrations and an idempotent seed import. Future publishing will upload required media before synchronizing a complete project catalog snapshot from SQLite to D1.
+Deleting a project is confirmed in the existing dialog. The published project is removed remotely first; assets/media/direct links remain and local members become unfiled. Project publish, unpublish, delete, and membership UI reports progress, blocks conflicting actions, and retains a typed retry action for failed remote project operations. Empty projects cannot publish.
 
-## Principal interfaces
+## Operational verification
 
-```ts
-interface AssetRepository {
-  findById(id: AssetId): Effect.Effect<Option.Option<Asset>, PersistenceError>;
-  findBySlug(slug: string): Effect.Effect<Option.Option<Asset>, PersistenceError>;
-  list(): Effect.Effect<ReadonlyArray<Asset>, PersistenceError>;
-  create(asset: Asset): Effect.Effect<Asset, PersistenceError | SlugAlreadyExistsError>;
-  update(asset: Asset): Effect.Effect<Asset, PersistenceError>;
-  delete(id: AssetId): Effect.Effect<void, PersistenceError>;
-  listChapters(assetId: AssetId): Effect.Effect<ReadonlyArray<Chapter>, PersistenceError>;
-  replaceChapters(assetId: AssetId, chapters: ReadonlyArray<Chapter>): Effect.Effect<void, PersistenceError>;
-}
-
-interface ProjectRepository {
-  get(id: ProjectId): Effect.Effect<Option.Option<ProjectAggregate>, PersistenceError>;
-  save(project: ProjectAggregate): Effect.Effect<ProjectAggregate, PersistenceError>;
-  delete(id: ProjectId): Effect.Effect<void, PersistenceError>;
-}
-
-interface Publisher {
-  publishAsset(assetId: AssetId): Effect.Effect<Asset, PublicationError>;
-  publishProject(projectId: ProjectId): Effect.Effect<void, PublicationError>;
-}
-
-interface ViewerCatalog {
-  findAssetPage(slug: string): Effect.Effect<Option.Option<AssetPageView>, PersistenceError>;
-  findAssetMedia(slug: string): Effect.Effect<Option.Option<Asset>, PersistenceError>;
-  findProjectPage(projectSlug: string, assetSlug: Option.Option<string>): Effect.Effect<Option.Option<ProjectPageView>, PersistenceError>;
-  findProjectMedia(projectSlug: string, assetSlug: string): Effect.Effect<Option.Option<ProjectMediaView>, PersistenceError>;
-}
-```
-
-`AssetRepository` owns local editing persistence and chapters. `ProjectRepository` will own project ordering transactions. `Publisher` will coordinate media upload and the complete D1 catalog snapshot. `ViewerCatalog` owns narrow D1 read projections: direct media reads one asset row and never loads chapters; project media will use one joined catalog query.
-
-`MediaProcessor` is kind-aware: timed assets use the HLS path, while a later image processor will validate and store supported static images without invoking the transcoder.
-
-## Five implementation slices
-
-1. **Safe asset migration and direct catalog reads** — rename asset vocabulary and columns, provide fresh and upgrade-safe SQLite/D1 migration paths, and use `ViewerCatalog` for direct page and one-query media reads.
-2. **Static image assets** — add image validation, dimensions, ingest, storage, publication, and direct rendering through the kind-aware `MediaProcessor`.
-3. **Projects and local ordering** — add project persistence and admin editing for create, assignment, move, unfile, deletion, and contiguous ordering.
-4. **Project publishing** — upload missing media, then synchronize the selected complete project catalog snapshot from SQLite to D1; finalize local publication only after that succeeds.
-5. **Project viewer** — add namespaced project pages and media routes, project grants, ordered rail navigation, and timed/image progression.
-
-## Slice 1 verification
-
-- A fresh local SQLite database creates `assets`, `chapters.asset_id`, and the nullable project/dimension columns.
-- An existing local `videos` database preserves assets, chapters, slug, media location, timestamps, and is safe to migrate twice.
-- Ordered D1 SQL migrations followed by the seed create an `assets` catalog.
-- A pre-migration direct slug still resolves through `AssetRepository` and `ViewerCatalog`.
-- Direct media lookup succeeds without a chapters table, proving the hot path does not load chapters.
+Local tests cover catalog behavior and UI state. A deployed check against the isolated `dev_guidefari` D1 database sent a two-statement REST `/query` batch whose first insert was valid and whose second insert failed; the endpoint returned an error and a follow-up count remained zero, confirming rollback of the first statement. Production Worker/D1/R2 smoke verification—including project authentication, HLS nested requests, and complete-catalog publication—remains required.

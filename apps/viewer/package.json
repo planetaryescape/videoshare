@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "bun test ./src",
-    "build": "bun build ./src/player.entry.ts --outfile ./generated/player.js --target browser --format esm --minify && bun build ./src/player.css --outfile ./generated/player.css --target browser --minify"
+    "build": "bun build ./src/player.entry.ts --outfile ./generated/player.js --target browser --format esm --minify && bun build ./src/player.css --outfile ./generated/player.css --target browser --minify && bun build ./src/project.entry.ts --outfile ./generated/project.js --target browser --format esm --minify && bun build ./src/project.css --outfile ./generated/project.css --target browser --minify"
   },
   "dependencies": {
     "@effect/sql-d1": "4.0.0-beta.101",

@@ -6,6 +6,7 @@ import { currentChapterStartSec } from "./chapterPlayback";
 import { chaptersValidationError, clampToDuration, parseTimestamp, sortChapters } from "./chapters";
 import {
   DeleteAssetConfirmation,
+  DeleteProjectConfirmation,
   EditAsset,
   ProjectEdit,
   ProjectList,
@@ -14,6 +15,9 @@ import {
   ProjectsLoading,
   ProjectMembershipIdle,
   ProjectMembershipSaving,
+  ProjectOperationFailed,
+  ProjectOperationIdle,
+  ProjectOperationPending,
   initialModel,
   ListAssets,
   UnpublishAssetConfirmation,
@@ -66,10 +70,66 @@ const withEvo = (model: Model, patch: Patch, ...cmds: ReadonlyArray<Cmd>): Updat
   cmds,
 ];
 
+const isProjectOperationPending = (model: Model) =>
+  model.projectOperation._tag === "ProjectOperationPending";
+
+const activeProjectId = (model: Model): string | undefined =>
+  model.screen._tag === "ProjectEdit" && model.screen.projectId !== "new"
+    ? model.screen.projectId
+    : undefined;
+
+const isActiveAsset = (model: Model, assetId: string): boolean =>
+  model.screen._tag === "EditAsset" && model.screen.assetId === assetId;
+
+const isActiveProjectOperation = (model: Model): boolean =>
+  model.projectOperation._tag !== "ProjectOperationIdle" &&
+  model.projectOperation.id === activeProjectId(model);
+
 const membershipSave = (model: Model, command: Cmd): Update =>
-  model.projectMembershipOperation._tag === "ProjectMembershipSaving"
+  model.projectMetadataSaveInFlight ||
+  model.projectMembershipOperation._tag === "ProjectMembershipSaving" ||
+  isProjectOperationPending(model)
     ? noCmd(model)
     : withEvo(model, { projectMembershipOperation: () => ProjectMembershipSaving() }, command);
+
+const projectCommand = (
+  model: Model,
+  kind: "publish" | "unpublish" | "delete",
+  id: string,
+): Update =>
+  model.projectMetadataSaveInFlight ||
+  isProjectOperationPending(model) ||
+  model.projectMembershipOperation._tag === "ProjectMembershipSaving"
+    ? noCmd(model)
+    : kind === "publish"
+      ? withEvo(
+          model,
+          {
+            isPublishing: () => true,
+            projectOperation: () => ProjectOperationPending({ kind, id }),
+            errorMessage: () => Option.none(),
+          },
+          PublishProject({ id }),
+        )
+      : kind === "unpublish"
+        ? withEvo(
+            model,
+            {
+              isPublishing: () => true,
+              projectOperation: () => ProjectOperationPending({ kind, id }),
+              errorMessage: () => Option.none(),
+            },
+            UnpublishProject({ id }),
+          )
+        : withEvo(
+            model,
+            {
+              projectMembershipOperation: () => ProjectMembershipSaving(),
+              projectOperation: () => ProjectOperationPending({ kind, id }),
+              errorMessage: () => Option.none(),
+            },
+            DeleteProject({ id }),
+          );
 
 export const init = (): Update => [initialModel(), [LoadAssets(), LoadProjects()]];
 
@@ -205,6 +265,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           {
             screen: () => ProjectList(),
             projectsLoadState: () => ProjectsLoading(),
+            projectOperation: () => ProjectOperationIdle(),
+            projectMetadataSaveInFlight: () => false,
+            projectMembershipOperation: () => ProjectMembershipIdle(),
+            isPublishing: () => false,
+            copiedLink: () => false,
             errorMessage: () => Option.none(),
           },
           LoadProjects(),
@@ -215,6 +280,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           {
             screen: () => ListAssets(),
             projectsLoadState: () => ProjectsLoading(),
+            projectOperation: () => ProjectOperationIdle(),
+            projectMetadataSaveInFlight: () => false,
+            projectMembershipOperation: () => ProjectMembershipIdle(),
+            isPublishing: () => false,
+            copiedLink: () => false,
             errorMessage: () => Option.none(),
           },
           LoadAssets(),
@@ -227,6 +297,11 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           projectTitle: () => "Untitled project",
           projectDescription: () => "",
           projectPassword: () => Option.none(),
+          projectOperation: () => ProjectOperationIdle(),
+          projectMetadataSaveInFlight: () => false,
+          projectMembershipOperation: () => ProjectMembershipIdle(),
+          isPublishing: () => false,
+          copiedLink: () => false,
         }),
       ClickedEditProject: ({ id }) =>
         withEvo(
@@ -237,6 +312,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
             projectTitle: () => "",
             projectDescription: () => "",
             projectPassword: () => Option.none(),
+            projectOperation: () => ProjectOperationIdle(),
+            projectMetadataSaveInFlight: () => false,
+            projectMembershipOperation: () => ProjectMembershipIdle(),
+            copiedLink: () => false,
             errorMessage: () => Option.none(),
           },
           LoadProject({ id }),
@@ -248,7 +327,8 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       UpdatedProjectPassword: ({ password }) =>
         withEvo(model, { projectPassword: () => Option.some(password) }),
       BlurredProjectField: () => {
-        if (model.projectTitle.trim() === "") return noCmd(model);
+        if (model.projectMetadataSaveInFlight || model.projectTitle.trim() === "")
+          return noCmd(model);
         const existing =
           model.screen._tag === "ProjectEdit" && model.screen.projectId !== "new"
             ? model.editProject
@@ -261,8 +341,9 @@ export const update: (model: Model, message: Message) => Update = (model, messag
         ) {
           return noCmd(model);
         }
-        return withCmds(
+        return withEvo(
           model,
+          { projectMetadataSaveInFlight: () => true },
           SaveProject({
             id: Option.isSome(existing) ? existing.value.project.id : undefined,
             title: model.projectTitle,
@@ -298,113 +379,152 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           ? noCmd(model)
           : withEvo(model, { errorMessage: () => Option.some(error) }),
       SucceededSaveProject: ({ detail }) =>
-        withEvo(
-          model,
-          {
-            editProject: () => Option.some(detail),
-            projects: () => [
-              { ...detail.project, memberCount: detail.assets.length },
-              ...model.projects.filter((project) => project.id !== detail.project.id),
-            ],
-            screen: () =>
-              model.screen._tag === "EditAsset"
-                ? model.screen
-                : ProjectEdit({ projectId: detail.project.id }),
-            projectPassword: () => Option.none(),
-            projectMembershipOperation: () => ProjectMembershipIdle(),
-            assets: () =>
-              model.assets.map((asset) => {
-                const returned = detail.assets.find((member) => member.id === asset.id);
-                return (
-                  returned ??
-                  (asset.projectId === detail.project.id
-                    ? { ...asset, projectId: null, sortOrder: null }
-                    : asset)
-                );
-              }),
-            editAsset: () =>
-              Option.map(model.editAsset, (asset) => {
-                const returned = detail.assets.find((member) => member.id === asset.id);
-                return (
-                  returned ??
-                  (asset.projectId === detail.project.id
-                    ? { ...asset, projectId: null, sortOrder: null }
-                    : asset)
-                );
-              }),
-          },
-          LoadProjects(),
-          LoadAssets(),
-        ),
+        !model.projectMetadataSaveInFlight &&
+        model.projectMembershipOperation._tag !== "ProjectMembershipSaving"
+          ? noCmd(model)
+          : withEvo(
+              model,
+              {
+                editProject: () => Option.some(detail),
+                projects: () => [
+                  { ...detail.project, memberCount: detail.assets.length },
+                  ...model.projects.filter((project) => project.id !== detail.project.id),
+                ],
+                screen: () =>
+                  model.screen._tag === "EditAsset"
+                    ? model.screen
+                    : ProjectEdit({ projectId: detail.project.id }),
+                projectPassword: () => Option.none(),
+                projectMetadataSaveInFlight: () => false,
+                projectMembershipOperation: () => ProjectMembershipIdle(),
+                assets: () =>
+                  model.assets.map((asset) => {
+                    const returned = detail.assets.find((member) => member.id === asset.id);
+                    return (
+                      returned ??
+                      (asset.projectId === detail.project.id
+                        ? { ...asset, projectId: null, sortOrder: null }
+                        : asset)
+                    );
+                  }),
+                editAsset: () =>
+                  Option.map(model.editAsset, (asset) => {
+                    const returned = detail.assets.find((member) => member.id === asset.id);
+                    return (
+                      returned ??
+                      (asset.projectId === detail.project.id
+                        ? { ...asset, projectId: null, sortOrder: null }
+                        : asset)
+                    );
+                  }),
+              },
+              LoadProjects(),
+              LoadAssets(),
+            ),
       FailedSaveProject: ({ error }) =>
-        withEvo(model, {
-          projectMembershipOperation: () => ProjectMembershipIdle(),
-          errorMessage: () => Option.some(error),
-        }),
+        !model.projectMetadataSaveInFlight &&
+        model.projectMembershipOperation._tag !== "ProjectMembershipSaving"
+          ? noCmd(model)
+          : withEvo(model, {
+              projectMetadataSaveInFlight: () => false,
+              projectMembershipOperation: () => ProjectMembershipIdle(),
+              errorMessage: () => Option.some(error),
+            }),
       ClickedPublishProject: ({ id }) =>
-        model.isPublishing
+        model.projectMetadataSaveInFlight || model.isPublishing || isProjectOperationPending(model)
           ? noCmd(model)
-          : withEvo(
-              model,
-              { isPublishing: () => true, errorMessage: () => Option.none() },
-              PublishProject({ id }),
-            ),
+          : projectCommand(model, "publish", id),
+      ClickedRetryProjectOperation: () =>
+        model.projectOperation._tag === "ProjectOperationFailed" && isActiveProjectOperation(model)
+          ? projectCommand(model, model.projectOperation.kind, model.projectOperation.id)
+          : noCmd(model),
       SucceededPublishProject: ({ id }) =>
-        withEvo(model, {
-          isPublishing: () => false,
-          projects: () =>
-            model.projects.map((project) =>
-              project.id === id ? { ...project, publishedAt: Date.now() } : project,
-            ),
-          editProject: () =>
-            Option.map(model.editProject, (detail) =>
-              detail.project.id === id
-                ? { ...detail, project: { ...detail.project, publishedAt: Date.now() } }
-                : detail,
-            ),
-        }),
-      FailedPublishProject: ({ error }) =>
-        withEvo(model, { isPublishing: () => false, errorMessage: () => Option.some(error) }),
-      ClickedUnpublishProject: ({ id }) =>
-        model.isPublishing
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "publish" ||
+        model.projectOperation.id !== id ||
+        activeProjectId(model) !== id
           ? noCmd(model)
           : withEvo(
               model,
-              { isPublishing: () => true, errorMessage: () => Option.none() },
-              UnpublishProject({ id }),
+              { isPublishing: () => false, projectOperation: () => ProjectOperationIdle() },
+              LoadProject({ id }),
+              LoadAssets(),
+              LoadProjects(),
             ),
+      FailedPublishProject: ({ error }) =>
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "publish" ||
+        !isActiveProjectOperation(model)
+          ? noCmd(model)
+          : withEvo(model, {
+              isPublishing: () => false,
+              projectOperation: () =>
+                ProjectOperationFailed({ kind: "publish", id: activeProjectId(model) ?? "" }),
+              errorMessage: () => Option.some(error),
+            }),
+      ClickedUnpublishProject: ({ id }) =>
+        model.projectMetadataSaveInFlight || model.isPublishing || isProjectOperationPending(model)
+          ? noCmd(model)
+          : projectCommand(model, "unpublish", id),
       SucceededUnpublishProject: ({ id }) =>
-        withEvo(model, {
-          isPublishing: () => false,
-          projects: () =>
-            model.projects.map((project) =>
-              project.id === id ? { ...project, publishedAt: null } : project,
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "unpublish" ||
+        model.projectOperation.id !== id ||
+        activeProjectId(model) !== id
+          ? noCmd(model)
+          : withEvo(
+              model,
+              { isPublishing: () => false, projectOperation: () => ProjectOperationIdle() },
+              LoadProject({ id }),
+              LoadAssets(),
+              LoadProjects(),
             ),
-          editProject: () =>
-            Option.map(model.editProject, (detail) =>
-              detail.project.id === id
-                ? { ...detail, project: { ...detail.project, publishedAt: null } }
-                : detail,
-            ),
-        }),
       FailedUnpublishProject: ({ error }) =>
-        withEvo(model, { isPublishing: () => false, errorMessage: () => Option.some(error) }),
-      ClickedDeleteProject: ({ id }) => membershipSave(model, DeleteProject({ id })),
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "unpublish" ||
+        !isActiveProjectOperation(model)
+          ? noCmd(model)
+          : withEvo(model, {
+              isPublishing: () => false,
+              projectOperation: () =>
+                ProjectOperationFailed({ kind: "unpublish", id: activeProjectId(model) ?? "" }),
+              errorMessage: () => Option.some(error),
+            }),
+      ClickedDeleteProject: ({ id }) =>
+        model.projectMetadataSaveInFlight ||
+        isProjectOperationPending(model) ||
+        model.projectMembershipOperation._tag === "ProjectMembershipSaving"
+          ? noCmd(model)
+          : openConfirmation(model, DeleteProjectConfirmation({ projectId: id })),
+
       SucceededDeleteProject: ({ id }) =>
-        withEvo(model, {
-          projects: () => model.projects.filter((project) => project.id !== id),
-          projectMembershipOperation: () => ProjectMembershipIdle(),
-          screen: () => ProjectList(),
-          assets: () =>
-            model.assets.map((asset) =>
-              asset.projectId === id ? { ...asset, projectId: null, sortOrder: null } : asset,
-            ),
-        }),
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "delete" ||
+        model.projectOperation.id !== id ||
+        activeProjectId(model) !== id
+          ? noCmd(model)
+          : withEvo(model, {
+              projects: () => model.projects.filter((project) => project.id !== id),
+              projectMembershipOperation: () => ProjectMembershipIdle(),
+              projectOperation: () => ProjectOperationIdle(),
+              screen: () => ProjectList(),
+              copiedLink: () => false,
+              assets: () =>
+                model.assets.map((asset) =>
+                  asset.projectId === id ? { ...asset, projectId: null, sortOrder: null } : asset,
+                ),
+            }),
       FailedDeleteProject: ({ error }) =>
-        withEvo(model, {
-          projectMembershipOperation: () => ProjectMembershipIdle(),
-          errorMessage: () => Option.some(error),
-        }),
+        model.projectOperation._tag !== "ProjectOperationPending" ||
+        model.projectOperation.kind !== "delete" ||
+        !isActiveProjectOperation(model)
+          ? noCmd(model)
+          : withEvo(model, {
+              projectMembershipOperation: () => ProjectMembershipIdle(),
+              projectOperation: () =>
+                ProjectOperationFailed({ kind: "delete", id: activeProjectId(model) ?? "" }),
+              errorMessage: () => Option.some(error),
+            }),
       ClickedMoveProjectMember: ({ assetId, direction }) => {
         if (Option.isNone(model.editProject)) return noCmd(model);
         const members = model.editProject.value.assets;
@@ -695,10 +815,28 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           return noCmd(model);
         }
         const pendingConfirmation = model.pendingConfirmation.value;
+        if (
+          pendingConfirmation._tag === "DeleteProjectConfirmation" &&
+          (model.projectMetadataSaveInFlight ||
+            model.projectMembershipOperation._tag === "ProjectMembershipSaving")
+        ) {
+          return noCmd(model);
+        }
         const [confirmationDialog, dialogCommands] = Dialog.close(model.confirmationDialog);
         const commands = Command.mapMessages(dialogCommands, (message) =>
           GotConfirmationDialogMessage({ message }),
         );
+        if (pendingConfirmation._tag === "DeleteProjectConfirmation") {
+          const [nextModel, projectCommands] = projectCommand(
+            evoModel(model, {
+              confirmationDialog: () => confirmationDialog,
+              pendingConfirmation: () => Option.none(),
+            }),
+            "delete",
+            pendingConfirmation.projectId,
+          );
+          return [nextModel, [...commands, ...projectCommands]];
+        }
         if (pendingConfirmation._tag === "DeleteAssetConfirmation") {
           return withEvo(
             model,
@@ -750,20 +888,28 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       },
       FailedDeleteAsset: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
-      SucceededLoadAssetDetail: (msg: { video: Asset; chapters: ReadonlyArray<Chapter> }) =>
-        withEvo(model, {
-          editAsset: () => Option.some(msg.video),
-          editTitle: () => msg.video.title,
-          editDescription: () => msg.video.description ?? "",
-          editChapters: () => sortChapters(msg.chapters),
-          chapterStartDrafts: () => ({}),
-          chapterValidationError: () => Option.none(),
-          chapterSaveInFlight: () => false,
-          chapterSaveQueued: () => false,
-          chapterSaveSnapshot: () => [],
-        }),
-      FailedLoadAssetDetail: (msg: { error: string }) =>
-        withEvo(model, { errorMessage: () => Option.some(msg.error) }),
+      SucceededLoadAssetDetail: (msg: {
+        id: string;
+        video: Asset;
+        chapters: ReadonlyArray<Chapter>;
+      }) =>
+        isActiveAsset(model, msg.id)
+          ? withEvo(model, {
+              editAsset: () => Option.some(msg.video),
+              editTitle: () => msg.video.title,
+              editDescription: () => msg.video.description ?? "",
+              editChapters: () => sortChapters(msg.chapters),
+              chapterStartDrafts: () => ({}),
+              chapterValidationError: () => Option.none(),
+              chapterSaveInFlight: () => false,
+              chapterSaveQueued: () => false,
+              chapterSaveSnapshot: () => [],
+            })
+          : noCmd(model),
+      FailedLoadAssetDetail: (msg: { id: string; error: string }) =>
+        isActiveAsset(model, msg.id)
+          ? withEvo(model, { errorMessage: () => Option.some(msg.error) })
+          : noCmd(model),
       ClickedAddChapter: () => {
         if (Option.isNone(model.editAsset) || model.editAsset.value.mediaKey === "") {
           return noCmd(model);

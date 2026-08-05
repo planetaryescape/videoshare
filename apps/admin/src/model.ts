@@ -33,6 +33,21 @@ export const ProjectMembershipIdle = ts("ProjectMembershipIdle");
 export const ProjectMembershipSaving = ts("ProjectMembershipSaving");
 export const ProjectMembershipOperation = S.Union([ProjectMembershipIdle, ProjectMembershipSaving]);
 export type ProjectMembershipOperation = typeof ProjectMembershipOperation.Type;
+export const ProjectOperationIdle = ts("ProjectOperationIdle");
+export const ProjectOperationPending = ts("ProjectOperationPending", {
+  kind: S.Literals(["publish", "unpublish", "delete"]),
+  id: S.String,
+});
+export const ProjectOperationFailed = ts("ProjectOperationFailed", {
+  kind: S.Literals(["publish", "unpublish", "delete"]),
+  id: S.String,
+});
+export const ProjectOperation = S.Union([
+  ProjectOperationIdle,
+  ProjectOperationPending,
+  ProjectOperationFailed,
+]);
+export type ProjectOperation = typeof ProjectOperation.Type;
 
 export const ChapterSchema = S.Struct({
   id: S.String,
@@ -52,7 +67,12 @@ export const ProjectEdit = ts("ProjectEdit", { projectId: S.String.check(S.isMin
 export const Screen = S.Union([ListAssets, EditAsset, ProjectList, ProjectEdit]);
 export const DeleteAssetConfirmation = ts("DeleteAssetConfirmation", { assetId: S.String });
 export const UnpublishAssetConfirmation = ts("UnpublishAssetConfirmation", { assetId: S.String });
-export const PendingConfirmation = S.Union([DeleteAssetConfirmation, UnpublishAssetConfirmation]);
+export const DeleteProjectConfirmation = ts("DeleteProjectConfirmation", { projectId: S.String });
+export const PendingConfirmation = S.Union([
+  DeleteAssetConfirmation,
+  UnpublishAssetConfirmation,
+  DeleteProjectConfirmation,
+]);
 export type PendingConfirmation = typeof PendingConfirmation.Type;
 
 export const Model = S.Struct({
@@ -65,7 +85,9 @@ export const Model = S.Struct({
   projectDescription: S.String,
   /** None means untouched; Some("") clears; Some(value) replaces at the HTTP boundary. */
   projectPassword: S.Option(S.String),
+  projectMetadataSaveInFlight: S.Boolean,
   projectMembershipOperation: ProjectMembershipOperation,
+  projectOperation: ProjectOperation,
   editTitle: S.String,
   editDescription: S.String,
   editAsset: S.Option(AssetSchema),
@@ -101,7 +123,9 @@ export const initialModel = (): Model => ({
   projectTitle: "",
   projectDescription: "",
   projectPassword: Option.none(),
+  projectMetadataSaveInFlight: false,
   projectMembershipOperation: ProjectMembershipIdle(),
+  projectOperation: ProjectOperationIdle(),
   editTitle: "",
   editDescription: "",
   editAsset: Option.none(),
@@ -149,4 +173,23 @@ export const hasUnpublishedChanges = (video: Asset): boolean => {
     return false;
   }
   return video.publishedAt === null || video.updatedAt > video.publishedAt;
+};
+
+export const hasProjectUnpublishedChanges = (detail: ProjectDetail): boolean => {
+  const { project } = detail;
+  if (project.publishedAt === null) {
+    return project.updatedAt !== null || detail.assets.some(hasUnpublishedChanges);
+  }
+
+  const snapshotAt = project.publishedAt;
+  const metadataDirty = project.updatedAt !== null && project.updatedAt > snapshotAt;
+  return (
+    metadataDirty ||
+    detail.assets.some(
+      (asset) =>
+        asset.publishedAt !== snapshotAt ||
+        asset.createdAt > snapshotAt ||
+        (asset.updatedAt !== null && asset.updatedAt > snapshotAt),
+    )
+  );
 };

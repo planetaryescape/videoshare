@@ -14,6 +14,7 @@ export const UpdatedProjectDescription = m("UpdatedProjectDescription", { descri
 export const UpdatedProjectPassword = m("UpdatedProjectPassword", { password: S.String });
 export const BlurredProjectField = m("BlurredProjectField");
 export const ClickedDeleteProject = m("ClickedDeleteProject", { id: S.String });
+export const ClickedRetryProjectOperation = m("ClickedRetryProjectOperation");
 export const ClickedPublishProject = m("ClickedPublishProject", { id: S.String });
 export const SucceededPublishProject = m("SucceededPublishProject", { id: S.String });
 export const FailedPublishProject = m("FailedPublishProject", { error: S.String });
@@ -79,10 +80,11 @@ export const ClickedDeleteAsset = m("ClickedDeleteAsset", { id: S.String });
 export const SucceededDeleteAsset = m("SucceededDeleteAsset", { id: S.String });
 export const FailedDeleteAsset = m("FailedDeleteAsset", { error: S.String });
 export const SucceededLoadAssetDetail = m("SucceededLoadAssetDetail", {
+  id: S.String,
   video: AssetSchema,
   chapters: S.Array(ChapterSchema),
 });
-export const FailedLoadAssetDetail = m("FailedLoadAssetDetail", { error: S.String });
+export const FailedLoadAssetDetail = m("FailedLoadAssetDetail", { id: S.String, error: S.String });
 export const ClickedAddChapter = m("ClickedAddChapter");
 export const GeneratedChapterId = m("GeneratedChapterId", {
   chapterId: S.String,
@@ -116,6 +118,7 @@ export const Message = S.Union([
   UpdatedProjectPassword,
   BlurredProjectField,
   ClickedDeleteProject,
+  ClickedRetryProjectOperation,
   ClickedPublishProject,
   SucceededPublishProject,
   FailedPublishProject,

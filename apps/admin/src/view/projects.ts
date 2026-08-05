@@ -2,7 +2,13 @@ import { Option } from "effect";
 import { Button, Input, Textarea } from "@foldkit/ui";
 import type { html } from "foldkit/html";
 import type { Message } from "../message";
-import type { Asset, Model, Project } from "../model";
+import {
+  hasProjectUnpublishedChanges,
+  VIEWER_BASE,
+  type Asset,
+  type Model,
+  type Project,
+} from "../model";
 import {
   BlurredProjectField,
   ClickedAssets,
@@ -14,6 +20,7 @@ import {
   ClickedPublishProject,
   ClickedUnpublishProject,
   ClickedCopyLink,
+  ClickedRetryProjectOperation,
   ClickedUnfileProjectMember,
   SubmittedCreateProject,
   UpdatedProjectDescription,
@@ -151,7 +158,7 @@ export const projectListView = (h: Html, model: Model) =>
     ],
   );
 
-const metadata = (h: Html, model: Model) =>
+const metadata = (h: Html, model: Model, disabled: boolean) =>
   h.section(
     [h.Class(`${panel} p-5`)],
     [
@@ -172,7 +179,12 @@ const metadata = (h: Html, model: Model) =>
                     [...label, h.Class("block text-sm font-medium text-gray-300 mb-1")],
                     ["Title"],
                   ),
-                  h.input([...input, h.OnBlur(BlurredProjectField()), h.Class(control)]),
+                  h.input([
+                    ...input,
+                    h.Disabled(disabled),
+                    h.OnBlur(BlurredProjectField()),
+                    h.Class(control),
+                  ]),
                 ],
               ),
           }),
@@ -190,7 +202,15 @@ const metadata = (h: Html, model: Model) =>
                     [...label, h.Class("block text-sm font-medium text-gray-300 mb-1")],
                     ["Description"],
                   ),
-                  h.textarea([...textarea, h.OnBlur(BlurredProjectField()), h.Class(control)], []),
+                  h.textarea(
+                    [
+                      ...textarea,
+                      h.Disabled(disabled),
+                      h.OnBlur(BlurredProjectField()),
+                      h.Class(control),
+                    ],
+                    [],
+                  ),
                 ],
               ),
           }),
@@ -210,6 +230,7 @@ const metadata = (h: Html, model: Model) =>
                 h.Attribute("autocomplete", "new-password"),
                 h.Value(Option.getOrElse(model.projectPassword, () => "")),
                 h.OnInput((password) => UpdatedProjectPassword({ password })),
+                h.Disabled(disabled),
                 h.OnBlur(BlurredProjectField()),
                 h.Class(control),
               ]),
@@ -321,7 +342,23 @@ export const projectEditView = (h: Html, model: Model) => {
   const detail = Option.getOrUndefined(model.editProject);
   const members = detail?.assets ?? [];
   const isExisting = model.screen._tag === "ProjectEdit" && model.screen.projectId !== "new";
-  const isSavingMembership = model.projectMembershipOperation._tag === "ProjectMembershipSaving";
+  const activeProjectOperation =
+    model.projectOperation._tag !== "ProjectOperationIdle" &&
+    model.projectOperation.id === detail?.project.id;
+  const isProjectOperationPending =
+    activeProjectOperation && model.projectOperation._tag === "ProjectOperationPending";
+  const isSavingMembership =
+    model.projectMetadataSaveInFlight ||
+    model.projectMembershipOperation._tag === "ProjectMembershipSaving" ||
+    isProjectOperationPending;
+  const isDirty = detail ? hasProjectUnpublishedChanges(detail) : false;
+  const operationLabel = isProjectOperationPending
+    ? `${model.projectOperation.kind === "unpublish" ? "Unpublishing" : model.projectOperation.kind === "delete" ? "Deleting" : "Publishing"} project…`
+    : null;
+  const isPublishingProject =
+    isProjectOperationPending && model.projectOperation.kind === "publish";
+  const isUnpublishingProject =
+    isProjectOperationPending && model.projectOperation.kind === "unpublish";
   return h.div(
     [h.Class("mx-auto max-w-4xl")],
     [
@@ -352,7 +389,25 @@ export const projectEditView = (h: Html, model: Model) => {
         : h.div(
             [h.Class("space-y-6")],
             [
-              metadata(h, model),
+              metadata(h, model, isSavingMembership),
+              ...(operationLabel
+                ? [h.p([h.Role("status"), h.Class("text-sm text-blue-300")], [operationLabel])]
+                : []),
+              ...(activeProjectOperation && model.projectOperation._tag === "ProjectOperationFailed"
+                ? [
+                    h.button(
+                      [
+                        h.Type("button"),
+                        h.OnClick(ClickedRetryProjectOperation()),
+                        h.Disabled(isSavingMembership || model.projectMetadataSaveInFlight),
+                        h.Class(
+                          "rounded-lg border border-red-700 px-3 py-2 text-sm text-red-200 disabled:opacity-40",
+                        ),
+                      ],
+                      [`Retry ${model.projectOperation.kind}`],
+                    ),
+                  ]
+                : []),
               ...(detail
                 ? [
                     h.section(
@@ -395,7 +450,9 @@ export const projectEditView = (h: Html, model: Model) => {
                         h.p(
                           [h.Class("mt-1 text-sm text-gray-400")],
                           [
-                            "Publishing synchronizes the complete published project catalog. Draft projects are excluded.",
+                            detail.project.publishedAt !== null && isDirty
+                              ? "This published project has local changes. Reorder, membership, metadata, and member changes remain local until you Republish the complete catalog."
+                              : "Publishing synchronizes the complete published project catalog. Empty projects cannot be published.",
                           ],
                         ),
                         h.div(
@@ -405,12 +462,20 @@ export const projectEditView = (h: Html, model: Model) => {
                               [
                                 h.Type("button"),
                                 h.OnClick(ClickedPublishProject({ id: detail.project.id })),
-                                h.Disabled(model.isPublishing || isSavingMembership),
+                                h.Disabled(
+                                  model.isPublishing || isSavingMembership || members.length === 0,
+                                ),
                                 h.Class(
                                   "rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40",
                                 ),
                               ],
-                              [detail.project.publishedAt === null ? "Publish" : "Republish"],
+                              [
+                                isPublishingProject
+                                  ? "Publishing…"
+                                  : detail.project.publishedAt === null
+                                    ? "Publish"
+                                    : "Republish",
+                              ],
                             ),
                             ...(detail.project.publishedAt !== null
                               ? [
@@ -423,24 +488,29 @@ export const projectEditView = (h: Html, model: Model) => {
                                         "rounded-lg border border-amber-700 px-3 py-2 text-sm text-amber-200 disabled:opacity-40",
                                       ),
                                     ],
-                                    ["Unpublish"],
+                                    [isUnpublishingProject ? "Unpublishing…" : "Unpublish"],
                                   ),
                                 ]
                               : []),
-                            h.button(
-                              [
-                                h.Type("button"),
-                                h.OnClick(
-                                  ClickedCopyLink({
-                                    url: `https://video.planetaryescape.co.za/p/${detail.project.slug}`,
-                                  }),
-                                ),
-                                h.Class(
-                                  "rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-200",
-                                ),
-                              ],
-                              [model.copiedLink ? "Copied" : "Copy project link"],
-                            ),
+                            ...(detail.project.publishedAt !== null
+                              ? [
+                                  h.button(
+                                    [
+                                      h.Type("button"),
+                                      h.OnClick(
+                                        ClickedCopyLink({
+                                          url: `${VIEWER_BASE}/p/${encodeURIComponent(detail.project.slug)}`,
+                                        }),
+                                      ),
+                                      h.Disabled(model.isPublishing || isSavingMembership),
+                                      h.Class(
+                                        "rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-200 disabled:opacity-40",
+                                      ),
+                                    ],
+                                    [model.copiedLink ? "Copied" : "Copy project link"],
+                                  ),
+                                ]
+                              : []),
                           ],
                         ),
                       ],
@@ -459,7 +529,7 @@ export const projectEditView = (h: Html, model: Model) => {
                           [
                             h.Type("button"),
                             h.OnClick(ClickedDeleteProject({ id: detail.project.id })),
-                            h.Disabled(isSavingMembership),
+                            h.Disabled(isSavingMembership || isProjectOperationPending),
                             h.Class(
                               "mt-4 rounded-lg border border-red-700 px-3 py-2 text-sm font-medium text-red-300 hover:bg-red-900/40",
                             ),
