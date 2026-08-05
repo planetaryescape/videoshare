@@ -32,6 +32,10 @@ test("Asset construction requires projectId and sortOrder to be both set or both
   ).toMatchObject({ projectId: "project-1", sortOrder: 0 });
 });
 
+test("Asset reserves the project summary route", () => {
+  expect(() => new Asset({ ...fields, slug: Slug.make("summary") })).toThrow("reserved");
+});
+
 test("Asset decoding requires projectId and sortOrder to be both set or both null", () => {
   expect(() => Schema.decodeUnknownSync(Asset)({ ...fields, projectId: "project-1" })).toThrow(
     "projectId and sortOrder",

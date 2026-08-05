@@ -31,8 +31,12 @@ CREATE TABLE assets_next (
   height INTEGER
 );
 
-INSERT INTO assets_next
-  SELECT id, slug, kind, title, description, poster_key, media_key, duration_sec,
+INSERT INTO assets_next (
+  id, slug, kind, title, description, poster_key, media_key, duration_sec,
+  password_hash, created_at, published_at, updated_at, project_id, sort_order, width, height
+)
+  SELECT id, CASE WHEN slug = 'summary' THEN 'asset-' || id ELSE slug END,
+         kind, title, description, poster_key, media_key, duration_sec,
          password_hash, created_at, published_at, updated_at, project_id, sort_order, width, height
   FROM assets;
 -- slug's UNIQUE constraint already creates its index. Older catalogs may retain this redundant index.

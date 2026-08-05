@@ -3,16 +3,20 @@ import { SqlClient } from "effect/unstable/sql";
 
 interface TableRow {
   readonly name: string;
+  readonly sql?: string;
 }
 
 interface ColumnRow {
   readonly name: string;
 }
 
-const hasTable = (sql: SqlClient.SqlClient, table: string) =>
-  sql<TableRow>`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${table}`.pipe(
-    Effect.map((rows) => rows.length > 0),
+const tableDefinition = (sql: SqlClient.SqlClient, table: string) =>
+  sql<TableRow>`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name = ${table}`.pipe(
+    Effect.map((rows) => rows[0]?.sql ?? null),
   );
+
+const hasTable = (sql: SqlClient.SqlClient, table: string) =>
+  tableDefinition(sql, table).pipe(Effect.map((definition) => definition !== null));
 
 const columnsFor = (sql: SqlClient.SqlClient, table: "assets" | "chapters" | "projects") => {
   const query =
@@ -65,8 +69,8 @@ export const migrate = Effect.gen(function* () {
   }
 
   const finalAssetColumns = yield* columnsFor(sql, "assets");
-  if (!finalAssetColumns.has("updated_at"))
-    yield* sql`ALTER TABLE assets ADD COLUMN updated_at INTEGER`;
+  const addedUpdatedAt = !finalAssetColumns.has("updated_at");
+  if (addedUpdatedAt) yield* sql`ALTER TABLE assets ADD COLUMN updated_at INTEGER`;
   if (!finalAssetColumns.has("kind")) {
     yield* sql`ALTER TABLE assets ADD COLUMN kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image'))`;
   }
@@ -82,24 +86,10 @@ export const migrate = Effect.gen(function* () {
   if (!finalAssetColumns.has("height")) {
     yield* sql`ALTER TABLE assets ADD COLUMN height INTEGER`;
   }
-  yield* sql`UPDATE assets SET updated_at = created_at WHERE updated_at IS NULL`;
-  yield* sql`DROP INDEX IF EXISTS idx_videos_slug`;
-  yield* sql`DROP INDEX IF EXISTS idx_assets_slug`;
-  yield* sql`CREATE INDEX IF NOT EXISTS idx_assets_project ON assets (project_id, sort_order)`;
-  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_project_position ON assets (project_id, sort_order) WHERE project_id IS NOT NULL`;
-  yield* sql`
-    CREATE TRIGGER IF NOT EXISTS assets_membership_insert
-    BEFORE INSERT ON assets
-    WHEN (NEW.project_id IS NULL) != (NEW.sort_order IS NULL)
-    BEGIN SELECT RAISE(ABORT, 'asset project membership fields must both be null or set'); END
-  `;
-  yield* sql`
-    CREATE TRIGGER IF NOT EXISTS assets_membership_update
-    BEFORE UPDATE OF project_id, sort_order ON assets
-    WHEN (NEW.project_id IS NULL) != (NEW.sort_order IS NULL)
-    BEGIN SELECT RAISE(ABORT, 'asset project membership fields must both be null or set'); END
-  `;
-
+  // `summary` is a project route, so persisted member assets need an addressable slug.
+  yield* sql`UPDATE assets SET slug = 'asset-' || id WHERE slug = 'summary'`;
+  if (addedUpdatedAt)
+    yield* sql`UPDATE assets SET updated_at = created_at WHERE updated_at IS NULL`;
   // Projects are deliberately independent from SQLite foreign-key enforcement: deletion explicitly unfiles members.
   yield* sql`
     CREATE TABLE IF NOT EXISTS projects (
@@ -134,6 +124,37 @@ export const migrate = Effect.gen(function* () {
       yield* sql`ALTER TABLE chapters RENAME COLUMN video_id TO asset_id`;
     }
   }
+  const assetsDefinition = yield* tableDefinition(sql, "assets");
+  if (assetsDefinition !== null && !assetsDefinition.includes("'image'")) {
+    // Preserve child rows while rebuilding the legacy two-kind CHECK constraint.
+    yield* sql`CREATE TABLE chapters_next (id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, title TEXT NOT NULL, start_sec REAL NOT NULL, sort_order INTEGER NOT NULL)`;
+    yield* sql`INSERT INTO chapters_next (id, asset_id, title, start_sec, sort_order) SELECT id, asset_id, title, start_sec, sort_order FROM chapters`;
+    yield* sql`DROP TABLE chapters`;
+    yield* sql`CREATE TABLE assets_next (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image')), title TEXT NOT NULL, description TEXT, poster_key TEXT, media_key TEXT NOT NULL, duration_sec REAL NOT NULL DEFAULT 0, password_hash TEXT, project_id TEXT, sort_order INTEGER, width INTEGER, height INTEGER, created_at INTEGER NOT NULL, published_at INTEGER, updated_at INTEGER, CHECK ((project_id IS NULL) = (sort_order IS NULL)))`;
+    yield* sql`INSERT INTO assets_next (id, slug, kind, title, description, poster_key, media_key, duration_sec, password_hash, project_id, sort_order, width, height, created_at, published_at, updated_at) SELECT id, slug, kind, title, description, poster_key, media_key, duration_sec, password_hash, project_id, sort_order, width, height, created_at, published_at, updated_at FROM assets`;
+    yield* sql`DROP TABLE assets`;
+    yield* sql`ALTER TABLE assets_next RENAME TO assets`;
+    yield* sql`CREATE TABLE chapters (id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE, title TEXT NOT NULL, start_sec REAL NOT NULL, sort_order INTEGER NOT NULL)`;
+    yield* sql`INSERT INTO chapters (id, asset_id, title, start_sec, sort_order) SELECT id, asset_id, title, start_sec, sort_order FROM chapters_next`;
+    yield* sql`DROP TABLE chapters_next`;
+  }
+
+  yield* sql`DROP INDEX IF EXISTS idx_videos_slug`;
+  yield* sql`DROP INDEX IF EXISTS idx_assets_slug`;
   yield* sql`DROP INDEX IF EXISTS idx_chapters_video`;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_assets_project ON assets (project_id, sort_order)`;
+  yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_project_position ON assets (project_id, sort_order) WHERE project_id IS NOT NULL`;
   yield* sql`CREATE INDEX IF NOT EXISTS idx_chapters_asset ON chapters (asset_id)`;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS assets_membership_insert
+    BEFORE INSERT ON assets
+    WHEN (NEW.project_id IS NULL) != (NEW.sort_order IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'asset project membership fields must both be null or set'); END
+  `;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS assets_membership_update
+    BEFORE UPDATE OF project_id, sort_order ON assets
+    WHEN (NEW.project_id IS NULL) != (NEW.sort_order IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'asset project membership fields must both be null or set'); END
+  `;
 });

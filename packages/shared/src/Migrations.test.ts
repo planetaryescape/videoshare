@@ -79,6 +79,59 @@ describe("local asset migration", () => {
     expect(Result.isFailure(result.invalidMembership)).toBe(true);
   });
 
+  test("rebuilds a legacy two-kind constraint before accepting image assets", async () => {
+    const result = await runSql(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          CREATE TABLE assets (
+            id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio')),
+            title TEXT NOT NULL, description TEXT, poster_key TEXT, media_key TEXT NOT NULL,
+            duration_sec REAL NOT NULL DEFAULT 0, password_hash TEXT,
+            project_id TEXT, sort_order INTEGER, width INTEGER, height INTEGER,
+            created_at INTEGER NOT NULL, published_at INTEGER, updated_at INTEGER
+          )
+        `;
+        yield* sql`
+          CREATE TABLE chapters (
+            id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, title TEXT NOT NULL,
+            start_sec REAL NOT NULL, sort_order INTEGER NOT NULL
+          )
+        `;
+        yield* migrate;
+        return yield* Effect.result(sql`
+          INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, width, height, created_at)
+          VALUES ('image-1', 'image_1', 'image', 'Image', 'media/image-1/original.png', 0, 640, 480, 1)
+        `);
+      }),
+    );
+
+    expect(Result.isSuccess(result)).toBe(true);
+  });
+
+  test("renames legacy summary assets so every member route is addressable", async () => {
+    const slug = await runSql(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* migrate;
+        yield* sql`
+          INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at)
+          VALUES ('legacy-summary', 'summary', 'video', 'Summary', 'media/legacy-summary/master.m3u8', 1, 1)
+        `;
+        // Simulate a catalog from before the project summary route was reserved.
+        yield* sql`UPDATE assets SET slug = 'summary' WHERE id = 'legacy-summary'`;
+        yield* migrate;
+        const rows = yield* sql<{
+          readonly slug: string;
+        }>`SELECT slug FROM assets WHERE id = 'legacy-summary'`;
+        return rows[0]?.slug;
+      }),
+    );
+
+    expect(slug).toBe("asset-legacy-summary");
+  });
+
   test("removes the redundant local slug index without relaxing slug uniqueness", async () => {
     const result = await runSql(
       Effect.gen(function* () {

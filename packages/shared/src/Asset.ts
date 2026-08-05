@@ -15,6 +15,13 @@ export const Slug = Schema.String.check(
 ).pipe(Schema.brand("Slug"));
 export type Slug = typeof Slug.Type;
 
+/** Asset member routes reserve `summary` for the project-complete page. */
+export const AssetSlug = Slug.check(
+  Schema.makeFilter((slug) =>
+    slug === "summary" ? "Asset slug `summary` is reserved" : undefined,
+  ),
+);
+
 export const Kind = Schema.Literals(["video", "audio", "image"]);
 export type Kind = typeof Kind.Type;
 
@@ -28,7 +35,7 @@ export class Chapter extends Schema.Class<Chapter>("Chapter")({
 
 const AssetFields = Schema.Struct({
   id: AssetId,
-  slug: Slug,
+  slug: AssetSlug,
   kind: Kind,
   title: Schema.String.check(Schema.isNonEmpty()),
   description: Schema.NullOr(Schema.String),

@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { Asset, ProjectId, Slug } from "./Asset.ts";
 
-const NonBlankTitle = Schema.String.check(Schema.isNonEmpty());
+const NonBlankTitle = Schema.String.check(Schema.isPattern(/\S/));
 
 export { ProjectId } from "./Asset.ts";
 

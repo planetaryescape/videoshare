@@ -387,7 +387,7 @@ describe("ProjectRepository", () => {
           [AssetId.make("a"), AssetId.make("b"), AssetId.make("c")],
           10,
         );
-        yield* assets.delete(AssetId.make("b"));
+        yield* assets.delete(AssetId.make("b"), 11);
         return yield* projects.get(ProjectId.make("one"));
       }),
     );
@@ -418,7 +418,7 @@ describe("ProjectRepository", () => {
         );
         yield* sql`UPDATE assets SET sort_order = 999999999 WHERE id = 'b'`;
         yield* sql`UPDATE assets SET sort_order = 1000000000 WHERE id = 'c'`;
-        yield* assets.delete(AssetId.make("b"));
+        yield* assets.delete(AssetId.make("b"), 11);
         return yield* projects.get(ProjectId.make("one"));
       }),
     );

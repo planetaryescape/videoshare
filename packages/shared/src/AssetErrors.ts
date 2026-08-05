@@ -116,6 +116,7 @@ export class ProjectPublicationValidationError extends Schema.TaggedErrorClass<P
       "missingMediaKey",
       "invalidMediaShape",
       "absoluteMediaKeyInProtectedProject",
+      "publishedSlugChange",
     ]),
   },
   { httpApiStatus: 422 },
@@ -130,7 +131,7 @@ export class PublishedProjectMemberMutationError extends Schema.TaggedErrorClass
   {
     assetId: Schema.String,
     projectId: Schema.String,
-    operation: Schema.Literals(["unpublish", "delete"]),
+    operation: Schema.Literals(["upload", "publish", "unpublish", "delete"]),
   },
   { httpApiStatus: 409 },
 ) {
@@ -148,22 +149,3 @@ export class ProdSyncError extends Schema.TaggedErrorClass<ProdSyncError>()(
     return `Production sync failed during ${this.operation}`;
   }
 }
-
-export const errorStatus: Record<string, number> = {
-  AssetNotFoundError: 404,
-  ProjectNotFoundError: 404,
-  InvalidProjectMembersError: 422,
-  PasswordRequiredError: 401,
-  IncorrectPasswordError: 403,
-  SlugAlreadyExistsError: 409,
-  ImageChaptersNotAllowedError: 422,
-  InvalidMediaShapeError: 422,
-  AssetPublicationValidationError: 422,
-  ProjectPublicationValidationError: 422,
-  PublishedProjectMemberMutationError: 409,
-  PersistenceError: 500,
-  ProdSyncError: 502,
-};
-
-export const statusForError = (error: { readonly _tag: string }): number =>
-  errorStatus[error._tag] ?? 500;

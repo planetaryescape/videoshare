@@ -69,10 +69,12 @@ export class AssetRepository extends Context.Service<
       asset: Asset,
     ): Effect.Effect<Asset, PersistenceError | SlugAlreadyExistsError | InvalidMediaShapeError>;
     /** Updates metadata and publication state only; media transitions use replaceMedia. */
-    update(asset: Asset): Effect.Effect<Asset, PersistenceError>;
+    update(asset: Asset): Effect.Effect<Asset, PersistenceError | SlugAlreadyExistsError>;
     /** Replaces an asset's media and clears timed-only chapters as one catalog operation. */
-    replaceMedia(asset: Asset): Effect.Effect<Asset, PersistenceError | InvalidMediaShapeError>;
-    delete(id: AssetId): Effect.Effect<void, PersistenceError>;
+    replaceMedia(
+      asset: Asset,
+    ): Effect.Effect<Asset, PersistenceError | SlugAlreadyExistsError | InvalidMediaShapeError>;
+    delete(id: AssetId, updatedAt: number): Effect.Effect<void, PersistenceError>;
     listChapters(assetId: AssetId): Effect.Effect<ReadonlyArray<Chapter>, PersistenceError>;
     replaceChapters(
       assetId: AssetId,
@@ -170,7 +172,16 @@ export class AssetRepository extends Context.Service<
             WHERE id = ${asset.id}
           `;
 
+        const assertSlugAvailable = (asset: Asset) =>
+          Effect.gen(function* () {
+            const existing = yield* sql<{ readonly id: string }>`
+              SELECT id FROM assets WHERE slug = ${asset.slug} AND id != ${asset.id}
+            `;
+            if (existing.length > 0) return yield* new SlugAlreadyExistsError({ slug: asset.slug });
+          });
+
         const update = Effect.fn("AssetRepository.update")(function* (asset: Asset) {
+          yield* assertSlugAvailable(asset);
           yield* updateMetadata(asset);
           return asset;
         }, wrapSqlError("update"));
@@ -180,6 +191,7 @@ export class AssetRepository extends Context.Service<
           if (invalidShape) return yield* invalidShape;
           yield* sql.withTransaction(
             Effect.gen(function* () {
+              yield* assertSlugAvailable(asset);
               yield* updateMetadata(asset);
               yield* updateMedia(asset);
               if (asset.kind === "image") {
@@ -190,7 +202,7 @@ export class AssetRepository extends Context.Service<
           return asset;
         }, wrapSqlError("replaceMedia"));
 
-        const del = Effect.fn("AssetRepository.delete")(function* (id: AssetId) {
+        const del = Effect.fn("AssetRepository.delete")(function* (id: AssetId, updatedAt: number) {
           yield* sql.withTransaction(
             Effect.gen(function* () {
               yield* sql`DELETE FROM chapters WHERE asset_id = ${id}`;
@@ -206,6 +218,7 @@ export class AssetRepository extends Context.Service<
               `;
               for (const [index, member] of members.entries())
                 yield* sql`UPDATE assets SET sort_order = ${index} WHERE id = ${member.id}`;
+              yield* sql`UPDATE projects SET updated_at = ${updatedAt} WHERE id = ${projectId}`;
             }),
           );
         }, wrapSqlError("delete"));
