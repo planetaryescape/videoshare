@@ -795,6 +795,38 @@ describe("asset persistence and viewer catalog", () => {
     expect(result.chapters).toHaveLength(0);
   });
 
+  test("rejects chapters for markdown assets at the SQLite repository boundary", async () => {
+    const database = sqlLayer();
+    const repositoryLayer = AssetRepository.layerNoDeps.pipe(Layer.provide(database));
+    const layer = Layer.mergeAll(database, repositoryLayer);
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repository = yield* AssetRepository;
+        const markdown = markdownAsset();
+        yield* migrate;
+        yield* repository.create(markdown);
+        const replaced = yield* Effect.result(
+          repository.replaceChapters(markdown.id, [
+            new Chapter({
+              id: ChapterId.make("markdown-chapter-1"),
+              assetId: markdown.id,
+              title: "Not allowed",
+              startSec: 0,
+              sortOrder: 0,
+            }),
+          ]),
+        );
+        return { replaced, chapters: yield* repository.listChapters(markdown.id) };
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(Result.isFailure(result.replaced)).toBe(true);
+    if (Result.isFailure(result.replaced)) {
+      expect(result.replaced.failure).toBeInstanceOf(ImageChaptersNotAllowedError);
+    }
+    expect(result.chapters).toHaveLength(0);
+  });
+
   test("update cannot bypass a media transition", async () => {
     const database = sqlLayer();
     const repositoryLayer = AssetRepository.layerNoDeps.pipe(Layer.provide(database));

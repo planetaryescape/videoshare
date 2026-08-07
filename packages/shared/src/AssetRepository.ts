@@ -255,7 +255,8 @@ export class AssetRepository extends Context.Service<
                 const assets = yield* sql<{
                   readonly kind: string;
                 }>`SELECT kind FROM assets WHERE id = ${assetId}`;
-                if (assets[0]?.kind === "image") {
+                const kind = assets[0]?.kind;
+                if (kind === "image" || kind === "markdown") {
                   return yield* new ImageChaptersNotAllowedError({
                     assetId,
                     chapterCount: chapters.length,
