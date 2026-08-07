@@ -50,6 +50,20 @@ export class ImageChaptersNotAllowedError extends Schema.TaggedErrorClass<ImageC
   }
 }
 
+export class AssetKindMismatchError extends Schema.TaggedErrorClass<AssetKindMismatchError>()(
+  "AssetKindMismatchError",
+  {
+    assetId: Schema.String,
+    expectedKind: Schema.Literals(["video", "audio", "image", "markdown"]),
+    actualKind: Schema.Literals(["video", "audio", "image", "markdown"]),
+  },
+  { httpApiStatus: 422 },
+) {
+  override get message(): string {
+    return `Asset ${this.assetId} is ${this.actualKind}, expected ${this.expectedKind}`;
+  }
+}
+
 export class InvalidMediaShapeError extends Schema.TaggedErrorClass<InvalidMediaShapeError>()(
   "InvalidMediaShapeError",
   {
@@ -132,7 +146,7 @@ export class PublishedProjectMemberMutationError extends Schema.TaggedErrorClass
   {
     assetId: Schema.String,
     projectId: Schema.String,
-    operation: Schema.Literals(["upload", "publish", "unpublish", "delete"]),
+    operation: Schema.Literals(["upload", "publish", "unpublish", "delete", "content"]),
   },
   { httpApiStatus: 409 },
 ) {

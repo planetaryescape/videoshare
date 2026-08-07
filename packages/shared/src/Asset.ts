@@ -25,6 +25,9 @@ export const AssetSlug = Slug.check(
 export const Kind = Schema.Literals(["video", "audio", "image", "markdown"]);
 export type Kind = typeof Kind.Type;
 
+/** Kinds with a timeline (duration, chapters). Image and markdown are static. */
+export const isTimedKind = (kind: Kind): boolean => kind !== "image" && kind !== "markdown";
+
 export class Chapter extends Schema.Class<Chapter>("Chapter")({
   id: ChapterId,
   assetId: AssetId,
