@@ -6,7 +6,7 @@ import { PublishedProjectMemberMutationError } from "@videoshare/shared/AssetErr
 /** Rejects direct mutations that would invalidate a locally published project snapshot. */
 export const assertDirectAssetMutationAllowed = (
   asset: Asset,
-  operation: "upload" | "publish" | "unpublish" | "delete",
+  operation: "upload" | "publish" | "unpublish" | "delete" | "content",
   projects: typeof ProjectRepository.Service,
 ) =>
   Effect.gen(function* () {
