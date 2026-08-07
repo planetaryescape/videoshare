@@ -55,6 +55,18 @@ const project = (
     updatedAt: 2,
   });
 
+test("treats an empty media key as nothing to remove from R2", async () => {
+  const result = await Effect.runPromise(
+    Effect.result(
+      Effect.provide(
+        Effect.flatMap(ProdSync, (sync) => sync.removeMedia("")),
+        ProdSync.layer,
+      ),
+    ),
+  );
+  expect(Result.isSuccess(result)).toBe(true);
+});
+
 test("derives one completion marker under each asset media prefix", () => {
   expect(mediaCompletionMarkerKey("asset-1")).toBe("media/asset-1/.complete");
   expect(mediaCompletionMarkerForMediaKey("media/asset-1/master.m3u8")).toBe(

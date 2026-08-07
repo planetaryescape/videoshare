@@ -110,7 +110,10 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
               return yield* new AssetNotFoundError({ id: params.id });
             }
             yield* assertDirectAssetMutationAllowed(found.value, "delete", projects);
-            yield* prod.removeFromProd(params.id, found.value.mediaKey);
+            // A draft that never reached production has nothing remote to remove.
+            if (found.value.publishedAt !== null) {
+              yield* prod.removeFromProd(params.id, found.value.mediaKey);
+            }
             yield* storage.removeAssetDir(params.id);
             yield* repo.delete(id, Date.now());
             return { success: true };

@@ -28,6 +28,7 @@ const repositoriesLayer = Layer.mergeAll(
   AssetRepository.layerNoDeps,
   ProjectRepository.layerNoDeps,
 ).pipe(Layer.provide(sqlLayer));
+const removeFromProdCalls: Array<string> = [];
 const fakeProdSync = Layer.succeed(
   ProdSync,
   ProdSync.of({
@@ -40,7 +41,10 @@ const fakeProdSync = Layer.succeed(
     pushToProd: () => Effect.void,
     removeMedia: () => Effect.void,
     unpublish: () => Effect.void,
-    removeFromProd: () => Effect.void,
+    removeFromProd: (assetId) =>
+      Effect.sync(() => {
+        removeFromProdCalls.push(assetId);
+      }),
   }),
 );
 const mediaReplacementLayer = MediaReplacement.layer.pipe(
@@ -238,5 +242,72 @@ describe("PUT /api/assets/:id/content", () => {
     const response = await handler(request("content-locked", "# Hello"));
     expect(response.status).toBe(409);
     expect(readField(await response.json(), "_tag")).toBe("PublishedProjectMemberMutationError");
+  });
+});
+
+describe("DELETE /api/assets/:id", () => {
+  const deleteRequest = (assetId: string) =>
+    new Request(`http://local/api/assets/${assetId}`, { method: "DELETE" });
+
+  const draftWithoutMedia = (id: string) =>
+    new Asset({
+      id: AssetId.make(id),
+      slug: Slug.make(id),
+      kind: "video",
+      title: id,
+      description: null,
+      posterKey: null,
+      mediaKey: "",
+      durationSec: 0,
+      width: null,
+      height: null,
+      passwordHash: null,
+      projectId: null,
+      sortOrder: null,
+      createdAt: 1,
+      publishedAt: null,
+      updatedAt: null,
+    });
+
+  test("deletes an unpublished draft without touching production", async () => {
+    removeFromProdCalls.length = 0;
+    const { handler } = HttpRouter.toWebHandler(appLayer);
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const assets = yield* AssetRepository;
+        yield* migrate;
+        yield* assets.create(draftWithoutMedia("delete-draft"));
+      }).pipe(Effect.provide(Layer.mergeAll(sqlLayer, repositoriesLayer))),
+    );
+
+    const response = await handler(deleteRequest("delete-draft"));
+    expect(response.status).toBe(200);
+    expect(removeFromProdCalls).toHaveLength(0);
+
+    const remaining = await Effect.runPromise(
+      Effect.gen(function* () {
+        const assets = yield* AssetRepository;
+        return yield* assets.findById(AssetId.make("delete-draft"));
+      }).pipe(Effect.provide(Layer.mergeAll(sqlLayer, repositoriesLayer))),
+    );
+    expect(Option.isNone(remaining)).toBe(true);
+  });
+
+  test("removes a published asset from production", async () => {
+    removeFromProdCalls.length = 0;
+    const { handler } = HttpRouter.toWebHandler(appLayer);
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const assets = yield* AssetRepository;
+        yield* migrate;
+        yield* assets.create(
+          new Asset({ ...videoAsset("delete-published"), publishedAt: 10, updatedAt: 10 }),
+        );
+      }).pipe(Effect.provide(Layer.mergeAll(sqlLayer, repositoriesLayer))),
+    );
+
+    const response = await handler(deleteRequest("delete-published"));
+    expect(response.status).toBe(200);
+    expect(removeFromProdCalls).toEqual(["delete-published"]);
   });
 });

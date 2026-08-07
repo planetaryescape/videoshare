@@ -327,6 +327,8 @@ const listPrefixKeys = (prefix: string) =>
 const removeR2Prefix = (mediaKey: string) =>
   Effect.gen(function* () {
     if (isAbsoluteHttpUrl(mediaKey)) return;
+    // An asset with no uploaded media has nothing in R2 to remove.
+    if (mediaKey === "") return;
     const prefix = r2KeyDir(mediaKey);
     if (prefix === "")
       return yield* new ProdSyncError({
