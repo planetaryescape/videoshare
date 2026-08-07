@@ -1,9 +1,11 @@
 import { Option } from "effect";
+import { renderMarkdown } from "@videoshare/shared/Markdown";
 import { Button, FileDrop, Input, Textarea } from "@foldkit/ui";
 import type { html } from "foldkit/html";
 import { CHAPTER_PLAYER_ERROR_ID, CHAPTER_PLAYER_ID } from "../chapterPlayback";
 import { duplicateStartSecs } from "../chapters";
 import { chapterRow } from "./chapterRow";
+import { markdownEditorSection } from "./markdownEditor";
 import {
   formatDate,
   formatDuration,
@@ -97,14 +99,22 @@ const reviewPlayer = (h: Html, video: Asset) =>
         [
           h.h2(
             [h.Class("text-sm font-medium text-gray-200")],
-            [video.kind === "image" ? "Review image" : "Review playback"],
+            [
+              video.kind === "image"
+                ? "Review image"
+                : video.kind === "markdown"
+                  ? "Review markdown"
+                  : "Review playback",
+            ],
           ),
           h.p(
             [h.Class("mt-1 text-sm text-gray-400")],
             [
               video.kind === "image"
                 ? "Review the image before publishing."
-                : "Run your final playthrough here and tag chapters as you watch.",
+                : video.kind === "markdown"
+                  ? "Preview of the last saved content."
+                  : "Run your final playthrough here and tag chapters as you watch.",
             ],
           ),
         ],
@@ -119,35 +129,49 @@ const reviewPlayer = (h: Html, video: Asset) =>
                 h.Class("block max-h-[70vh] w-full object-contain"),
               ]),
             ]
-          : [
-              (video.kind === "audio" ? h.audio : h.video)(
-                [
-                  h.Id(CHAPTER_PLAYER_ID),
-                  h.Title(video.title),
-                  h.Src(localMediaUrl(video.mediaKey)),
-                  h.DataAttribute("hls-source", localMediaUrl(video.mediaKey)),
-                  h.Controls(true),
-                  h.Preload("metadata"),
-                  h.Playsinline(true),
-                  h.Crossorigin("anonymous"),
-                  ...(video.kind === "video" && video.posterKey
-                    ? [h.Poster(localMediaUrl(video.posterKey))]
-                    : []),
-                  h.Class(
-                    video.kind === "audio" ? "block w-full" : "block aspect-video w-full bg-black",
-                  ),
-                ],
-                [],
-              ),
-              h.p(
-                [
-                  h.Id(CHAPTER_PLAYER_ERROR_ID),
-                  h.AriaLive("assertive"),
-                  h.Class("px-4 py-2 text-sm text-red-300 empty:hidden"),
-                ],
-                [],
-              ),
-            ],
+          : video.kind === "markdown"
+            ? [
+                h.div(
+                  [
+                    h.Class(
+                      "markdown-stage prose prose-invert max-w-none bg-gray-950 p-4",
+                    ),
+                    h.InnerHTML(renderMarkdown(video.body ?? "")),
+                  ],
+                  [],
+                ),
+              ]
+            : [
+                (video.kind === "audio" ? h.audio : h.video)(
+                  [
+                    h.Id(CHAPTER_PLAYER_ID),
+                    h.Title(video.title),
+                    h.Src(localMediaUrl(video.mediaKey)),
+                    h.DataAttribute("hls-source", localMediaUrl(video.mediaKey)),
+                    h.Controls(true),
+                    h.Preload("metadata"),
+                    h.Playsinline(true),
+                    h.Crossorigin("anonymous"),
+                    ...(video.kind === "video" && video.posterKey
+                      ? [h.Poster(localMediaUrl(video.posterKey))]
+                      : []),
+                    h.Class(
+                      video.kind === "audio"
+                        ? "block w-full"
+                        : "block aspect-video w-full bg-black",
+                    ),
+                  ],
+                  [],
+                ),
+                h.p(
+                  [
+                    h.Id(CHAPTER_PLAYER_ERROR_ID),
+                    h.AriaLive("assertive"),
+                    h.Class("px-4 py-2 text-sm text-red-300 empty:hidden"),
+                  ],
+                  [],
+                ),
+              ],
       ),
     ],
   );
@@ -446,7 +470,7 @@ export const editAssetView = (h: Html, model: Model) => {
                   [
                     h.p(
                       [h.Class("block text-sm font-medium text-gray-300 mb-3")],
-                      ["Upload video, audio, or image"],
+                      ["Upload video, audio, image, or markdown"],
                     ),
                     h.submodel({
                       slotId: model.videoFileDrop.id,
@@ -468,6 +492,8 @@ export const editAssetView = (h: Html, model: Model) => {
                           "image/jpeg",
                           "image/png",
                           "image/webp",
+                          ".md",
+                          "text/markdown",
                         ],
                         isDisabled: model.isUploading,
                         toView: ({ root, input }) =>
@@ -660,7 +686,10 @@ export const editAssetView = (h: Html, model: Model) => {
                 ),
               ]
             : []),
-          ...(video && video.kind !== "image" ? [chaptersSection(h, model)] : []),
+          ...(video?.kind === "markdown" ? [markdownEditorSection(h, model)] : []),
+          ...(video && video.kind !== "image" && video.kind !== "markdown"
+            ? [chaptersSection(h, model)]
+            : []),
           ...(video
             ? [
                 h.div(
@@ -684,18 +713,20 @@ export const editAssetView = (h: Html, model: Model) => {
                             ],
                           ),
                         ]
-                      : [
-                          h.div(
-                            [],
-                            [
-                              "Duration: ",
-                              h.span(
-                                [h.Class("text-gray-400")],
-                                [formatDuration(video.durationSec)],
-                              ),
-                            ],
-                          ),
-                        ]),
+                      : video.kind === "markdown"
+                        ? []
+                        : [
+                            h.div(
+                              [],
+                              [
+                                "Duration: ",
+                                h.span(
+                                  [h.Class("text-gray-400")],
+                                  [formatDuration(video.durationSec)],
+                                ),
+                              ],
+                            ),
+                          ]),
                     h.div(
                       [],
                       [

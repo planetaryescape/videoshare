@@ -114,6 +114,15 @@ export const FailedSaveChapters = m("FailedSaveChapters", { error: S.String });
 export const ClickedCopyLink = m("ClickedCopyLink", { url: S.String });
 export const CopiedLink = m("CopiedLink");
 export const FailedCopyLink = m("FailedCopyLink", { error: S.String });
+export const UpdatedMarkdownBody = m("UpdatedMarkdownBody", { body: S.String });
+export const ToggledMarkdownPreview = m("ToggledMarkdownPreview");
+export const ClickedSaveMarkdown = m("ClickedSaveMarkdown");
+export const GotMarkdownSaved = m("GotMarkdownSaved", {
+  result: S.Union([
+    S.TaggedStruct("Success", { video: AssetSchema }),
+    S.TaggedStruct("Failure", { error: S.String }),
+  ]),
+});
 
 export const Message = S.Union([
   ClickedEditAsset,
@@ -191,5 +200,9 @@ export const Message = S.Union([
   ClickedCopyLink,
   CopiedLink,
   FailedCopyLink,
+  UpdatedMarkdownBody,
+  ToggledMarkdownPreview,
+  ClickedSaveMarkdown,
+  GotMarkdownSaved,
 ]);
 export type Message = S.Schema.Type<typeof Message>;

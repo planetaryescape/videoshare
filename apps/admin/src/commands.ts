@@ -23,6 +23,7 @@ import {
   FailedUpload,
   FocusedChapterTitle,
   GeneratedChapterId,
+  GotMarkdownSaved,
   SucceededCreateAsset,
   SucceededDeleteAsset,
   SucceededLoadAssetDetail,
@@ -439,6 +440,30 @@ export const UnpublishAssetCmd = Command.define(
     const data = yield* decodeAsset(raw);
     return SucceededUnpublish({ video: data });
   }).pipe(Effect.catch((error) => Effect.succeed(FailedUnpublish({ error: errMsg(error) })))),
+);
+
+export const SaveMarkdownCmd = Command.define(
+  "SaveMarkdown",
+  { id: S.String, body: S.String },
+  GotMarkdownSaved,
+)((input: { id: string; body: string }) =>
+  Effect.gen(function* () {
+    const response = yield* tryFetch(`/api/assets/${input.id}/content`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: input.body }),
+    });
+    if (!response.ok) {
+      return yield* new HttpError({ status: response.status, statusText: response.statusText });
+    }
+    const raw = yield* tryJson(response);
+    const data = yield* decodeAsset(raw);
+    return GotMarkdownSaved({ result: { _tag: "Success", video: data } });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.succeed(GotMarkdownSaved({ result: { _tag: "Failure", error: errMsg(error) } })),
+    ),
+  ),
 );
 
 export const DeleteAssetCmd = Command.define(

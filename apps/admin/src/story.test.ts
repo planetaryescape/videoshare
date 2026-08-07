@@ -8,6 +8,7 @@ import {
   LoadAssets,
   LoadProjects,
   SaveChaptersCmd,
+  SaveMarkdownCmd,
 } from "./commands";
 import {
   BlurredChapterField,
@@ -19,6 +20,7 @@ import {
   ClickedConfirmPendingAction,
   ClickedDeleteAsset,
   ClickedEditAsset,
+  ClickedSaveMarkdown,
   ClickedUnpublish,
   FailedCreateAsset,
   FailedDeleteAsset,
@@ -27,6 +29,7 @@ import {
   FailedUploadProgress,
   FocusedChapterTitle,
   GeneratedChapterId,
+  GotMarkdownSaved,
   SubmittedCreateAsset,
   SubmittedUpload,
   SucceededCreateAsset,
@@ -35,6 +38,8 @@ import {
   SucceededSaveChapters,
   SucceededUnpublish,
   SucceededUpload,
+  ToggledMarkdownPreview,
+  UpdatedMarkdownBody,
 } from "./message";
 import { EditAsset, initialModel, type Asset } from "./model";
 import { init, update } from "./update";
@@ -440,5 +445,70 @@ describe("admin story", () => {
     );
     expect(failedModel.isUnpublishing).toBe(false);
     expect(failedModel.errorMessage).toEqual(Option.some("Unpublish failed"));
+  });
+
+  test("authors, previews, and saves markdown content", () => {
+    const markdownAsset: Asset = {
+      ...video,
+      id: "markdown-1",
+      kind: "markdown",
+      mediaKey: "media/markdown-1/content.md",
+      durationSec: 0,
+    };
+
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditAsset({ assetId: markdownAsset.id }),
+        editAsset: Option.some(markdownAsset),
+      }),
+      Story.message(UpdatedMarkdownBody({ body: "# Hello" })),
+      Story.model((model) => expect(model.markdownBody).toBe("# Hello")),
+      Story.message(ToggledMarkdownPreview()),
+      Story.model((model) => expect(model.markdownPreviewOpen).toBe(true)),
+      Story.message(ClickedSaveMarkdown()),
+      Story.model((model) => expect(model.markdownSaveStatus).toEqual({ _tag: "MarkdownSaving" })),
+      Story.Command.expectExact(SaveMarkdownCmd({ id: markdownAsset.id, body: "# Hello" })),
+      Story.Command.resolve(
+        SaveMarkdownCmd,
+        GotMarkdownSaved({ result: { _tag: "Success", video: markdownAsset } }),
+      ),
+      Story.model((model) => {
+        expect(model.markdownSaveStatus).toEqual({ _tag: "MarkdownSaved" });
+        expect(model.editAsset).toEqual(Option.some(markdownAsset));
+      }),
+    );
+  });
+
+  test("surfaces markdown save failures", () => {
+    const markdownAsset: Asset = {
+      ...video,
+      id: "markdown-2",
+      kind: "markdown",
+      mediaKey: "media/markdown-2/content.md",
+      durationSec: 0,
+    };
+
+    Story.story(
+      update,
+      Story.with({
+        ...initialModel(),
+        screen: EditAsset({ assetId: markdownAsset.id }),
+        editAsset: Option.some(markdownAsset),
+        markdownBody: "# Draft",
+      }),
+      Story.message(ClickedSaveMarkdown()),
+      Story.Command.resolve(
+        SaveMarkdownCmd,
+        GotMarkdownSaved({ result: { _tag: "Failure", error: "Save failed" } }),
+      ),
+      Story.model((model) =>
+        expect(model.markdownSaveStatus).toEqual({
+          _tag: "MarkdownSaveFailed",
+          error: "Save failed",
+        }),
+      ),
+    );
   });
 });

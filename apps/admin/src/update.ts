@@ -8,6 +8,10 @@ import {
   DeleteAssetConfirmation,
   DeleteProjectConfirmation,
   EditAsset,
+  MarkdownSaveIdle,
+  MarkdownSaveFailed,
+  MarkdownSaved,
+  MarkdownSaving,
   ProjectEdit,
   ProjectList,
   ProjectsFailed,
@@ -43,6 +47,7 @@ import {
   PublishAssetCmd,
   SaveChaptersCmd,
   SaveAssetCmd,
+  SaveMarkdownCmd,
   UnpublishAssetCmd,
   UploadAssetCmd,
   LoadProjects,
@@ -599,6 +604,9 @@ export const update: (model: Model, message: Message) => Update = (model, messag
                 chapterSaveInFlight: () => false,
                 chapterSaveQueued: () => false,
                 chapterSaveSnapshot: () => [],
+                markdownBody: () => "",
+                markdownPreviewOpen: () => false,
+                markdownSaveStatus: () => MarkdownSaveIdle(),
                 projectOperation: () => ProjectOperationIdle(),
                 projectMembershipOperation: () => ProjectMembershipIdle(),
                 isPublishing: () => false,
@@ -624,6 +632,9 @@ export const update: (model: Model, message: Message) => Update = (model, messag
           chapterSaveInFlight: () => false,
           chapterSaveQueued: () => false,
           chapterSaveSnapshot: () => [],
+          markdownBody: () => "",
+          markdownPreviewOpen: () => false,
+          markdownSaveStatus: () => MarkdownSaveIdle(),
           selectedFile: () => Option.none(),
           selectedPoster: () => Option.none(),
           copiedLink: () => false,
@@ -928,6 +939,10 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               chapterSaveInFlight: () => false,
               chapterSaveQueued: () => false,
               chapterSaveSnapshot: () => [],
+              markdownBody: () =>
+                msg.video.kind === "markdown" && msg.video.body !== undefined
+                  ? msg.video.body
+                  : "",
             })
           : noCmd(model),
       FailedLoadAssetDetail: (msg: { id: string; error: string }) =>
@@ -1041,5 +1056,26 @@ export const update: (model: Model, message: Message) => Update = (model, messag
       CopiedLink: () => withEvo(model, { copiedLink: () => true }),
       FailedCopyLink: (msg: { error: string }) =>
         withEvo(model, { errorMessage: () => Option.some(msg.error) }),
+      UpdatedMarkdownBody: ({ body }) => withEvo(model, { markdownBody: () => body }),
+      ToggledMarkdownPreview: () =>
+        withEvo(model, { markdownPreviewOpen: () => !model.markdownPreviewOpen }),
+      ClickedSaveMarkdown: () => {
+        if (Option.isNone(model.editAsset) || model.markdownSaveStatus._tag === "MarkdownSaving") {
+          return noCmd(model);
+        }
+        return withEvo(
+          model,
+          { markdownSaveStatus: () => MarkdownSaving() },
+          SaveMarkdownCmd({ id: model.editAsset.value.id, body: model.markdownBody }),
+        );
+      },
+      GotMarkdownSaved: ({ result }) =>
+        result._tag === "Success"
+          ? withEvo(model, {
+              editAsset: () => Option.some(result.video),
+              assets: () => model.assets.map((v) => (v.id === result.video.id ? result.video : v)),
+              markdownSaveStatus: () => MarkdownSaved(),
+            })
+          : withEvo(model, { markdownSaveStatus: () => MarkdownSaveFailed({ error: result.error }) }),
     }),
   );

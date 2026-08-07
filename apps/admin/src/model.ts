@@ -75,6 +75,18 @@ export const PendingConfirmation = S.Union([
 ]);
 export type PendingConfirmation = typeof PendingConfirmation.Type;
 
+export const MarkdownSaveIdle = ts("MarkdownSaveIdle");
+export const MarkdownSaving = ts("MarkdownSaving");
+export const MarkdownSaved = ts("MarkdownSaved");
+export const MarkdownSaveFailed = ts("MarkdownSaveFailed", { error: S.String });
+export const MarkdownSaveStatus = S.Union([
+  MarkdownSaveIdle,
+  MarkdownSaving,
+  MarkdownSaved,
+  MarkdownSaveFailed,
+]);
+export type MarkdownSaveStatus = typeof MarkdownSaveStatus.Type;
+
 export const Model = S.Struct({
   screen: Screen,
   assets: S.Array(AssetSchema),
@@ -99,6 +111,9 @@ export const Model = S.Struct({
   chapterSaveInFlight: S.Boolean,
   chapterSaveQueued: S.Boolean,
   chapterSaveSnapshot: S.Array(ChapterSchema),
+  markdownBody: S.String,
+  markdownPreviewOpen: S.Boolean,
+  markdownSaveStatus: MarkdownSaveStatus,
   videoFileDrop: FileDrop.Model,
   posterFileDrop: FileDrop.Model,
   confirmationDialog: Dialog.Model,
@@ -138,6 +153,9 @@ export const initialModel = (): Model => ({
   chapterSaveInFlight: false,
   chapterSaveQueued: false,
   chapterSaveSnapshot: [],
+  markdownBody: "",
+  markdownPreviewOpen: false,
+  markdownSaveStatus: MarkdownSaveIdle(),
   videoFileDrop: FileDrop.init({ id: "video-file" }),
   posterFileDrop: FileDrop.init({ id: "poster-file" }),
   confirmationDialog: Dialog.init({ id: "video-action-confirmation" }),
