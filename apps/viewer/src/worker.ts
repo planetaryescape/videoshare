@@ -3,6 +3,7 @@ import { ViewerCatalog } from "@videoshare/shared/ViewerCatalog";
 import { r2KeyDir } from "@videoshare/shared/MediaKey";
 import { sha256Hex } from "@videoshare/shared/Sha256";
 import { verifyProjectPassword } from "@videoshare/shared/ProjectPassword";
+import { renderMarkdown } from "@videoshare/shared/Markdown";
 import type { Chapter, Asset } from "@videoshare/shared/Asset";
 import { Effect, Layer, Option } from "effect";
 import playerCss from "../generated/player.css?raw";
@@ -57,6 +58,24 @@ const projectVersion = hashString(projectCss + projectScript);
 const faviconLinks = `<link rel="icon" type="image/png" sizes="32x32" href="/_assets/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/_assets/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/_assets/apple-touch-icon.png">`;
+
+const markdownStageCss = `.markdown-stage { max-width: 68ch; margin: 0 auto; padding: 8px 4px; color: #d7deea; line-height: 1.65; overflow-wrap: break-word; }
+      .markdown-stage h1, .markdown-stage h2, .markdown-stage h3, .markdown-stage h4, .markdown-stage h5, .markdown-stage h6 { color: #f5f7fb; line-height: 1.3; margin: 1.4em 0 0.5em; }
+      .markdown-stage h1:first-child, .markdown-stage h2:first-child, .markdown-stage h3:first-child { margin-top: 0; }
+      .markdown-stage p { color: #d7deea; margin: 0 0 1em; }
+      .markdown-stage a { color: #9b87ff; }
+      .markdown-stage a:hover { color: #c9beff; }
+      .markdown-stage ul, .markdown-stage ol { margin: 0 0 1em; padding-left: 1.4em; }
+      .markdown-stage li { margin: 0.3em 0; }
+      .markdown-stage blockquote { margin: 0 0 1em; padding: 4px 16px; border-left: 3px solid #7c5cff; color: #b8c0d0; }
+      .markdown-stage code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(255,255,255,0.08); padding: 0.15em 0.4em; border-radius: 6px; font-size: 0.9em; }
+      .markdown-stage pre { background: #14121f; border: 1px solid #2b2744; border-radius: 12px; padding: 14px 16px; overflow-x: auto; margin: 0 0 1em; }
+      .markdown-stage pre code { background: none; padding: 0; border-radius: 0; }
+      .markdown-stage table { border-collapse: collapse; margin: 0 0 1em; display: block; overflow-x: auto; max-width: 100%; }
+      .markdown-stage th, .markdown-stage td { border: 1px solid #302d43; padding: 8px 12px; text-align: left; }
+      .markdown-stage th { color: #f5f7fb; background: rgba(255,255,255,0.04); }
+      .markdown-stage img { max-width: 100%; height: auto; border-radius: 10px; }
+      .markdown-stage hr { border: 0; border-top: 1px solid #302d43; margin: 1.5em 0; }`;
 
 const catalogLayer = (env: ViewerEnv) =>
   ViewerCatalog.layerNoDeps.pipe(Layer.provide(D1Client.layer({ db: env.DB })));
@@ -292,6 +311,7 @@ const viewerPage = (
   slug: string,
   asset: Asset,
   chapters: ReadonlyArray<Chapter>,
+  markdownHtml: string | null,
 ) => {
   const isAudio = asset.kind === "audio";
   const isImage = asset.kind === "image";
@@ -332,6 +352,8 @@ const viewerPage = (
       media-player[data-view-type="audio"] { aspect-ratio: auto; background: transparent; }
       .player-shell.is-audio { background: transparent; box-shadow: none; border-radius: 0; }
       media-video-layout { --media-brand: #7c5cff; --media-focus-ring-color: #9b87ff; }
+      .player-shell:has(.markdown-stage) { background: transparent; box-shadow: none; border-radius: 0; }
+      ${markdownStageCss}
       .meta { display: grid; gap: 24px; margin-top: 24px; }
       .chapters { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
       .chapters button { display: flex; width: 100%; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 0; border-radius: 14px; background: rgba(255,255,255,0.05); color: #d7deea; font: inherit; text-align: left; cursor: pointer; transition: background-color 150ms ease, transform 150ms ease; }
@@ -347,7 +369,7 @@ const viewerPage = (
   <body>
     <main>
       <div class="player-shell${isAudio ? " is-audio" : ""}">
-        ${renderStage(asset, manifestUrl ?? asset.mediaKey, posterUrl, chaptersTrack)}
+        ${renderStage(asset, manifestUrl ?? asset.mediaKey, posterUrl, chaptersTrack, markdownHtml)}
       </div>
       <div class="meta">
         <div>
@@ -431,6 +453,20 @@ const serveR2Media = async (
   headers.set("content-type", object.httpMetadata?.contentType ?? r2ContentType(key));
   headers.set("cache-control", cacheControl);
   return new Response(request.method === "HEAD" ? null : object.body, { headers });
+};
+
+/**
+ * Fetches and renders a markdown asset's content.md from R2. Never fetched for non-markdown
+ * assets, and a missing or unreadable object degrades to an empty article instead of failing
+ * the whole page.
+ */
+const fetchMarkdownHtml = async (env: ViewerEnv, mediaKey: string): Promise<string | null> => {
+  if (isAbsoluteUrl(mediaKey)) return null;
+  const key = `${r2KeyDir(mediaKey)}content.md`;
+  const object = await env.BUCKET.get(key);
+  if (!object || !object.body) return null;
+  const source = await new Response(object.body).text();
+  return renderMarkdown(source);
 };
 
 const serveMedia = async (env: ViewerEnv, request: Request, slug: string, file: string) => {
@@ -552,12 +588,22 @@ const serveProject = async (
       );
   }
   const selected = assetSlug === "summary" ? null : page.value.selected;
+  const markdownHtmlByAssetId = new Map(
+    await Promise.all(
+      page.value.assets
+        .filter((asset) => asset.kind === "markdown")
+        .map(
+          async (asset) => [asset.id, await fetchMarkdownHtml(env, asset.mediaKey)] as const,
+        ),
+    ),
+  );
   const stages = page.value.assets.map((asset) =>
     renderStage(
       asset,
       projectMediaUrl(projectSlug, asset.slug, asset.mediaKey, project.passwordHash),
       null,
       null,
+      markdownHtmlByAssetId.get(asset.id) ?? null,
     ),
   );
   return new Response(
@@ -634,7 +680,10 @@ const serveAssetPage = async (env: ViewerEnv, request: Request, url: URL, slug: 
       }
     }
 
-    return new Response(viewerPage(url.origin, slug, asset, chapters), {
+    const markdownHtml =
+      asset.kind === "markdown" ? await fetchMarkdownHtml(env, asset.mediaKey) : null;
+
+    return new Response(viewerPage(url.origin, slug, asset, chapters, markdownHtml), {
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   } catch {

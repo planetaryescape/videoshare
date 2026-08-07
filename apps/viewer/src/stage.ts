@@ -6,9 +6,14 @@ export const renderStage = (
   mediaUrl: string,
   posterUrl: string | null,
   chaptersTrack: string | null,
+  markdownHtml?: string | null,
 ) => {
   if (asset.kind === "image") {
     return `<div class="image-stage"><img src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(asset.title)}"></div>`;
+  }
+
+  if (asset.kind === "markdown") {
+    return `<article class="markdown-stage">${markdownHtml ?? ""}</article>`;
   }
 
   const isAudio = asset.kind === "audio";

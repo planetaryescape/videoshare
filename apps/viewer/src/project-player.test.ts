@@ -40,6 +40,7 @@ describe("ProjectPlayer", () => {
     expect(isTimedKind("audio")).toBe(true);
     expect(isTimedKind("video")).toBe(true);
     expect(isTimedKind("image")).toBe(false);
+    expect(isTimedKind("markdown")).toBe(false);
     expect(isTimedKind("document")).toBe(false);
     expect(isTimedKind(undefined)).toBe(false);
   });

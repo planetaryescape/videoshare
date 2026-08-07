@@ -99,6 +99,37 @@ const viewerEnv = (database: Database): ViewerEnv => ({
   },
 });
 
+const encoder = new TextEncoder();
+
+const streamFromText = (text: string) =>
+  new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(text));
+      controller.close();
+    },
+  });
+
+/** BUCKET stub serving markdown source for `content.md` keys, and 404ing every other object. */
+const markdownBucketEnv = (
+  database: Database,
+  markdownByKey: Record<string, string>,
+): ViewerEnv => ({
+  DB: d1Database(database),
+  BUCKET: {
+    async get(key) {
+      const source = markdownByKey[key];
+      if (source === undefined) return null;
+      return {
+        body: streamFromText(source),
+        httpEtag: `etag-${key}`,
+        size: source.length,
+        httpMetadata: { contentType: "text/markdown; charset=utf-8" },
+        writeHttpMetadata() {},
+      };
+    },
+  },
+});
+
 const setupCatalog = (database: Database) => {
   database.exec(`
     CREATE TABLE assets (
@@ -216,6 +247,85 @@ describe("protected project routes", () => {
         )
       ).status,
     ).toBe(200);
+  });
+});
+
+describe("markdown project members", () => {
+  test("renders a markdown member's HTML inline on the project page", async () => {
+    using database = new Database(":memory:");
+    setupCatalog(database);
+    database
+      .query(
+        "INSERT INTO assets VALUES ('md-1', 'notes', 'markdown', 'Notes', NULL, NULL, 'media/md-1/content.md', 0, NULL, NULL, NULL, 'project-1', 1, 1, 2, 2)",
+      )
+      .run();
+    const env = markdownBucketEnv(database, {
+      "media/md-1/content.md": "# Hello\n\nSome **bold** text.",
+    });
+
+    const response = await worker.fetch(
+      new Request("https://viewer.example/p/project-route/notes"),
+      env,
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('<article class="markdown-stage">');
+    expect(html).toContain("<h1>Hello</h1>");
+    expect(html).toContain("<strong>bold</strong>");
+  });
+
+  test("does not leak markdown content to an unauthenticated request on a protected project", async () => {
+    using database = new Database(":memory:");
+    setupCatalog(database);
+    const passwordHash = await hashProjectPassword("correct horse");
+    database
+      .query(
+        "INSERT INTO projects VALUES ('protected-md', 'protected-md', 'Protected', NULL, ?, 1, 2, 2)",
+      )
+      .run(passwordHash);
+    database
+      .query(
+        "INSERT INTO assets VALUES ('md-2', 'secret-notes', 'markdown', 'Secret notes', NULL, NULL, 'media/md-2/content.md', 0, NULL, NULL, NULL, 'protected-md', 0, 1, 2, 2)",
+      )
+      .run();
+    const env = markdownBucketEnv(database, {
+      "media/md-2/content.md": "# Top secret",
+    });
+
+    const pageResponse = await worker.fetch(
+      new Request("https://viewer.example/p/protected-md/secret-notes"),
+      env,
+    );
+    expect(pageResponse.status).toBe(401);
+    const pageHtml = await pageResponse.text();
+    expect(pageHtml).not.toContain("Top secret");
+
+    const mediaResponse = await worker.fetch(
+      new Request(
+        "https://viewer.example/p/protected-md/media/secret-notes/content.md",
+      ),
+      env,
+    );
+    expect(mediaResponse.status).toBe(404);
+  });
+
+  test("degrades to an empty article instead of 500ing when the R2 object is missing", async () => {
+    using database = new Database(":memory:");
+    setupCatalog(database);
+    database
+      .query(
+        "INSERT INTO assets VALUES ('md-3', 'missing-notes', 'markdown', 'Missing notes', NULL, NULL, 'media/md-3/content.md', 0, NULL, NULL, NULL, 'project-1', 1, 1, 2, 2)",
+      )
+      .run();
+    const env = markdownBucketEnv(database, {});
+
+    const response = await worker.fetch(
+      new Request("https://viewer.example/p/project-route/missing-notes"),
+      env,
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('<article class="markdown-stage"></article>');
   });
 });
 
