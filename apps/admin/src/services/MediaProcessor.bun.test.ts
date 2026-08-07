@@ -1,7 +1,11 @@
 import { NodeFileSystem, NodePath } from "@effect/platform-node";
 import { Effect, Layer, Result } from "effect";
 import { afterEach, describe, expect, test } from "bun:test";
-import { InvalidImageError, UnsupportedMediaError } from "../errors/MediaErrors.ts";
+import {
+  InvalidImageError,
+  InvalidMarkdownError,
+  UnsupportedMediaError,
+} from "../errors/MediaErrors.ts";
 import { ProgressBus } from "./ProgressBus.ts";
 import { MediaProcessor } from "./MediaProcessor.ts";
 import { Storage } from "./Storage.ts";
@@ -20,6 +24,10 @@ const assetIds = [
   "image-corrupt-png",
   "image-corrupt-webp",
   "image-header-only-gif",
+  "markdown-basic",
+  "markdown-extension",
+  "markdown-oversized",
+  "markdown-invalid-utf8",
 ];
 
 const bytes = (base64: string) => Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
@@ -142,6 +150,59 @@ describe("MediaProcessor image processing", () => {
     if (Result.isFailure(outcome.result)) {
       expect(outcome.result.failure).toBeInstanceOf(InvalidImageError);
       expect("cause" in outcome.result.failure).toBe(false);
+    }
+    expect(outcome.persisted).toBe(false);
+  });
+});
+
+describe("MediaProcessor markdown processing", () => {
+  test("stores .md uploads as content.md", async () => {
+    const source = new TextEncoder().encode("# Hello\n\nSome *markdown*.");
+    const result = await Effect.runPromise(
+      process("markdown-basic", new File([source], "notes.md", { type: "text/markdown" })),
+    );
+
+    expect(result.processed).toMatchObject({
+      kind: "markdown",
+      durationSec: 0,
+      filename: "content.md",
+      width: null,
+      height: null,
+    });
+    expect(result.stored).toEqual(source);
+  });
+
+  test("accepts the .markdown extension", async () => {
+    const source = new TextEncoder().encode("# Title");
+    const result = await Effect.runPromise(
+      process("markdown-extension", new File([source], "notes.markdown")),
+    );
+
+    expect(result.processed).toMatchObject({ kind: "markdown", filename: "content.md" });
+  });
+
+  test("rejects oversized markdown", async () => {
+    const source = new Uint8Array(1024 * 1024 + 1);
+    const outcome = await Effect.runPromise(
+      processEither("markdown-oversized", new File([source], "big.md")),
+    );
+
+    expect(Result.isFailure(outcome.result)).toBe(true);
+    if (Result.isFailure(outcome.result)) {
+      expect(outcome.result.failure).toBeInstanceOf(InvalidMarkdownError);
+    }
+    expect(outcome.persisted).toBe(false);
+  });
+
+  test("rejects invalid UTF-8", async () => {
+    const source = Uint8Array.of(0xff, 0xfe, 0xfd);
+    const outcome = await Effect.runPromise(
+      processEither("markdown-invalid-utf8", new File([source], "bad.md")),
+    );
+
+    expect(Result.isFailure(outcome.result)).toBe(true);
+    if (Result.isFailure(outcome.result)) {
+      expect(outcome.result.failure).toBeInstanceOf(InvalidMarkdownError);
     }
     expect(outcome.persisted).toBe(false);
   });

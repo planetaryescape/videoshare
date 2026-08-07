@@ -64,6 +64,11 @@ export const AssetWithChapters = Schema.Struct({
 });
 export type AssetWithChapters = typeof AssetWithChapters.Type;
 
+export const UpdateAssetContentRequest = Schema.Struct({
+  body: Schema.String,
+});
+export type UpdateAssetContentRequest = typeof UpdateAssetContentRequest.Type;
+
 export const AssetListResponse = Schema.Array(BrowserProjectAsset);
 export type AssetListResponse = typeof AssetListResponse.Type;
 

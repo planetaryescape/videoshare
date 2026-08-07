@@ -19,3 +19,13 @@ export class InvalidImageError extends Schema.TaggedErrorClass<InvalidImageError
     return `Invalid image file: ${this.filename}`;
   }
 }
+
+export class InvalidMarkdownError extends Schema.TaggedErrorClass<InvalidMarkdownError>()(
+  "InvalidMarkdownError",
+  { filename: Schema.String },
+  { httpApiStatus: 400 },
+) {
+  override get message(): string {
+    return `Invalid markdown file: ${this.filename}`;
+  }
+}

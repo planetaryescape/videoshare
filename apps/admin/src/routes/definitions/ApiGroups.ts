@@ -7,6 +7,7 @@ import {
   PersistenceError,
   ProdSyncError,
   AssetPublicationValidationError,
+  AssetKindMismatchError,
   SlugAlreadyExistsError,
   AssetNotFoundError,
   ImageChaptersNotAllowedError,
@@ -24,11 +25,16 @@ import {
   TranscodeError,
 } from "../../errors/TranscodeErrors.ts";
 import { NotTranscodedError, UploadValidationError } from "../../errors/UploadErrors.ts";
-import { InvalidImageError, UnsupportedMediaError } from "../../errors/MediaErrors.ts";
+import {
+  InvalidImageError,
+  InvalidMarkdownError,
+  UnsupportedMediaError,
+} from "../../errors/MediaErrors.ts";
 import {
   CreateAssetRequest,
   DeleteResponse,
   UpdateAssetRequest,
+  UpdateAssetContentRequest,
   AssetListResponse,
   AssetWithChapters,
   AssetIdPath,
@@ -55,7 +61,7 @@ export class AssetsApi extends HttpApiGroup.make("assets")
     HttpApiEndpoint.get("getAsset", "/:id", {
       params: AssetIdPath,
       success: AssetWithChapters,
-      error: [AssetNotFoundError, PersistenceError],
+      error: [AssetNotFoundError, PersistenceError, StorageError],
     }),
   )
   .add(
@@ -85,6 +91,23 @@ export class AssetsApi extends HttpApiGroup.make("assets")
       error: [
         AssetNotFoundError,
         PublishedProjectMemberMutationError,
+        PersistenceError,
+        StorageError,
+        ProdSyncError,
+      ],
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("updateAssetContent", "/:id/content", {
+      params: AssetIdPath,
+      payload: UpdateAssetContentRequest,
+      success: BrowserProjectAsset,
+      error: [
+        AssetNotFoundError,
+        AssetKindMismatchError,
+        PublishedProjectMemberMutationError,
+        SlugAlreadyExistsError,
+        InvalidMediaShapeError,
         PersistenceError,
         StorageError,
         ProdSyncError,
@@ -195,6 +218,7 @@ export class UploadApi extends HttpApiGroup.make("upload")
         TranscodeError,
         InvalidConversionError,
         InvalidImageError,
+        InvalidMarkdownError,
         UnsupportedMediaError,
         InvalidMediaShapeError,
         PublishedProjectMemberMutationError,

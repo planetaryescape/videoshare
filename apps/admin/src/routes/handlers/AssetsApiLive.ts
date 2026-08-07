@@ -1,11 +1,16 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { AssetRepository } from "@videoshare/shared/AssetRepository";
 import { ProjectRepository } from "@videoshare/shared/ProjectRepository";
-import { Asset, AssetId } from "@videoshare/shared/Asset";
-import { AssetNotFoundError, ImageChaptersNotAllowedError } from "@videoshare/shared/AssetErrors";
+import { Asset, AssetId, isTimedKind } from "@videoshare/shared/Asset";
+import {
+  AssetKindMismatchError,
+  AssetNotFoundError,
+  ImageChaptersNotAllowedError,
+} from "@videoshare/shared/AssetErrors";
 import { generateSlug } from "@videoshare/shared/Slug";
 import { Effect, Option } from "effect";
 import { Storage } from "../../services/Storage.ts";
+import { MediaReplacement } from "../../services/MediaReplacement.ts";
 import { chaptersFromInput } from "../../schemas/Chapters.ts";
 import { ProdSync } from "../../prod.ts";
 import {
@@ -21,6 +26,7 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
     const storage = yield* Storage;
     const prod = yield* ProdSync;
     const gate = yield* PublicationGate;
+    const replacement = yield* MediaReplacement;
 
     return handlers
       .handle("listAssets", () => repo.list())
@@ -31,7 +37,14 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
             return yield* new AssetNotFoundError({ id: params.id });
           }
           const chapters = yield* repo.listChapters(found.value.id);
-          return { video: found.value, chapters };
+          if (found.value.kind !== "markdown") {
+            return { video: found.value, chapters };
+          }
+          const exists = yield* storage.exists(`${found.value.id}/content.md`);
+          const body = exists
+            ? new TextDecoder().decode(yield* storage.readFile(`${found.value.id}/content.md`))
+            : "";
+          return { video: { ...found.value, body }, chapters };
         }),
       )
       .handle("createAsset", ({ payload }) =>
@@ -72,7 +85,7 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
               description: payload.description ?? found.value.description,
               updatedAt: Date.now(),
             });
-            if (updated.kind === "image" && (payload.chapters?.length ?? 0) > 0)
+            if (!isTimedKind(updated.kind) && (payload.chapters?.length ?? 0) > 0)
               return yield* new ImageChaptersNotAllowedError({
                 assetId: updated.id,
                 chapterCount: payload.chapters?.length ?? 0,
@@ -101,6 +114,31 @@ export const AssetsApiLive = HttpApiBuilder.group(AdminApi, "assets", (handlers)
             yield* storage.removeAssetDir(params.id);
             yield* repo.delete(id, Date.now());
             return { success: true };
+          }),
+        ),
+      )
+      .handle("updateAssetContent", ({ params, payload }) =>
+        gate.serialize(
+          Effect.gen(function* () {
+            const found = yield* repo.findById(AssetId.make(params.id));
+            if (Option.isNone(found)) {
+              return yield* new AssetNotFoundError({ id: params.id });
+            }
+            if (found.value.kind !== "markdown") {
+              return yield* new AssetKindMismatchError({
+                assetId: found.value.id,
+                expectedKind: "markdown",
+                actualKind: found.value.kind,
+              });
+            }
+            yield* assertDirectAssetMutationAllowed(found.value, "content", projects);
+            yield* storage.ensureAssetDir(found.value.id);
+            yield* storage.writeFile(
+              `${found.value.id}/content.md`,
+              new TextEncoder().encode(payload.body),
+            );
+            const updated = new Asset({ ...found.value, updatedAt: Date.now() });
+            return yield* replacement.replace(found.value, updated);
           }),
         ),
       );

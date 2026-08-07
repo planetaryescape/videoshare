@@ -14,7 +14,7 @@ import {
 } from "mediabunny";
 import type { ConversionAudioOptions, VideoSample } from "mediabunny";
 import type { Kind } from "@videoshare/shared/Asset";
-import { InvalidImageError, UnsupportedMediaError } from "../errors/MediaErrors.ts";
+import { InvalidImageError, InvalidMarkdownError, UnsupportedMediaError } from "../errors/MediaErrors.ts";
 import {
   InvalidConversionError,
   NoAssetTrackError,
@@ -24,9 +24,12 @@ import {
 import type { StorageError } from "../errors/StorageErrors.ts";
 import { ProgressBus } from "./ProgressBus.ts";
 import { Storage } from "./Storage.ts";
+import * as Telemetry from "./Telemetry.ts";
 
 const abrRungs: ReadonlyArray<number> = [1080, 720, 480];
 const maxImageBytes = 50 * 1024 * 1024;
+const maxMarkdownBytes = 1024 * 1024;
+const markdownExtensionPattern = /\.(md|markdown)$/i;
 
 const selectAbrHeights = (sourceHeight: number): ReadonlyArray<number> => {
   const selected = abrRungs.filter((h) => h <= sourceHeight);
@@ -185,6 +188,13 @@ export type ProcessedMedia =
       readonly height: number;
     }
   | {
+      readonly kind: "markdown";
+      readonly durationSec: 0;
+      readonly filename: "content.md";
+      readonly width: null;
+      readonly height: null;
+    }
+  | {
       readonly kind: "video" | "audio";
       readonly durationSec: number;
       readonly filename: "master.m3u8";
@@ -240,6 +250,7 @@ export interface MediaProcessorService {
     ProcessedMedia,
     | UnsupportedMediaError
     | InvalidImageError
+    | InvalidMarkdownError
     | NoAssetTrackError
     | PosterDecodeError
     | TranscodeError
@@ -312,6 +323,35 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
               ...dimensions,
             };
             return image;
+          }
+
+          if (markdownExtensionPattern.test(file.name)) {
+            if (file.size > maxMarkdownBytes)
+              return yield* new InvalidMarkdownError({ filename: file.name });
+            const bytes = new Uint8Array(
+              yield* Effect.tryPromise({
+                try: () => file.arrayBuffer(),
+                catch: () => new InvalidMarkdownError({ filename: file.name }),
+              }),
+            );
+            const source = yield* Effect.try({
+              try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+              catch: () => new InvalidMarkdownError({ filename: file.name }),
+            });
+            yield* storage.resetAssetDir(assetId);
+            yield* storage.writeFile(
+              `${assetId}/content.md`,
+              new TextEncoder().encode(source),
+            );
+            yield* progress.publish({ assetId, stage: "done", pct: 100 });
+            const markdown: ProcessedMedia = {
+              kind: "markdown",
+              durationSec: 0,
+              filename: "content.md",
+              width: null,
+              height: null,
+            };
+            return markdown;
           }
 
           yield* storage.resetAssetDir(assetId);
@@ -441,7 +481,12 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
 
       return MediaProcessor.of({
         process: (assetId, file) =>
-          process(assetId, file).pipe(Effect.provideService(Storage, storage)),
+          Telemetry.trace(
+            "admin.media.process",
+            { "media.input_bytes": file.size },
+            process(assetId, file).pipe(Effect.provideService(Storage, storage)),
+            { successAttributes: (media) => ({ "media.kind": media.kind }) },
+          ),
         prepareCoverImage,
         writeCoverImage: (assetId, jpeg) => storage.writeFile(`${assetId}/poster.jpg`, jpeg),
       });
