@@ -122,7 +122,21 @@ export class AssetRepository extends Context.Service<
               reason: "imageRequiresZeroDurationAndPositiveDimensions",
             });
           }
-          if (asset.kind !== "image" && (asset.width !== null || asset.height !== null)) {
+          if (
+            asset.kind === "markdown" &&
+            (asset.durationSec !== 0 || asset.width !== null || asset.height !== null)
+          ) {
+            return new InvalidMediaShapeError({
+              assetId: asset.id,
+              kind: asset.kind,
+              reason: "markdownRequiresZeroDurationAndNullDimensions",
+            });
+          }
+          if (
+            asset.kind !== "image" &&
+            asset.kind !== "markdown" &&
+            (asset.width !== null || asset.height !== null)
+          ) {
             return new InvalidMediaShapeError({
               assetId: asset.id,
               kind: asset.kind,

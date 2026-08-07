@@ -44,7 +44,7 @@ export const migrate = Effect.gen(function* () {
       CREATE TABLE assets (
         id TEXT PRIMARY KEY,
         slug TEXT NOT NULL UNIQUE,
-        kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image')),
+        kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image', 'markdown')),
         title TEXT NOT NULL,
         description TEXT,
         poster_key TEXT,
@@ -72,7 +72,7 @@ export const migrate = Effect.gen(function* () {
   const addedUpdatedAt = !finalAssetColumns.has("updated_at");
   if (addedUpdatedAt) yield* sql`ALTER TABLE assets ADD COLUMN updated_at INTEGER`;
   if (!finalAssetColumns.has("kind")) {
-    yield* sql`ALTER TABLE assets ADD COLUMN kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image'))`;
+    yield* sql`ALTER TABLE assets ADD COLUMN kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image', 'markdown'))`;
   }
   if (!finalAssetColumns.has("project_id")) {
     yield* sql`ALTER TABLE assets ADD COLUMN project_id TEXT`;
@@ -157,12 +157,14 @@ export const migrate = Effect.gen(function* () {
     }
   }
   const assetsDefinition = yield* tableDefinition(sql, "assets");
-  if (assetsDefinition !== null && !assetsDefinition.includes("'image'")) {
-    // Preserve child rows while rebuilding the legacy two-kind CHECK constraint.
+  if (assetsDefinition !== null && !assetsDefinition.includes("'markdown'")) {
+    // Preserve child rows while rebuilding the CHECK constraint. Any DB reaching this
+    // branch (legacy two-kind or current three-kind) ends up at the identical final
+    // shape in one pass, so a single block handles both starting points.
     yield* sql`CREATE TABLE chapters_next (id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, title TEXT NOT NULL, start_sec REAL NOT NULL, sort_order INTEGER NOT NULL)`;
     yield* sql`INSERT INTO chapters_next (id, asset_id, title, start_sec, sort_order) SELECT id, asset_id, title, start_sec, sort_order FROM chapters`;
     yield* sql`DROP TABLE chapters`;
-    yield* sql`CREATE TABLE assets_next (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image')), title TEXT NOT NULL, description TEXT, poster_key TEXT, media_key TEXT NOT NULL, duration_sec REAL NOT NULL DEFAULT 0, password_hash TEXT, project_id TEXT, sort_order INTEGER, width INTEGER, height INTEGER, created_at INTEGER NOT NULL, published_at INTEGER, updated_at INTEGER, CHECK ((project_id IS NULL) = (sort_order IS NULL)))`;
+    yield* sql`CREATE TABLE assets_next (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image', 'markdown')), title TEXT NOT NULL, description TEXT, poster_key TEXT, media_key TEXT NOT NULL, duration_sec REAL NOT NULL DEFAULT 0, password_hash TEXT, project_id TEXT, sort_order INTEGER, width INTEGER, height INTEGER, created_at INTEGER NOT NULL, published_at INTEGER, updated_at INTEGER, CHECK ((project_id IS NULL) = (sort_order IS NULL)))`;
     yield* sql`INSERT INTO assets_next (id, slug, kind, title, description, poster_key, media_key, duration_sec, password_hash, project_id, sort_order, width, height, created_at, published_at, updated_at) SELECT id, slug, kind, title, description, poster_key, media_key, duration_sec, password_hash, project_id, sort_order, width, height, created_at, published_at, updated_at FROM assets`;
     yield* sql`DROP TABLE assets`;
     yield* sql`ALTER TABLE assets_next RENAME TO assets`;

@@ -54,10 +54,11 @@ export class InvalidMediaShapeError extends Schema.TaggedErrorClass<InvalidMedia
   "InvalidMediaShapeError",
   {
     assetId: Schema.String,
-    kind: Schema.Literals(["video", "audio", "image"]),
+    kind: Schema.Literals(["video", "audio", "image", "markdown"]),
     reason: Schema.Literals([
       "imageRequiresZeroDurationAndPositiveDimensions",
       "timedAssetsRequireNullDimensions",
+      "markdownRequiresZeroDurationAndNullDimensions",
     ]),
   },
   { httpApiStatus: 422 },

@@ -6,5 +6,6 @@ export const mediaContentType = (key: string): string => {
   if (key.endsWith(".png")) return "image/png";
   if (key.endsWith(".webp")) return "image/webp";
   if (key.endsWith(".vtt")) return "text/vtt";
+  if (key.endsWith(".md")) return "text/markdown; charset=utf-8";
   return "application/octet-stream";
 };

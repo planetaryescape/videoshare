@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Schema } from "effect";
-import { Asset, AssetId, ProjectId, Slug } from "./Asset.ts";
+import { Asset, AssetId, Kind, ProjectId, Slug } from "./Asset.ts";
 
 const fields = {
   id: AssetId.make("asset-1"),
@@ -43,4 +43,18 @@ test("Asset decoding requires projectId and sortOrder to be both set or both nul
   expect(() => Schema.decodeUnknownSync(Asset)({ ...fields, sortOrder: 0 })).toThrow(
     "projectId and sortOrder",
   );
+});
+
+test("Kind accepts markdown alongside video, audio and image", () => {
+  expect(Schema.decodeUnknownSync(Kind)("markdown")).toBe("markdown");
+  expect(() => Schema.decodeUnknownSync(Kind)("document")).toThrow();
+});
+
+test("Asset accepts a markdown kind with zero duration and null dimensions", () => {
+  const markdown = new Asset({
+    ...fields,
+    kind: "markdown",
+    mediaKey: "media/asset-1/content.md",
+  });
+  expect(markdown).toMatchObject({ kind: "markdown", durationSec: 0, width: null, height: null });
 });

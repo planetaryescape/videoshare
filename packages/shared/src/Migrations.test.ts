@@ -42,6 +42,32 @@ const imageAsset = (
     updatedAt: 3,
   });
 
+const markdownAsset = (
+  overrides: Partial<{
+    readonly id: string;
+    readonly slug: string;
+    readonly mediaKey: string;
+  }> = {},
+) =>
+  new Asset({
+    id: AssetId.make(overrides.id ?? "markdown-1"),
+    slug: Slug.make(overrides.slug ?? "markdown_1"),
+    kind: "markdown",
+    title: "Markdown",
+    description: null,
+    posterKey: null,
+    mediaKey: overrides.mediaKey ?? "media/markdown-1/content.md",
+    durationSec: 0,
+    width: null,
+    height: null,
+    passwordHash: null,
+    projectId: null,
+    sortOrder: null,
+    createdAt: 1,
+    publishedAt: 2,
+    updatedAt: 3,
+  });
+
 const migrationSql = (filename: string) =>
   Bun.file(`${import.meta.dir}/../migrations/${filename}`).text();
 
@@ -108,6 +134,175 @@ describe("local asset migration", () => {
     );
 
     expect(Result.isSuccess(result)).toBe(true);
+  });
+
+  test("rebuilds a legacy two-kind constraint to accept markdown, preserving rows, chapters, indexes and triggers", async () => {
+    const result = await runSql(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          CREATE TABLE assets (
+            id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio')),
+            title TEXT NOT NULL, description TEXT, poster_key TEXT, media_key TEXT NOT NULL,
+            duration_sec REAL NOT NULL DEFAULT 0, password_hash TEXT,
+            project_id TEXT, sort_order INTEGER, width INTEGER, height INTEGER,
+            created_at INTEGER NOT NULL, published_at INTEGER, updated_at INTEGER
+          )
+        `;
+        yield* sql`
+          CREATE TABLE chapters (
+            id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, title TEXT NOT NULL,
+            start_sec REAL NOT NULL, sort_order INTEGER NOT NULL
+          )
+        `;
+        yield* sql`INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at) VALUES ('video-1', 'video_1', 'video', 'Video', 'media/video-1/master.m3u8', 10, 1)`;
+        yield* sql`INSERT INTO chapters (id, asset_id, title, start_sec, sort_order) VALUES ('chapter-1', 'video-1', 'Start', 0, 0)`;
+        yield* migrate;
+        const asset = yield* sql<{
+          readonly id: string;
+          readonly media_key: string;
+          readonly kind: string;
+        }>`SELECT id, media_key, kind FROM assets WHERE id = 'video-1'`;
+        const chapter = yield* sql<{
+          readonly id: string;
+          readonly asset_id: string;
+        }>`SELECT id, asset_id FROM chapters WHERE id = 'chapter-1'`;
+        const indexes = yield* sql<{
+          readonly name: string;
+        }>`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'assets'`;
+        const triggers = yield* sql<{
+          readonly name: string;
+        }>`SELECT name FROM sqlite_master WHERE type = 'trigger'`;
+        const markdownInsert = yield* Effect.result(sql`
+          INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at)
+          VALUES ('markdown-1', 'markdown_1', 'markdown', 'Markdown', 'media/markdown-1/content.md', 0, 1)
+        `);
+        return { asset, chapter, indexes, triggers, markdownInsert };
+      }),
+    );
+
+    expect(result.asset).toEqual([
+      { id: "video-1", media_key: "media/video-1/master.m3u8", kind: "video" },
+    ]);
+    expect(result.chapter).toEqual([{ id: "chapter-1", asset_id: "video-1" }]);
+    expect(result.indexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining(["idx_assets_project", "idx_assets_project_position"]),
+    );
+    expect(result.triggers.map((trigger) => trigger.name)).toEqual(
+      expect.arrayContaining(["assets_membership_insert", "assets_membership_update"]),
+    );
+    expect(Result.isSuccess(result.markdownInsert)).toBe(true);
+  });
+
+  test("rebuilds a current three-kind constraint to accept markdown, preserving rows, chapters, indexes and triggers", async () => {
+    const result = await runSql(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          CREATE TABLE assets (
+            id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio', 'image')),
+            title TEXT NOT NULL, description TEXT, poster_key TEXT, media_key TEXT NOT NULL,
+            duration_sec REAL NOT NULL DEFAULT 0, password_hash TEXT,
+            project_id TEXT, sort_order INTEGER, width INTEGER, height INTEGER,
+            created_at INTEGER NOT NULL, published_at INTEGER, updated_at INTEGER
+          )
+        `;
+        yield* sql`
+          CREATE TABLE chapters (
+            id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, title TEXT NOT NULL,
+            start_sec REAL NOT NULL, sort_order INTEGER NOT NULL
+          )
+        `;
+        yield* sql`INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, width, height, created_at) VALUES ('image-1', 'image_1', 'image', 'Image', 'media/image-1/original.png', 0, 640, 480, 1)`;
+        yield* sql`INSERT INTO chapters (id, asset_id, title, start_sec, sort_order) VALUES ('chapter-1', 'image-1', 'Start', 0, 0)`;
+        yield* migrate;
+        const asset = yield* sql<{
+          readonly id: string;
+          readonly media_key: string;
+          readonly kind: string;
+        }>`SELECT id, media_key, kind FROM assets WHERE id = 'image-1'`;
+        const chapter = yield* sql<{
+          readonly id: string;
+          readonly asset_id: string;
+        }>`SELECT id, asset_id FROM chapters WHERE id = 'chapter-1'`;
+        const indexes = yield* sql<{
+          readonly name: string;
+        }>`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'assets'`;
+        const triggers = yield* sql<{
+          readonly name: string;
+        }>`SELECT name FROM sqlite_master WHERE type = 'trigger'`;
+        const markdownInsert = yield* Effect.result(sql`
+          INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at)
+          VALUES ('markdown-1', 'markdown_1', 'markdown', 'Markdown', 'media/markdown-1/content.md', 0, 1)
+        `);
+        return { asset, chapter, indexes, triggers, markdownInsert };
+      }),
+    );
+
+    expect(result.asset).toEqual([
+      { id: "image-1", media_key: "media/image-1/original.png", kind: "image" },
+    ]);
+    expect(result.chapter).toEqual([{ id: "chapter-1", asset_id: "image-1" }]);
+    expect(result.indexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining(["idx_assets_project", "idx_assets_project_position"]),
+    );
+    expect(result.triggers.map((trigger) => trigger.name)).toEqual(
+      expect.arrayContaining(["assets_membership_insert", "assets_membership_update"]),
+    );
+    expect(Result.isSuccess(result.markdownInsert)).toBe(true);
+  });
+
+  test("running migrate twice after the markdown rebuild is a no-op", async () => {
+    const result = await runSql(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          CREATE TABLE assets (
+            id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'audio')),
+            title TEXT NOT NULL, description TEXT, poster_key TEXT, media_key TEXT NOT NULL,
+            duration_sec REAL NOT NULL DEFAULT 0, password_hash TEXT,
+            project_id TEXT, sort_order INTEGER, width INTEGER, height INTEGER,
+            created_at INTEGER NOT NULL, published_at INTEGER, updated_at INTEGER
+          )
+        `;
+        yield* sql`
+          CREATE TABLE chapters (
+            id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, title TEXT NOT NULL,
+            start_sec REAL NOT NULL, sort_order INTEGER NOT NULL
+          )
+        `;
+        yield* sql`INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at) VALUES ('video-1', 'video_1', 'video', 'Video', 'media/video-1/master.m3u8', 10, 1)`;
+        yield* sql`INSERT INTO chapters (id, asset_id, title, start_sec, sort_order) VALUES ('chapter-1', 'video-1', 'Start', 0, 0)`;
+        yield* migrate;
+        yield* migrate;
+        const asset = yield* sql<{
+          readonly id: string;
+          readonly media_key: string;
+          readonly kind: string;
+        }>`SELECT id, media_key, kind FROM assets WHERE id = 'video-1'`;
+        const chapter = yield* sql<{
+          readonly id: string;
+          readonly asset_id: string;
+        }>`SELECT id, asset_id FROM chapters WHERE id = 'chapter-1'`;
+        const assetCount = yield* sql<{
+          readonly count: number;
+        }>`SELECT COUNT(*) AS count FROM assets`;
+        const chapterCount = yield* sql<{
+          readonly count: number;
+        }>`SELECT COUNT(*) AS count FROM chapters`;
+        return { asset, chapter, assetCount, chapterCount };
+      }),
+    );
+
+    expect(result.asset).toEqual([
+      { id: "video-1", media_key: "media/video-1/master.m3u8", kind: "video" },
+    ]);
+    expect(result.chapter).toEqual([{ id: "chapter-1", asset_id: "video-1" }]);
+    expect(result.assetCount).toEqual([{ count: 1 }]);
+    expect(result.chapterCount).toEqual([{ count: 1 }]);
   });
 
   test("renames legacy summary assets so every member route is addressable", async () => {
@@ -246,6 +441,7 @@ describe("D1 SQL path", () => {
         "0005_add_image_kind.sql",
         "0006_projects.sql",
         "0007_asset_membership_invariant.sql",
+        "0008_add_markdown_kind.sql",
       ]) {
         database.exec(await migrationSql(filename));
       }
@@ -300,6 +496,21 @@ describe("D1 SQL path", () => {
           .query<{ readonly kind: string }, []>("SELECT kind FROM assets WHERE id = 'image-1'")
           .get(),
       ).toEqual({ kind: "image" });
+      database.exec(`
+        INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at)
+        VALUES ('markdown-1', 'markdown_1', 'markdown', 'Markdown', 'media/markdown-1/content.md', 0, 1)
+      `);
+      expect(
+        database
+          .query<{ readonly kind: string }, []>("SELECT kind FROM assets WHERE id = 'markdown-1'")
+          .get(),
+      ).toEqual({ kind: "markdown" });
+      expect(() =>
+        database.exec(`
+          INSERT INTO assets (id, slug, kind, title, media_key, created_at)
+          VALUES ('invalid-kind-1', 'invalid_kind_1', 'document', 'Invalid', 'media/invalid.pdf', 1)
+        `),
+      ).toThrow();
     } finally {
       database.close();
     }
@@ -418,6 +629,59 @@ describe("D1 SQL path", () => {
         database.exec(`
           INSERT INTO assets (id, slug, kind, title, media_key, created_at)
           VALUES ('invalid-1', 'invalid_1', 'document', 'Invalid', 'media/invalid.pdf', 2)
+        `),
+      ).toThrow();
+
+      database.exec(await migrationSql("0008_add_markdown_kind.sql"));
+
+      const assetAfterMarkdownRebuild = database
+        .query<{ readonly id: string; readonly media_key: string; readonly kind: string }, []>(
+          "SELECT id, media_key, kind FROM assets WHERE id = 'demo-video-0001'",
+        )
+        .get();
+      const chapterAfterMarkdownRebuild = database
+        .query<{ readonly id: string; readonly asset_id: string }, []>(
+          "SELECT id, asset_id FROM chapters WHERE id = 'demo-chapter-0001'",
+        )
+        .get();
+      const indexesAfterMarkdownRebuild = database
+        .query<{ readonly name: string }, []>("PRAGMA index_list(assets)")
+        .all();
+      const triggersAfterMarkdownRebuild = database
+        .query<{ readonly name: string }, []>(
+          "SELECT name FROM sqlite_master WHERE type = 'trigger'",
+        )
+        .all();
+
+      expect(assetAfterMarkdownRebuild).toEqual({
+        id: "demo-video-0001",
+        media_key: "videos/demo/master.m3u8",
+        kind: "video",
+      });
+      expect(chapterAfterMarkdownRebuild).toEqual({
+        id: "demo-chapter-0001",
+        asset_id: "demo-video-0001",
+      });
+      expect(indexesAfterMarkdownRebuild.map((index) => index.name)).toEqual(
+        expect.arrayContaining(["idx_assets_project", "idx_assets_project_position"]),
+      );
+      expect(triggersAfterMarkdownRebuild.map((trigger) => trigger.name)).toEqual(
+        expect.arrayContaining(["assets_membership_insert", "assets_membership_update"]),
+      );
+
+      database.exec(`
+        INSERT INTO assets (id, slug, kind, title, media_key, duration_sec, created_at)
+        VALUES ('markdown-1', 'markdown_1', 'markdown', 'Markdown', 'media/markdown-1/content.md', 0, 2)
+      `);
+      expect(
+        database
+          .query<{ readonly kind: string }, []>("SELECT kind FROM assets WHERE id = 'markdown-1'")
+          .get(),
+      ).toEqual({ kind: "markdown" });
+      expect(() =>
+        database.exec(`
+          INSERT INTO assets (id, slug, kind, title, media_key, created_at)
+          VALUES ('invalid-2', 'invalid_2', 'document', 'Invalid', 'media/invalid.pdf', 2)
         `),
       ).toThrow();
     } finally {
@@ -595,6 +859,58 @@ describe("asset persistence and viewer catalog", () => {
       expect(result.invalidImage.failure).toBeInstanceOf(InvalidMediaShapeError);
     }
     expect(Option.isNone(result.persisted)).toBe(true);
+  });
+
+  test("creates a markdown asset with zero duration and null dimensions after the migration rebuild", async () => {
+    const database = sqlLayer();
+    const repositoryLayer = AssetRepository.layerNoDeps.pipe(Layer.provide(database));
+    const layer = Layer.mergeAll(database, repositoryLayer);
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repository = yield* AssetRepository;
+        yield* migrate;
+        yield* repository.create(markdownAsset());
+        return yield* repository.findById(markdownAsset().id);
+      }).pipe(Effect.provide(layer)),
+    );
+
+    expect(Option.getOrNull(result)).toMatchObject({
+      kind: "markdown",
+      durationSec: 0,
+      width: null,
+      height: null,
+    });
+  });
+
+  test("rejects a markdown asset with a nonzero duration or non-null dimensions", async () => {
+    const database = sqlLayer();
+    const repositoryLayer = AssetRepository.layerNoDeps.pipe(Layer.provide(database));
+    const layer = Layer.mergeAll(database, repositoryLayer);
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repository = yield* AssetRepository;
+        yield* migrate;
+        const invalidDuration = yield* Effect.result(
+          repository.create(new Asset({ ...markdownAsset(), durationSec: 1 })),
+        );
+        const invalidDimensions = yield* Effect.result(
+          repository.create(
+            new Asset({ ...markdownAsset(), id: AssetId.make("markdown-2"), width: 100 }),
+          ),
+        );
+        return { invalidDuration, invalidDimensions };
+      }).pipe(Effect.provide(layer)),
+    );
+
+    for (const attempt of [result.invalidDuration, result.invalidDimensions]) {
+      expect(Result.isFailure(attempt)).toBe(true);
+      if (Result.isFailure(attempt)) {
+        expect(attempt.failure).toBeInstanceOf(InvalidMediaShapeError);
+        if (attempt.failure instanceof InvalidMediaShapeError) {
+          expect(attempt.failure.reason).toBe("markdownRequiresZeroDurationAndNullDimensions");
+        }
+      }
+    }
   });
 
   test("rejects invalid media shapes before a SQLite media transition", async () => {

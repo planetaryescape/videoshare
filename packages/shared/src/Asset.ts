@@ -22,7 +22,7 @@ export const AssetSlug = Slug.check(
   ),
 );
 
-export const Kind = Schema.Literals(["video", "audio", "image"]);
+export const Kind = Schema.Literals(["video", "audio", "image", "markdown"]);
 export type Kind = typeof Kind.Type;
 
 export class Chapter extends Schema.Class<Chapter>("Chapter")({
