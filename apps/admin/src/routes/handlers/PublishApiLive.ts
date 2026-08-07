@@ -11,6 +11,7 @@ import {
   assertDirectAssetMutationAllowed,
   PublicationGate,
 } from "../../services/PublicationGate.ts";
+import * as Telemetry from "../../services/Telemetry.ts";
 
 export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handlers) =>
   Effect.gen(function* () {
@@ -47,7 +48,7 @@ export const PublishApiLive = HttpApiBuilder.group(AdminApi, "publish", (handler
             yield* prod.unpublish(found.value.id);
             const unpublished = new Asset({ ...found.value, publishedAt: null });
             return yield* repo.update(unpublished);
-          }),
+          }).pipe((operation) => Telemetry.trace("admin.unpublish.asset", {}, operation)),
         ),
       );
   }),

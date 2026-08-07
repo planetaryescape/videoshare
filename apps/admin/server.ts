@@ -1,21 +1,43 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun";
 import { migrate } from "@videoshare/shared/Migrations";
-import { Effect, Layer, ManagedRuntime } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { Config, Effect, Layer, ManagedRuntime, Tracer } from "effect";
+import { FetchHttpClient, HttpMiddleware, HttpRouter } from "effect/unstable/http";
+import { OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
 import { registerMediabunnyServer } from "@mediabunny/server";
 import { AdminApiLive, handlersLayer } from "./src/routes/AdminApiLive.ts";
 import { makeAppLayer } from "./src/services/AppLayer.ts";
 import { makeProgressHandler, type ProgressSocketData } from "./src/ws/progress.ts";
 import { corsMiddleware, mediaRouter } from "./src/routes/media.ts";
+import { makePrivacySafeTracer, traceHttpRequest } from "./src/services/Telemetry.ts";
 
-const dbFilename = process.env["VIDEOSHARE_DB"] ?? `${import.meta.dir}/videoshare-admin.db`;
+const startupConfig = Config.all({
+  dbFilename: Config.string("VIDEOSHARE_DB").pipe(
+    Config.withDefault(`${import.meta.dir}/videoshare-admin.db`),
+  ),
+  telemetryServiceName: Config.string("OTEL_SERVICE_NAME").pipe(
+    Config.withDefault("videoshare-admin"),
+  ),
+});
+const { dbFilename, telemetryServiceName } = await Effect.runPromise(startupConfig);
 
 registerMediabunnyServer();
 
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
 await Effect.runPromise(migrate.pipe(Effect.provide(sqlLayer)));
 
-const appLayer = makeAppLayer(sqlLayer);
+const telemetryExporterLayer = OtlpTracer.layerFromConfig({
+  resource: {
+    serviceName: telemetryServiceName,
+    attributes: { "service.environment": "local" },
+  },
+}).pipe(Layer.provideMerge(Layer.merge(OtlpSerialization.layerProtobuf, FetchHttpClient.layer)));
+const telemetryLayer = Layer.merge(
+  Layer.succeed(HttpMiddleware.TracerDisabledWhen)(() => true),
+  Layer.effect(Tracer.Tracer, Effect.map(Tracer.Tracer, makePrivacySafeTracer)).pipe(
+    Layer.provide(telemetryExporterLayer),
+  ),
+);
+const appLayer = Layer.merge(makeAppLayer(sqlLayer), telemetryLayer);
 
 // Build `appLayer` once via a `ManagedRuntime` so its resources stay alive for
 // the server lifetime. Reuse its context for the WebSocket progress handler.
@@ -28,7 +50,10 @@ const fullLayer = Layer.mergeAll(apiLayer, mediaRouter, corsMiddleware).pipe(
   Layer.provide(appContextLayer),
 );
 
-const { handler } = HttpRouter.toWebHandler(fullLayer, { disableLogger: false });
+const { handler } = HttpRouter.toWebHandler(fullLayer, {
+  disableLogger: true,
+  middleware: traceHttpRequest,
+});
 
 const progressRuntime = ManagedRuntime.make(Layer.succeedContext(appContext), {
   memoMap: appRuntime.memoMap,
@@ -58,8 +83,8 @@ Bun.serve<ProgressSocketData>({
       progressHandler.close(ws);
     },
   },
-  error(error) {
-    process.stderr.write(`Unhandled server error: ${String(error)}\n`);
+  error() {
+    process.stderr.write("Unhandled server error\n");
     return new Response("Internal Server Error", { status: 500 });
   },
 });

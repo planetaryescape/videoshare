@@ -9,6 +9,7 @@ import type {
 } from "@videoshare/shared/AssetErrors";
 import { r2KeyDir } from "@videoshare/shared/MediaKey";
 import { ProdSync } from "../prod.ts";
+import * as Telemetry from "./Telemetry.ts";
 
 const markerInvalidationMediaKeys = (
   previousMediaKey: string,
@@ -55,7 +56,7 @@ export class MediaReplacement extends Context.Service<
             const invalidationFailure = invalidationFailures.at(0);
             if (invalidationFailure !== undefined) return yield* invalidationFailure;
             return replaced;
-          }),
+          }).pipe((operation) => Telemetry.trace("admin.media.replace", {}, operation)),
       });
     }),
   );

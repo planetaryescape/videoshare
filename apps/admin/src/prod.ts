@@ -17,6 +17,7 @@ import {
   ProjectPublicationValidationError,
 } from "@videoshare/shared/AssetErrors";
 import { Storage } from "./services/Storage.ts";
+import * as Telemetry from "./services/Telemetry.ts";
 
 const isAbsoluteHttpUrl = (value: string) => {
   try {
@@ -98,36 +99,43 @@ export const isSuccessfulD1BatchResponse = (
  */
 const d1Batch = (statements: ReadonlyArray<D1Statement>) => {
   const payloadBytes = new TextEncoder().encode(JSON.stringify({ batch: statements })).byteLength;
-  if (statements.length > maxD1BatchStatements || payloadBytes > maxD1BatchPayloadBytes)
-    return Effect.fail(
-      new ProdSyncError({
-        operation: "d1Batch",
-        cause: new Error(
-          `D1 batch exceeds limits: ${statements.length} statements, ${payloadBytes} bytes`,
-        ),
-      }),
-    );
-  return Effect.tryPromise({
-    try: async () => {
-      const response = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${accountId()}/d1/database/${databaseId()}/query`,
-        {
-          ...d1BatchRequest(statements),
-          signal: AbortSignal.timeout(30_000),
-          headers: {
-            Authorization: `Bearer ${apiToken()}`,
-            "content-type": "application/json",
+  const operation =
+    statements.length > maxD1BatchStatements || payloadBytes > maxD1BatchPayloadBytes
+      ? Effect.fail(
+          new ProdSyncError({
+            operation: "d1Batch",
+            cause: new Error("D1 batch exceeds configured limits"),
+          }),
+        )
+      : Effect.tryPromise({
+          try: async () => {
+            const response = await fetch(
+              `https://api.cloudflare.com/client/v4/accounts/${accountId()}/d1/database/${databaseId()}/query`,
+              {
+                ...d1BatchRequest(statements),
+                signal: AbortSignal.timeout(30_000),
+                headers: {
+                  Authorization: `Bearer ${apiToken()}`,
+                  "content-type": "application/json",
+                },
+              },
+            );
+            if (!response.ok) throw new Error(`D1 batch failed (${response.status})`);
+            const raw: unknown = await response.json();
+            if (!isSuccessfulD1BatchResponse(raw, statements))
+              throw new Error("D1 batch returned an unsuccessful result");
           },
-        },
-      );
-      if (!response.ok)
-        throw new Error(`D1 batch failed (${response.status}): ${await response.text()}`);
-      const raw: unknown = await response.json();
-      if (!isSuccessfulD1BatchResponse(raw, statements))
-        throw new Error("D1 batch returned an unsuccessful result");
+          catch: (cause) => new ProdSyncError({ operation: "d1Batch", cause }),
+        });
+  return Telemetry.trace(
+    "admin.cloud.d1.batch",
+    {
+      "db.operation": "batch",
+      "db.statement_count": statements.length,
+      "db.payload_bytes": payloadBytes,
     },
-    catch: (cause) => new ProdSyncError({ operation: "d1Batch", cause }),
-  });
+    operation,
+  );
 };
 
 const d1Query = (sql: string, params: ReadonlyArray<D1Param>) =>
@@ -161,7 +169,9 @@ const d1Query = (sql: string, params: ReadonlyArray<D1Param>) =>
       }
     },
     catch: (cause) => new ProdSyncError({ operation: "d1Query", cause }),
-  });
+  }).pipe((operation) =>
+    Telemetry.trace("admin.cloud.d1.query", { "db.operation": "query" }, operation),
+  );
 
 /** A marker is committed only after every object under this asset media prefix is uploaded. */
 export const mediaCompletionMarkerKey = (assetId: string) => `media/${assetId}/.complete`;
@@ -203,6 +213,13 @@ const uploadDir = (localDir: string, keyPrefix: string) =>
   Effect.gen(function* () {
     const client = r2();
     const files = yield* collectFiles(localDir, keyPrefix);
+    yield* Telemetry.annotate({
+      "storage.object_count": files.length,
+      "storage.payload_bytes": files.reduce(
+        (total, file) => total + Bun.file(file.localPath).size,
+        0,
+      ),
+    });
     yield* Effect.forEach(
       files,
       ({ localPath, key }) =>
@@ -212,7 +229,9 @@ const uploadDir = (localDir: string, keyPrefix: string) =>
         }),
       { concurrency: uploadConcurrency, discard: true },
     );
-  }).pipe(wrapProdError("uploadDir"));
+  }).pipe(wrapProdError("uploadDir"), (operation) =>
+    Telemetry.trace("admin.cloud.r2.upload-directory", { "storage.operation": "write" }, operation),
+  );
 
 const uploadAssetMedia = (mediaKey: string, localMediaDir: string) =>
   Effect.gen(function* () {
@@ -316,6 +335,7 @@ const removeR2Prefix = (mediaKey: string) =>
       });
     const client = r2();
     const keys = yield* listPrefixKeys(prefix);
+    yield* Telemetry.annotate({ "storage.object_count": keys.length });
     yield* Effect.forEach(
       keys,
       (key) =>
@@ -325,7 +345,9 @@ const removeR2Prefix = (mediaKey: string) =>
         }),
       { concurrency: 8, discard: true },
     );
-  }).pipe(wrapProdError("removeMedia"));
+  }).pipe(wrapProdError("removeMedia"), (operation) =>
+    Telemetry.trace("admin.cloud.r2.remove-prefix", { "storage.operation": "delete" }, operation),
+  );
 
 const unpublishAsset = (assetId: string) =>
   d1Query(`UPDATE assets SET published_at = NULL WHERE id = ?`, [assetId]).pipe(
@@ -459,13 +481,25 @@ export class ProdSync extends Context.Service<ProdSync, ProdSyncService>()("admi
           try: () => r2().delete(mediaCompletionMarkerForMediaKey(mediaKey)),
           catch: (cause) =>
             new ProdSyncError({ operation: "r2.invalidateCompletionMarker", cause }),
-        }).pipe(wrapProdError("invalidateMedia")),
+        }).pipe(wrapProdError("invalidateMedia"), (operation) =>
+          Telemetry.trace(
+            "admin.cloud.r2.marker-invalidate",
+            { "storage.operation": "delete" },
+            operation,
+          ),
+        ),
       mediaExists: (mediaKey) =>
         Effect.tryPromise({
           // Existing objects without this marker are treated as incomplete and repaired on retry.
           try: () => r2().exists(mediaCompletionMarkerForMediaKey(mediaKey)),
           catch: (cause) => new ProdSyncError({ operation: "mediaExists", cause }),
-        }).pipe(wrapProdError("mediaExists")),
+        }).pipe(wrapProdError("mediaExists"), (operation) =>
+          Telemetry.trace(
+            "admin.cloud.r2.marker-check",
+            { "storage.operation": "exists" },
+            operation,
+          ),
+        ),
       syncMetadata: (video, chapters) =>
         Effect.gen(function* () {
           yield* upsertAsset(video);
@@ -583,41 +617,54 @@ export class Publisher extends Context.Service<
         }
         return undefined;
       };
-      const publishProject = Effect.fn("Publisher.publishProject")(function* (
-        projectId: ProjectId,
-      ) {
-        const target = yield* projects.get(projectId);
-        if (Option.isNone(target)) return yield* new ProjectNotFoundError({ id: projectId });
-        const summaries = yield* projects.list();
-        const aggregates = yield* Effect.all(
-          summaries
-            .filter((project) => project.publishedAt !== null && project.id !== projectId)
-            .map((project) => projects.get(project.id)),
-        );
-        const included = [
-          target.value,
-          ...aggregates.flatMap((project) => (Option.isSome(project) ? [project.value] : [])),
-        ];
-        for (const aggregate of included) {
-          const error = validate(aggregate);
-          if (error) return yield* error;
-        }
-        const chapters = new Map<string, ReadonlyArray<Chapter>>();
-        for (const aggregate of included)
-          for (const asset of aggregate.assets) {
-            chapters.set(asset.id, yield* assets.listChapters(asset.id));
-            if (!isAbsoluteHttpUrl(asset.mediaKey) && !(yield* sync.mediaExists(asset.mediaKey)))
-              yield* sync.uploadMedia(asset.mediaKey, storage.assetDir(asset.id));
+      const publishProject = (projectId: ProjectId) =>
+        Effect.gen(function* () {
+          const target = yield* projects.get(projectId);
+          if (Option.isNone(target)) return yield* new ProjectNotFoundError({ id: projectId });
+          const summaries = yield* projects.list();
+          const aggregates = yield* Effect.all(
+            summaries
+              .filter((project) => project.publishedAt !== null && project.id !== projectId)
+              .map((project) => projects.get(project.id)),
+          );
+          const included = [
+            target.value,
+            ...aggregates.flatMap((project) => (Option.isSome(project) ? [project.value] : [])),
+          ];
+          for (const aggregate of included) {
+            const error = validate(aggregate);
+            if (error) return yield* error;
           }
-        const publishedAt = Date.now();
-        yield* sync.replaceProjectCatalog({
-          projects: included,
-          chaptersByAsset: chapters,
-          publishedAt,
-        });
-        // Only the successful remote snapshot changes local publication state.
-        yield* projects.markPublished(included, publishedAt);
-      });
+          const chapters = new Map<string, ReadonlyArray<Chapter>>();
+          let uploadCount = 0;
+          for (const aggregate of included)
+            for (const asset of aggregate.assets) {
+              chapters.set(asset.id, yield* assets.listChapters(asset.id));
+              if (
+                !isAbsoluteHttpUrl(asset.mediaKey) &&
+                !(yield* sync.mediaExists(asset.mediaKey))
+              ) {
+                yield* sync.uploadMedia(asset.mediaKey, storage.assetDir(asset.id));
+                uploadCount += 1;
+              }
+            }
+          yield* Telemetry.annotate({
+            "publish.project_count": included.length,
+            "publish.asset_count": included.reduce(
+              (total, aggregate) => total + aggregate.assets.length,
+              0,
+            ),
+            "publish.upload_count": uploadCount,
+          });
+          const publishedAt = Date.now();
+          yield* sync.replaceProjectCatalog({
+            projects: included,
+            chaptersByAsset: chapters,
+            publishedAt,
+          });
+          // Only the successful remote snapshot changes local publication state.
+          yield* projects.markPublished(included, publishedAt);
+        }).pipe((operation) => Telemetry.trace("admin.publish.project", {}, operation));
       return Publisher.of({
         publishAsset: (assetId) =>
           Effect.gen(function* () {
@@ -632,14 +679,21 @@ export class Publisher extends Context.Service<
             const shapeError = mediaShapeError(asset);
             if (shapeError) return yield* shapeError;
             const published = new Asset({ ...asset, publishedAt: Date.now() });
+            let uploadCount = 0;
             if (
               !isAbsoluteHttpUrl(published.mediaKey) &&
               !(yield* sync.mediaExists(published.mediaKey))
-            )
+            ) {
               yield* sync.uploadMedia(published.mediaKey, storage.assetDir(published.id));
+              uploadCount = 1;
+            }
+            yield* Telemetry.annotate({
+              "publish.asset_count": 1,
+              "publish.upload_count": uploadCount,
+            });
             yield* sync.syncMetadata(published, yield* assets.listChapters(published.id));
             return yield* assets.update(published);
-          }),
+          }).pipe((operation) => Telemetry.trace("admin.publish.asset", {}, operation)),
         publishProject,
         unpublishProject: (projectId) =>
           Effect.gen(function* () {
@@ -648,8 +702,9 @@ export class Publisher extends Context.Service<
             yield* sync.removeProject(projectId);
             // Local members/assets/media and their direct publication intentionally remain untouched.
             yield* projects.clearPublishedAt(projectId);
-          }),
-        removeProject: (projectId) => sync.removeProject(projectId),
+          }).pipe((operation) => Telemetry.trace("admin.unpublish.project", {}, operation)),
+        removeProject: (projectId) =>
+          Telemetry.trace("admin.delete.project", {}, sync.removeProject(projectId)),
       });
     }),
   );

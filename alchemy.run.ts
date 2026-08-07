@@ -22,6 +22,10 @@ export default Alchemy.Stack(
       main: "./apps/viewer/src/worker.ts",
       domain: viewerHost,
       compatibility: { date: "2025-01-01", flags: ["nodejs_compat"] },
+      observability: {
+        enabled: true,
+        traces: { enabled: true, headSamplingRate: 1, persist: true },
+      },
       env: {
         DB: db,
         BUCKET: bucket,
