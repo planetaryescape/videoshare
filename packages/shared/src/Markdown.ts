@@ -8,7 +8,8 @@ const HTML_ESCAPES: Record<string, string> = {
   "'": "&#39;",
 };
 
-const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char] ?? char);
+const escapeHtml = (text: string): string =>
+  text.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char] ?? char);
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: "&",
@@ -34,10 +35,17 @@ const decodeEntities = (text: string): string =>
   });
 
 const SAFE_URL_SCHEMES = new Set(["http:", "https:", "mailto:"]);
-const CONTROL_AND_WHITESPACE = /[\x00-\x20\x7f]+/g;
+/** Dropped before scheme checks so tab/newline-split URLs cannot smuggle javascript:. */
+const stripControlAndWhitespace = (value: string): string =>
+  Array.from(value)
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code > 0x20 && code !== 0x7f;
+    })
+    .join("");
 
 const isSafeUrl = (rawHref: string): boolean => {
-  const normalized = decodeEntities(rawHref).replace(CONTROL_AND_WHITESPACE, "").toLowerCase();
+  const normalized = stripControlAndWhitespace(decodeEntities(rawHref)).toLowerCase();
 
   if (normalized === "") return true;
   if (

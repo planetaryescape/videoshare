@@ -588,12 +588,15 @@ const serveProject = async (
       );
   }
   const selected = assetSlug === "summary" ? null : page.value.selected;
-  const markdownHtmlByAssetId = new Map(
+  const markdownHtmlByAssetId = new Map<string, string | null>(
     await Promise.all(
       page.value.assets
         .filter((asset) => asset.kind === "markdown")
         .map(
-          async (asset) => [asset.id, await fetchMarkdownHtml(env, asset.mediaKey)] as const,
+          async (asset): Promise<[string, string | null]> => [
+            asset.id,
+            await fetchMarkdownHtml(env, asset.mediaKey),
+          ],
         ),
     ),
   );

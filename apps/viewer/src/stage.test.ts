@@ -48,7 +48,9 @@ describe("renderStage", () => {
       "<p>Hello <strong>world</strong></p>",
     );
 
-    expect(html).toBe('<article class="markdown-stage"><p>Hello <strong>world</strong></p></article>');
+    expect(html).toBe(
+      '<article class="markdown-stage"><p>Hello <strong>world</strong></p></article>',
+    );
   });
 
   test("renders an empty article when markdownHtml is null", () => {

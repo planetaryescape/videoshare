@@ -133,9 +133,7 @@ const reviewPlayer = (h: Html, video: Asset) =>
             ? [
                 h.div(
                   [
-                    h.Class(
-                      "markdown-stage prose prose-invert max-w-none bg-gray-950 p-4",
-                    ),
+                    h.Class("markdown-stage prose prose-invert max-w-none bg-gray-950 p-4"),
                     h.InnerHTML(renderMarkdown(video.body ?? "")),
                   ],
                   [],

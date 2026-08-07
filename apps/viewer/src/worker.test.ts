@@ -301,9 +301,7 @@ describe("markdown project members", () => {
     expect(pageHtml).not.toContain("Top secret");
 
     const mediaResponse = await worker.fetch(
-      new Request(
-        "https://viewer.example/p/protected-md/media/secret-notes/content.md",
-      ),
+      new Request("https://viewer.example/p/protected-md/media/secret-notes/content.md"),
       env,
     );
     expect(mediaResponse.status).toBe(404);

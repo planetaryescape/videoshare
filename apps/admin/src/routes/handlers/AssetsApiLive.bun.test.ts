@@ -17,7 +17,10 @@ import { ProdSync } from "../../prod.ts";
 import { PublicationGate } from "../../services/PublicationGate.ts";
 import { MediaReplacement } from "../../services/MediaReplacement.ts";
 
-const platformLayer = Layer.merge(HttpServer.layerServices, Layer.merge(NodeFileSystem.layer, NodePath.layer));
+const platformLayer = Layer.merge(
+  HttpServer.layerServices,
+  Layer.merge(NodeFileSystem.layer, NodePath.layer),
+);
 const storageLayer = Storage.layer.pipe(Layer.provide(platformLayer));
 const dbFilename = `${import.meta.dir}/AssetsApiLive.${randomUUID()}.test.db`;
 const sqlLayer = SqliteClient.layer({ filename: dbFilename });
@@ -51,22 +54,40 @@ const dependencies = Layer.mergeAll(
   mediaReplacementLayer,
 );
 
-const notImplemented = Effect.die("not implemented in this test");
-const stubGroup = <Identifier extends "projects" | "upload" | "publish">(identifier: Identifier) =>
-  HttpApiBuilder.group(AdminApi, identifier, (handlers) => {
-    let stubbed = handlers as unknown as { handleRaw: (id: string, fn: () => typeof notImplemented) => unknown };
-    const group = AdminApi.groups[identifier];
-    for (const endpointIdentifier of Object.keys(group.endpoints)) {
-      stubbed = stubbed.handleRaw(endpointIdentifier, () => notImplemented) as typeof stubbed;
-    }
-    return stubbed as never;
-  });
+const readField = (payload: unknown, field: string): string => {
+  if (typeof payload !== "object" || payload === null || !(field in payload)) {
+    throw new Error(`response payload has no ${field}`);
+  }
+  const value = Reflect.get(payload, field);
+  if (typeof value !== "string") throw new Error(`response ${field} is not a string`);
+  return value;
+};
 
-const unusedGroupsLayer = Layer.mergeAll(
-  stubGroup("projects"),
-  stubGroup("upload"),
-  stubGroup("publish"),
+const notImplemented = Effect.die("not implemented in this test");
+
+const stubProjects = HttpApiBuilder.group(AdminApi, "projects", (handlers) =>
+  handlers
+    .handle("listProjects", () => notImplemented)
+    .handle("getProject", () => notImplemented)
+    .handle("createProject", () => notImplemented)
+    .handle("updateProject", () => notImplemented)
+    .handle("replaceMembers", () => notImplemented)
+    .handle("moveMember", () => notImplemented)
+    .handle("unfileMember", () => notImplemented)
+    .handle("publishProject", () => notImplemented)
+    .handle("unpublishProject", () => notImplemented)
+    .handle("deleteProject", () => notImplemented),
 );
+
+const stubUpload = HttpApiBuilder.group(AdminApi, "upload", (handlers) =>
+  handlers.handleRaw("upload", () => notImplemented),
+);
+
+const stubPublish = HttpApiBuilder.group(AdminApi, "publish", (handlers) =>
+  handlers.handle("publish", () => notImplemented).handle("unpublish", () => notImplemented),
+);
+
+const unusedGroupsLayer = Layer.mergeAll(stubProjects, stubUpload, stubPublish);
 
 const appLayer = HttpApiBuilder.layer(AdminApi).pipe(
   Layer.provide(Layer.mergeAll(AssetsApiLive, unusedGroupsLayer)),
@@ -145,7 +166,9 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  await Bun.file(dbFilename).delete().catch(() => undefined);
+  await Bun.file(dbFilename)
+    .delete()
+    .catch(() => undefined);
 });
 
 describe("PUT /api/assets/:id/content", () => {
@@ -161,8 +184,7 @@ describe("PUT /api/assets/:id/content", () => {
 
     const response = await handler(request("content-happy", "# Hello world"));
     expect(response.status).toBe(200);
-    const payload = (await response.json()) as { kind: string };
-    expect(payload.kind).toBe("markdown");
+    expect(readField(await response.json(), "kind")).toBe("markdown");
 
     const stored = await Effect.runPromise(
       Effect.gen(function* () {
@@ -185,8 +207,7 @@ describe("PUT /api/assets/:id/content", () => {
 
     const response = await handler(request("content-wrong-kind", "# Hello"));
     expect(response.status).toBe(422);
-    const payload = (await response.json()) as { _tag: string };
-    expect(payload._tag).toBe("AssetKindMismatchError");
+    expect(readField(await response.json(), "_tag")).toBe("AssetKindMismatchError");
   });
 
   test("returns 404 for a missing asset", async () => {
@@ -216,7 +237,6 @@ describe("PUT /api/assets/:id/content", () => {
 
     const response = await handler(request("content-locked", "# Hello"));
     expect(response.status).toBe(409);
-    const payload = (await response.json()) as { _tag: string };
-    expect(payload._tag).toBe("PublishedProjectMemberMutationError");
+    expect(readField(await response.json(), "_tag")).toBe("PublishedProjectMemberMutationError");
   });
 });

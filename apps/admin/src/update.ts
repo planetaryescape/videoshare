@@ -940,9 +940,7 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               chapterSaveQueued: () => false,
               chapterSaveSnapshot: () => [],
               markdownBody: () =>
-                msg.video.kind === "markdown" && msg.video.body !== undefined
-                  ? msg.video.body
-                  : "",
+                msg.video.kind === "markdown" && msg.video.body !== undefined ? msg.video.body : "",
             })
           : noCmd(model),
       FailedLoadAssetDetail: (msg: { id: string; error: string }) =>
@@ -1076,6 +1074,8 @@ export const update: (model: Model, message: Message) => Update = (model, messag
               assets: () => model.assets.map((v) => (v.id === result.video.id ? result.video : v)),
               markdownSaveStatus: () => MarkdownSaved(),
             })
-          : withEvo(model, { markdownSaveStatus: () => MarkdownSaveFailed({ error: result.error }) }),
+          : withEvo(model, {
+              markdownSaveStatus: () => MarkdownSaveFailed({ error: result.error }),
+            }),
     }),
   );

@@ -130,7 +130,9 @@ test("SECURITY: entity-obfuscated javascript: hrefs are neutralized", () => {
 });
 
 test("SECURITY: data: URIs in hrefs are neutralized", () => {
-  const html = renderMarkdown("[click](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)");
+  const html = renderMarkdown(
+    "[click](data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==)",
+  );
   expect(html).not.toContain("data:text/html");
   expect(html).toContain('href="#"');
 });

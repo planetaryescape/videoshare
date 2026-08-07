@@ -14,7 +14,11 @@ import {
 } from "mediabunny";
 import type { ConversionAudioOptions, VideoSample } from "mediabunny";
 import type { Kind } from "@videoshare/shared/Asset";
-import { InvalidImageError, InvalidMarkdownError, UnsupportedMediaError } from "../errors/MediaErrors.ts";
+import {
+  InvalidImageError,
+  InvalidMarkdownError,
+  UnsupportedMediaError,
+} from "../errors/MediaErrors.ts";
 import {
   InvalidConversionError,
   NoAssetTrackError,
@@ -339,10 +343,7 @@ export class MediaProcessor extends Context.Service<MediaProcessor, MediaProcess
               catch: () => new InvalidMarkdownError({ filename: file.name }),
             });
             yield* storage.resetAssetDir(assetId);
-            yield* storage.writeFile(
-              `${assetId}/content.md`,
-              new TextEncoder().encode(source),
-            );
+            yield* storage.writeFile(`${assetId}/content.md`, new TextEncoder().encode(source));
             yield* progress.publish({ assetId, stage: "done", pct: 100 });
             const markdown: ProcessedMedia = {
               kind: "markdown",
