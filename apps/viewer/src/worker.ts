@@ -746,7 +746,7 @@ export default {
         // A one-segment project path is indistinguishable from a legacy direct-media filename.
         // A real project response wins; only its ordinary 404 falls back to direct media.
         if (projectSegments.length === 1)
-          return serveLegacyPAssetMediaWhenProjectMissing(
+          return await serveLegacyPAssetMediaWhenProjectMissing(
             serveProject(env, request, url, projectSegments),
             () => serveMedia(env, request, "p", projectSegments[0]),
           );

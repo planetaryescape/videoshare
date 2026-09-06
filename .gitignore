@@ -36,6 +36,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Alchemy local state + logs (may cache secrets)
 .alchemy
 
+# Amp portal registrations are orb-local.
+.amp/portals/
+
 # Local admin data + media
 *.db
 *.db-*

@@ -166,6 +166,17 @@ const imageAsset = new Asset({
 });
 
 describe("legacy direct `p` compatibility", () => {
+  test("contains failed root-project lookups instead of rejecting the Worker fetch handler", async () => {
+    using database = new Database(":memory:");
+    const response = await worker.fetch(
+      new Request("https://viewer.example/p/project-with-an-unavailable-catalog"),
+      viewerEnv(database),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+  });
+
   test("dispatches absent-project HEAD requests to legacy media while existing projects retain their method guard", async () => {
     using database = new Database(":memory:");
     setupCatalog(database);
