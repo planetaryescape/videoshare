@@ -16,7 +16,12 @@
     "//#dev:worker": {
       "dependsOn": ["@videoshare/viewer#build"],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "ALCHEMY_PROFILE",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN"
+      ]
     },
     "lint": {
       "cache": false
