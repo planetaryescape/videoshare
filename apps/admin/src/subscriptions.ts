@@ -14,8 +14,9 @@ const uploadProgressStream = (assetId: string): Stream.Stream<Message> =>
   Stream.callback<Message>((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const socket = new WebSocket(
-          `ws://${location.hostname}:3001/ws?assetId=${encodeURIComponent(assetId)}`,
+          `${protocol}//${location.host}/ws?assetId=${encodeURIComponent(assetId)}`,
         );
         let isTerminated = false;
 

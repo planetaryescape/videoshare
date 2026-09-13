@@ -7,7 +7,8 @@
     },
     "dev:client": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["HOST", "PORT", "PORTLESS_URL"]
     },
     "dev:server": {
       "cache": false,
